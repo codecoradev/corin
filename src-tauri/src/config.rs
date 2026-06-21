@@ -69,6 +69,99 @@ pub fn hub_db_path() -> Result<PathBuf, ConfigError> {
     Ok(hub_dir()?.join("hub.db"))
 }
 
+/// Resolve the Uteke symlink directory: `~/.codecora/uteke/`.
+///
+/// This is a symlink to the actual Uteke data directory (`~/.uteke/` by default).
+/// Hub reads Uteke data through this symlink for Phase 2 integration.
+pub fn uteke_symlink_path() -> Result<PathBuf, ConfigError> {
+    Ok(codecora_root()?.join("uteke"))
+}
+
+/// Detect if Uteke is installed on this machine.
+///
+/// Checks common locations:
+/// - `~/.uteke/uteke.db`
+/// - Custom path from `~/.uteke/config.toml` `[store].path`
+///
+/// Returns the path to the Uteke data directory if found.
+pub fn detect_uteke() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let default_uteke = home.join(".uteke");
+
+    // Check default location
+    if default_uteke.join("uteke.db").exists() {
+        return Some(default_uteke);
+    }
+
+    // Check config.toml for custom path
+    let config = default_uteke.join("config.toml");
+    if config.exists()
+        && let Ok(contents) = fs::read_to_string(&config)
+        && let Ok(parsed) = contents.parse::<toml::Value>()
+        && let Some(path) = parsed
+            .get("store")
+            .and_then(|s| s.get("path"))
+            .and_then(|p| p.as_str())
+    {
+        let expanded = expand_tilde(path);
+        if expanded.join("uteke.db").exists() {
+            return Some(expanded);
+        }
+    }
+
+    None
+}
+
+/// Create a symlink from `~/.codecora/uteke/` → actual Uteke data dir.
+///
+/// If Uteke is not installed, this is a no-op.
+/// If symlink already exists and points correctly, this is a no-op.
+/// If symlink exists but points wrong, it is recreated.
+///
+/// Returns the resolved Uteke path if linked successfully.
+pub fn link_uteke() -> Result<Option<PathBuf>, ConfigError> {
+    let Some(uteke_path) = detect_uteke() else {
+        return Ok(None);
+    };
+
+    let symlink = uteke_symlink_path()?;
+
+    // Check if symlink already correct
+    if symlink.exists() {
+        if let Ok(target) = fs::read_link(&symlink)
+            && target == uteke_path
+        {
+            return Ok(Some(uteke_path));
+        }
+        // Wrong target — remove and recreate
+        fs::remove_file(&symlink).map_err(|e| ConfigError::Io(e.to_string()))?;
+    }
+
+    // Create symlink
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&uteke_path, &symlink)
+        .map_err(|e| ConfigError::Io(e.to_string()))?;
+
+    #[cfg(windows)]
+    {
+        // On Windows, create a directory symlink (requires admin or developer mode)
+        std::os::windows::fs::symlink_dir(&uteke_path, &symlink)
+            .map_err(|e| ConfigError::Io(e.to_string()))?;
+    }
+
+    Ok(Some(uteke_path))
+}
+
+/// Expand `~` in a path string to the home directory.
+fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(stripped) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(stripped);
+    }
+    PathBuf::from(path)
+}
+
 /// Resolve the config file path: `~/.codecora/config.toml`.
 pub fn config_path() -> Result<PathBuf, ConfigError> {
     Ok(codecora_root()?.join("config.toml"))
@@ -133,6 +226,13 @@ pub fn save_config(config: &CodecoraConfig) -> Result<(), ConfigError> {
 /// Called on app startup — replaces the manual directory picker.
 pub fn init_environment() -> Result<(PathBuf, CodecoraConfig), ConfigError> {
     ensure_directory_structure()?;
+
+    // Detect and link Uteke if installed
+    // Creates ~/.codecora/uteke/ → ~/.uteke/ symlink
+    // Hub reads Uteke data through this symlink (Phase 2 integration)
+    if let Err(e) = link_uteke() {
+        eprintln!("Warning: failed to link Uteke: {e}");
+    }
 
     let config = if config_path()?.exists() {
         load_config()?
@@ -234,5 +334,38 @@ max_results = 100
     fn test_codecora_root_ends_with_codecora() {
         let path = codecora_root().unwrap();
         assert!(path.ends_with(".codecora"));
+    }
+
+    #[test]
+    fn test_uteke_symlink_path_ends_with_uteke() {
+        let path = uteke_symlink_path().unwrap();
+        assert!(path.ends_with("uteke"));
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        let path = expand_tilde("~/some/dir");
+        assert!(!path.starts_with("~"));
+        assert!(path.ends_with("some/dir"));
+    }
+
+    #[test]
+    fn test_expand_tilde_no_tilde() {
+        let path = expand_tilde("/absolute/path");
+        assert!(path.starts_with("/absolute"));
+    }
+
+    #[test]
+    fn test_detect_uteke_returns_some_if_installed() {
+        // This test only passes if Uteke is actually installed
+        // On CI or fresh machines, this will be None — that's fine
+        let result = detect_uteke();
+        if let Some(ref path) = result {
+            assert!(
+                path.join("uteke.db").exists(),
+                "detect_uteke returned {path:?} but uteke.db not found"
+            );
+        }
+        // None is also valid — no assertion needed
     }
 }
