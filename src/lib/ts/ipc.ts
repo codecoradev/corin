@@ -73,3 +73,9 @@ export const system = {
 // Tauri event listener
 export { listen } from '@tauri-apps/api/event';
 export type { UnlistenFn } from '@tauri-apps/api/event';
+
+// Updater
+import { check } from '@tauri-apps/plugin-updater';
+export const updater = {
+  check: () => check(),
+};

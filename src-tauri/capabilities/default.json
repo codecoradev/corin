@@ -4,6 +4,8 @@
   "description": "Default permissions for Codecora Hub",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "updater:default",
+    "process:default"
   ]
 }
