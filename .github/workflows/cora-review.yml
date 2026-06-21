@@ -28,8 +28,10 @@ jobs:
 
       - name: Check required secrets
         id: secrets
+        env:
+          CORA_API_KEY: ${{ secrets.CORA_API_KEY }}
         run: |
-          if [ -z "${{ secrets.CORA_API_KEY }}" ]; then
+          if [ -z "$CORA_API_KEY" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::CORA_API_KEY not set — skipping cora review (forks lack secrets)"
           else
