@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { system, memory as memoryApi } from '../ts/ipc';
   import type { StatsResponse, MemoryEntry } from '../ts/types';
 
@@ -16,10 +15,6 @@
   let searchQuery = $state('');
   let loading = $state(true);
 
-  onMount(async () => {
-    await loadData();
-  });
-
   async function loadData() {
     loading = true;
     try {
@@ -32,7 +27,7 @@
     }
   }
 
-  // Reload when namespace changes
+  // Load on mount + reload when namespace changes
   $effect(() => {
     namespace;
     loadData();

@@ -13,10 +13,6 @@
   let data = $state<GraphData | null>(null);
   let loading = $state(true);
 
-  onMount(async () => {
-    await loadData();
-  });
-
   async function loadData() {
     loading = true;
     try {
@@ -28,7 +24,7 @@
     }
   }
 
-  // Reload when namespace changes
+  // Load on mount + reload when namespace changes
   $effect(() => {
     namespace;
     loadData();

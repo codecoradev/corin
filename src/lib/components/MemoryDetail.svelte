@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { memory as memoryApi, graph } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
 
@@ -29,9 +28,7 @@
     }
   }
 
-  onMount(load);
-
-  // Reload when memoryId changes
+  // Reload when memoryId changes (also runs on mount)
   $effect(() => {
     memoryId;
     load();
