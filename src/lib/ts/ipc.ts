@@ -90,6 +90,12 @@ export const uteke = {
       limit: opts?.limit ?? null,
     }),
   namespaces: () => invoke<string[]>('uteke_namespaces'),
+  rooms: (namespace?: string) =>
+    invoke<{ id: string; title: string | null; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }[]>('uteke_rooms', {
+      namespace: namespace ?? null,
+    }),
+  roomRecall: (roomId: string, limit?: number) =>
+    invoke<MemoryEntry[]>('uteke_room_recall', { roomId, limit: limit ?? null }),
   list: (opts?: { namespace?: string; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,

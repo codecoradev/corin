@@ -2,6 +2,16 @@
   import { uteke, memory as memoryApi } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
 
+  interface UtekeRoom {
+    id: string;
+    title: string | null;
+    namespace: string;
+    memory_count: number;
+    participant_count: number;
+    created_at: string;
+    updated_at: string;
+  }
+
   interface Props {
     namespace: string | null;
     onmemoryclick: (id: string) => void;
@@ -9,39 +19,58 @@
 
   let { namespace, onmemoryclick }: Props = $props();
 
-  let rooms = $state<{ name: string; count: number; tag: string }[]>([]);
+  // Two modes: Uteke rooms (actual) or tag-based (fallback)
+  let utekeRooms = $state<UtekeRoom[]>([]);
+  let tagRooms = $state<{ name: string; count: number }[]>([]);
   let loading = $state(true);
   let selectedRoom = $state<string | null>(null);
+  let selectedTag = $state<string | null>(null);
   let roomMemories = $state<MemoryEntry[]>([]);
   let utekeReady = $state(false);
 
   async function loadRooms() {
     loading = true;
+    selectedRoom = null;
+    selectedTag = null;
+    roomMemories = [];
     try {
       utekeReady = await uteke.available();
 
-      // Get all memories, group by top tags
-      const all: MemoryEntry[] = utekeReady
-        ? await uteke.list({ namespace: namespace ?? undefined, limit: 200 })
-        : await memoryApi.list({ namespace: namespace ?? undefined, limit: 200 });
+      if (utekeReady) {
+        // 1. Try actual Uteke rooms first
+        utekeRooms = await uteke.rooms(namespace ?? undefined);
 
-      // Count tag frequency
-      const tagCount = new Map<string, MemoryEntry[]>();
-      for (const m of all) {
-        for (const tag of m.tags) {
-          if (!tagCount.has(tag)) tagCount.set(tag, []);
-          tagCount.get(tag)!.push(m);
+        // 2. Also build tag-based "rooms" as fallback/supplement
+        const all = await uteke.list({ namespace: namespace ?? undefined, limit: 200 });
+        const tagCount = new Map<string, number>();
+        for (const m of all) {
+          for (const tag of m.tags) {
+            tagCount.set(tag, (tagCount.get(tag) ?? 0) + 1);
+          }
         }
+        tagRooms = Array.from(tagCount.entries())
+          .filter(([_, count]) => count >= 2)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 30);
+      } else {
+        // Hub DB only
+        const all = await memoryApi.list({ namespace: namespace ?? undefined, limit: 200 });
+        const tagCount = new Map<string, number>();
+        for (const m of all) {
+          for (const tag of m.tags) {
+            tagCount.set(tag, (tagCount.get(tag) ?? 0) + 1);
+          }
+        }
+        tagRooms = Array.from(tagCount.entries())
+          .filter(([_, count]) => count >= 2)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 30);
       }
-
-      // Top tags with 2+ memories = "rooms"
-      rooms = Array.from(tagCount.entries())
-        .filter(([_, mems]) => mems.length >= 2)
-        .map(([tag, mems]) => ({ name: tag, tag, count: mems.length }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 30);
     } catch {
-      rooms = [];
+      utekeRooms = [];
+      tagRooms = [];
     } finally {
       loading = false;
     }
@@ -52,13 +81,27 @@
     loadRooms();
   });
 
-  async function selectRoom(tag: string) {
-    selectedRoom = tag;
+  async function selectUtekeRoom(roomId: string) {
+    selectedRoom = roomId;
+    selectedTag = null;
     try {
-      const all = utekeReady
-        ? await uteke.list({ namespace: namespace ?? undefined, tag, limit: 50 })
-        : await memoryApi.list({ namespace: namespace ?? undefined, tag, limit: 50 });
-      roomMemories = all;
+      roomMemories = await uteke.roomRecall(roomId, 50);
+    } catch {
+      roomMemories = [];
+    }
+  }
+
+  async function selectTagRoom(tag: string) {
+    selectedTag = tag;
+    selectedRoom = null;
+    try {
+      const src = utekeReady ? uteke : memoryApi;
+      // @ts-expect-error - both have .list with tag support
+      roomMemories = await src.list({
+        namespace: namespace ?? undefined,
+        tag,
+        limit: 50,
+      });
     } catch {
       roomMemories = [];
     }
@@ -68,42 +111,72 @@
 <div class="rooms-view">
   <div class="rooms-header">
     <h2>Rooms</h2>
-    <span class="rooms-count">{rooms.length} tags with 2+ memories</span>
+    <span class="rooms-count">
+      {utekeRooms.length + tagRooms.length} spaces
+    </span>
   </div>
 
   {#if loading}
     <div class="center-msg">Loading...</div>
-  {:else if rooms.length === 0}
+  {:else if utekeRooms.length === 0 && tagRooms.length === 0}
     <div class="center-msg">
       <p>No rooms yet.</p>
-      <p class="sub">Rooms are auto-generated from tags with 2+ memories.</p>
+      <p class="sub">Rooms appear when memories share tags or are linked via Uteke rooms.</p>
     </div>
   {:else}
     <div class="rooms-layout">
       <div class="room-list">
-        {#each rooms as room (room.tag)}
-          <button
-            class="room-card"
-            class:active={selectedRoom === room.tag}
-            onclick={() => selectRoom(room.tag)}
-          >
-            <div class="room-icon">lami</div>
-            <div class="room-info">
-              <div class="room-name">{room.name}</div>
-              <div class="room-meta">{room.count} memories</div>
-            </div>
-          </button>
-        {/each}
+        {#if utekeRooms.length > 0}
+          <div class="section-label">Uteke Rooms</div>
+          {#each utekeRooms as room (room.id)}
+            <button
+              class="room-card"
+              class:active={selectedRoom === room.id}
+              onclick={() => selectUtekeRoom(room.id)}
+            >
+              <div class="room-icon lami">lami</div>
+              <div class="room-info">
+                <div class="room-name">{room.title ?? room.id}</div>
+                <div class="room-meta">
+                  {room.memory_count} memories · {room.participant_count} participants
+                </div>
+              </div>
+            </button>
+          {/each}
+        {/if}
+
+        {#if tagRooms.length > 0}
+          <div class="section-label">Tag Spaces</div>
+          {#each tagRooms as room (room.name)}
+            <button
+              class="room-card"
+              class:active={selectedTag === room.name}
+              onclick={() => selectTagRoom(room.name)}
+            >
+              <div class="room-icon tag">#</div>
+              <div class="room-info">
+                <div class="room-name">{room.name}</div>
+                <div class="room-meta">{room.count} memories</div>
+              </div>
+            </button>
+          {/each}
+        {/if}
       </div>
 
       <div class="room-detail">
-        {#if !selectedRoom}
+        {#if !selectedRoom && !selectedTag}
           <div class="center-msg">
-            <p>Select a tag to view its memories</p>
+            <p>Select a room to view its memories</p>
           </div>
         {:else}
           <div class="room-detail-header">
-            <h3>#{selectedRoom}</h3>
+            <h3>
+              {#if selectedRoom}
+                {utekeRooms.find((r) => r.id === selectedRoom)?.title ?? selectedRoom}
+              {:else}
+                #{selectedTag}
+              {/if}
+            </h3>
             <span class="badge">{roomMemories.length}</span>
           </div>
           <div class="room-memory-list">
@@ -166,13 +239,19 @@
   }
 
   .room-list {
-    width: 240px;
+    width: 260px;
     overflow-y: auto;
     padding: 8px 12px;
     border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  }
+
+  .section-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 8px 8px 4px;
+    margin-top: 4px;
   }
 
   .room-card {
@@ -186,7 +265,7 @@
     cursor: pointer;
     text-align: left;
     width: 100%;
-    transition: background 0.1s;
+    margin-bottom: 2px;
   }
 
   .room-card:hover {
@@ -199,10 +278,19 @@
   }
 
   .room-icon {
-    font-size: 0.9rem;
-    color: var(--accent);
-    width: 20px;
+    font-size: 0.85rem;
+    width: 24px;
     text-align: center;
+    flex-shrink: 0;
+  }
+
+  .room-icon.lami {
+    color: var(--teal);
+  }
+
+  .room-icon.tag {
+    color: var(--mauve);
+    font-weight: 700;
   }
 
   .room-info {

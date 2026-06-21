@@ -1050,6 +1050,111 @@ pub async fn uteke_namespaces(
     Ok(namespaces)
 }
 
+/// Uteke room entry (maps to Uteke rooms table).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UtekeRoom {
+    pub id: String,
+    pub title: Option<String>,
+    pub namespace: String,
+    pub memory_count: usize,
+    pub participant_count: usize,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// List rooms from Uteke database.
+/// Returns actual Uteke rooms (rooms table + room_memories).
+#[tauri::command]
+pub async fn uteke_rooms(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    _namespace: Option<String>,
+) -> Result<Vec<UtekeRoom>, CommandError> {
+    let s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_ref()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.id, r.title, r.namespace, r.created_at, r.updated_at,
+             (SELECT COUNT(*) FROM room_memories rm WHERE rm.room_id = r.id),
+             (SELECT COUNT(DISTINCT rm.author) FROM room_memories rm WHERE rm.room_id = r.id)
+             FROM rooms r ORDER BY r.updated_at DESC",
+        )
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let rooms = stmt
+        .query_map([], |row| {
+            let mem_count: i64 = row.get(5).unwrap_or(0);
+            let part_count: i64 = row.get(6).unwrap_or(0);
+            Ok(UtekeRoom {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                namespace: row.get(2)?,
+                memory_count: mem_count as usize,
+                participant_count: part_count as usize,
+                created_at: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                updated_at: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            })
+        })
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(rooms)
+}
+
+/// Recall memories linked to a Uteke room.
+#[tauri::command]
+pub async fn uteke_room_recall(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    room_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_ref()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let limit_i = limit.unwrap_or(50) as i64;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.id, m.content, m.tags, m.content_type, m.importance, m.namespace, m.created_at, m.updated_at
+             FROM memories m
+             INNER JOIN room_memories rm ON m.id = rm.memory_id
+             WHERE rm.room_id = ?1 AND m.deprecated = 0
+             ORDER BY rm.joined_at ASC
+             LIMIT ?2",
+        )
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let results = stmt
+        .query_map(rusqlite::params![room_id, limit_i], |row| {
+            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(MemoryEntry {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                tags,
+                content_type: row.get(3)?,
+                importance: row.get(4)?,
+                namespace: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(results)
+}
+
 /// Get Uteke stats.
 #[tauri::command]
 pub async fn uteke_stats(
