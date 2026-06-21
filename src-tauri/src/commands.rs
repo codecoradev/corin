@@ -780,6 +780,41 @@ pub async fn uteke_list(
     Ok(results)
 }
 
+/// Get a single memory from Uteke database by ID (read-only).
+#[tauri::command]
+pub async fn uteke_get(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<MemoryEntry, CommandError> {
+    let s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_ref()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    conn.query_row(
+        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
+         FROM memories WHERE id = ?1 AND deprecated = 0",
+        rusqlite::params![id],
+        |row| {
+            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(MemoryEntry {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                tags,
+                content_type: row.get(3)?,
+                importance: row.get(4)?,
+                namespace: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        },
+    )
+    .map_err(|_| CommandError::NotFound(id))
+}
+
 /// Search memories in Uteke database using FTS5.
 #[tauri::command]
 pub async fn uteke_search(
@@ -884,6 +919,31 @@ pub async fn uteke_search(
         .filter_map(|r| r.ok())
         .collect();
     Ok(results)
+}
+
+/// List distinct namespaces from Uteke database.
+#[tauri::command]
+pub async fn uteke_namespaces(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+) -> Result<Vec<String>, CommandError> {
+    let s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_ref()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT namespace FROM memories WHERE deprecated = 0 ORDER BY namespace")
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let namespaces = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(namespaces)
 }
 
 /// Get Uteke stats.

@@ -45,7 +45,9 @@ pub fn run() {
             commands::init_data_dir,
             // Uteke Integration
             commands::uteke_available,
+            commands::uteke_get,
             commands::uteke_list,
+            commands::uteke_namespaces,
             commands::uteke_search,
             commands::uteke_stats,
         ])
