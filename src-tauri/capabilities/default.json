@@ -1,9 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for Lontar",
+  "description": "Default permissions for Codecora Hub",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:allow-open",
+    "shell:allow-open"
   ]
 }
