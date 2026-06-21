@@ -17,6 +17,11 @@
   let loading = $state(true);
 
   onMount(async () => {
+    await loadData();
+  });
+
+  async function loadData() {
+    loading = true;
     try {
       stats = await system.stats();
       recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 });
@@ -25,6 +30,12 @@
     } finally {
       loading = false;
     }
+  }
+
+  // Reload when namespace changes
+  $effect(() => {
+    namespace;
+    loadData();
   });
 
   function formatBytes(bytes: number): string {

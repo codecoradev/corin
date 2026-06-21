@@ -57,16 +57,26 @@
         .filter((t) => t.length > 0);
 
       if (memory) {
-        // Edit existing — delete and re-create (Phase 1 has no update command)
-        await memoryApi.forget(memory.id);
-      }
+        // Edit existing: create new first, then delete old (avoid data loss on failure)
+        const newId = await memoryApi.remember(content, {
+          tags,
+          content_type: contentType,
+          importance,
+          namespace: ns || undefined,
+        });
 
-      await memoryApi.remember(content, {
-        tags,
-        content_type: contentType,
-        importance,
-        namespace: ns || undefined,
-      });
+        // Only delete old after successful creation
+        if (newId) {
+          await memoryApi.forget(memory.id);
+        }
+      } else {
+        await memoryApi.remember(content, {
+          tags,
+          content_type: contentType,
+          importance,
+          namespace: ns || undefined,
+        });
+      }
 
       onsave();
     } catch (e: unknown) {

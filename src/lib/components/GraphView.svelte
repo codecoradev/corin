@@ -14,6 +14,11 @@
   let loading = $state(true);
 
   onMount(async () => {
+    await loadData();
+  });
+
+  async function loadData() {
+    loading = true;
     try {
       data = await graphApi.getData({ namespace: namespace ?? undefined, limit: 200 });
     } catch {
@@ -21,6 +26,12 @@
     } finally {
       loading = false;
     }
+  }
+
+  // Reload when namespace changes
+  $effect(() => {
+    namespace;
+    loadData();
   });
 
   // Simple canvas force-directed graph (Phase 1 minimal)

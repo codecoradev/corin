@@ -31,6 +31,12 @@
 
   onMount(load);
 
+  // Reload when memoryId changes
+  $effect(() => {
+    memoryId;
+    load();
+  });
+
   async function handleDelete() {
     await memoryApi.forget(memoryId);
     onback();
