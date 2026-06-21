@@ -999,7 +999,6 @@ pub async fn import_data(
 
     // Import edges if present
     if let Some(edges) = parsed.get("edges").and_then(|v| v.as_array()) {
-        let now = chrono::Utc::now().to_rfc3339();
         for e in edges {
             let source = e
                 .get("source")
@@ -1015,9 +1014,27 @@ pub async fn import_data(
                 continue;
             }
             let weight = e.get("weight").and_then(|v| v.as_f64()).map(|f| f as f32);
+            let created_at = e
+                .get("created_at")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+            // Skip if edge with same source+target already exists (dedup)
+            let exists: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source = ?1 AND target = ?2)",
+                    rusqlite::params![source, target],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+            if exists {
+                continue;
+            }
+
             conn.execute(
                 "INSERT INTO graph_edges (source, target, weight, created_at) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![source, target, weight, now],
+                rusqlite::params![source, target, weight, created_at],
             )
             .map_err(|err| CommandError::Uteke(err.to_string()))?;
         }
