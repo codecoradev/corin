@@ -1,7 +1,7 @@
 <script lang="ts">
   import './app.css';
   import { onMount } from 'svelte';
-  import { system } from './lib/ts/ipc';
+  import { system, uteke } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
@@ -37,7 +37,13 @@
 
   async function loadNamespaces() {
     try {
-      namespaces = await system.listNamespaces();
+      // Merge namespaces from Hub DB + Uteke DB (if available)
+      const hubNs = await system.listNamespaces().catch(() => []);
+      let utekeNs: string[] = [];
+      if (await uteke.available().catch(() => false)) {
+        utekeNs = await uteke.namespaces().catch(() => []);
+      }
+      namespaces = [...new Set([...hubNs, ...utekeNs])].sort();
     } catch {
       namespaces = [];
     }
@@ -149,7 +155,7 @@
       {:else if activeView === 'graph'}
         <GraphView {namespace} onmemoryclick={selectMemory} />
       {:else if activeView === 'rooms'}
-        <RoomsView {namespace} oncreateroom={newMemory} />
+        <RoomsView {namespace} onmemoryclick={selectMemory} />
       {:else if activeView === 'settings'}
         <SettingsView />
       {/if}

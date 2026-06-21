@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { memory as memoryApi, graph } from '../ts/ipc';
+  import { memory as memoryApi, graph, uteke } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -19,8 +19,13 @@
   async function load() {
     loading = true;
     try {
-      memory = await memoryApi.get(memoryId);
-      neighbors = await graph.getNeighbors(memoryId, 1);
+      // Try Hub DB first, fallback to Uteke
+      try {
+        memory = await memoryApi.get(memoryId);
+      } catch {
+        memory = await uteke.get(memoryId);
+      }
+      neighbors = await graph.getNeighbors(memoryId, 1).catch(() => []);
     } catch {
       memory = null;
     } finally {
