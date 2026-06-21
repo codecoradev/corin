@@ -133,8 +133,10 @@ pub fn link_uteke() -> Result<Option<PathBuf>, ConfigError> {
         {
             return Ok(Some(uteke_path));
         }
-        // Wrong target — remove and recreate
-        fs::remove_file(&symlink).map_err(|e| ConfigError::Io(e.to_string()))?;
+        // Wrong target — remove and recreate.
+        // Use remove_dir for directory symlinks on Windows,
+        // remove_file for file symlinks on Unix.
+        let _ = fs::remove_file(&symlink).or_else(|_| fs::remove_dir(&symlink));
     }
 
     // Create symlink
