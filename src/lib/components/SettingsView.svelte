@@ -1,11 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { system } from '../ts/ipc';
+  import { system, updater } from '../ts/ipc';
+  import type { Update } from '@tauri-apps/plugin-updater';
 
   let settings = $state<Record<string, string>>({});
   let loading = $state(true);
   let saving = $state(false);
   let savedMsg = $state(false);
+  let checkingUpdates = $state(false);
+  let installingUpdate = $state(false);
+  let updateStatus = $state<string | null>(null);
+  let pendingUpdate: Update | null = $state(null);
 
   // Editable local copies
   let theme = $state('catppuccin-mocha');
@@ -57,6 +62,41 @@
       URL.revokeObjectURL(url);
     } catch {
       // ignore
+    }
+  }
+
+  async function checkForUpdates() {
+    checkingUpdates = true;
+    updateStatus = null;
+    pendingUpdate = null;
+    try {
+      const update = await updater.check();
+      if (update) {
+        pendingUpdate = update;
+        updateStatus = `Update available: v${update.version}`;
+      } else {
+        updateStatus = 'Up to date ✅';
+      }
+    } catch (e: unknown) {
+      updateStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      checkingUpdates = false;
+    }
+  }
+
+  async function installUpdate() {
+    if (!pendingUpdate) return;
+    installingUpdate = true;
+    updateStatus = 'Downloading and installing...';
+    try {
+      await pendingUpdate.downloadAndInstall();
+      updateStatus = 'Update installed. Restarting...';
+      await new Promise((r) => setTimeout(r, 1500));
+      await import('@tauri-apps/plugin-process').then((m) => m.relaunch());
+    } catch (e: unknown) {
+      updateStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      installingUpdate = false;
     }
   }
 </script>
@@ -112,6 +152,23 @@
       <div class="about-info">
         <p><strong>Codecora Hub</strong> v0.1.0</p>
         <p>Desktop knowledge workstation powered by codecora.dev</p>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Updates</h3>
+      <div class="update-section">
+        <button class="data-btn" onclick={checkForUpdates} disabled={checkingUpdates}>
+          {checkingUpdates ? 'Checking...' : '↻ Check for Updates'}
+        </button>
+        {#if updateStatus}
+          <p class="update-msg" class:ok={updateStatus.startsWith('Up to date')} class:err={updateStatus.startsWith('Error')}>{updateStatus}</p>
+        {/if}
+        {#if pendingUpdate}
+          <button class="install-btn" onclick={installUpdate} disabled={installingUpdate}>
+            {installingUpdate ? 'Installing...' : '↓ Install Update'}
+          </button>
+        {/if}
       </div>
     </div>
   {/if}
@@ -215,6 +272,41 @@
     color: var(--text-muted);
     font-size: 0.85rem;
     line-height: 1.6;
+  }
+
+  .update-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .update-msg {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .update-msg.ok {
+    color: var(--green);
+  }
+
+  .update-msg.err {
+    color: var(--red);
+  }
+
+  .install-btn {
+    padding: 8px 16px;
+    background: var(--green);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+
+  .install-btn:disabled {
+    opacity: 0.5;
   }
 
   .loading {
