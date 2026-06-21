@@ -1,14 +1,17 @@
 pub mod commands;
+pub mod config;
 pub mod uteke_adapter;
 
-use commands::AppState;
 use std::sync::Arc;
+
 use tauri::Manager;
 use tokio::sync::Mutex;
 
+use commands::AppState;
+use config::init_environment;
+
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Arc::new(Mutex::new(AppState::default())))
         .invoke_handler(tauri::generate_handler![
@@ -37,7 +40,7 @@ pub fn run() {
             commands::set_settings,
             commands::export_data,
             commands::import_data,
-            commands::open_data_dir,
+            commands::init_data_dir,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -45,8 +48,72 @@ pub fn run() {
                 let window = app.get_webview_window("main").unwrap();
                 window.open_devtools();
             }
+
+            // Auto-initialize Codecora environment on startup (synchronous)
+            // Creates ~/.codecora/ structure and opens Hub database
+            match init_environment() {
+                Ok((db_path, _config)) => {
+                    match rusqlite::Connection::open(&db_path) {
+                        Ok(conn) => {
+                            if let Err(e) = init_schema(&conn) {
+                                eprintln!("Failed to init schema: {e}");
+                            }
+                            // Store in managed state
+                            let state = app.state::<Arc<Mutex<AppState>>>();
+                            let state = state.clone();
+                            // Use blocking lock since this runs before the event loop
+                            let mut s = state.blocking_lock();
+                            s.data_dir = config::hub_dir().ok();
+                            s.db_path = Some(db_path);
+                            s.conn = Some(conn);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to open database: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to init Codecora environment: {e}");
+                }
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Initialize the SQLite schema for Hub database.
+fn init_schema(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memories (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            tags TEXT DEFAULT '[]',
+            content_type TEXT,
+            importance REAL,
+            namespace TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS graph_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            target TEXT NOT NULL,
+            edge_type TEXT DEFAULT 'related',
+            weight REAL DEFAULT 1.0,
+            created_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace);
+        CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_edges_source ON graph_edges(source);
+        CREATE INDEX IF NOT EXISTS idx_edges_target ON graph_edges(target);
+        ",
+    )?;
+    Ok(())
 }
