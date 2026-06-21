@@ -1,62 +1,188 @@
 <script lang="ts">
   import './app.css';
   import { onMount } from 'svelte';
-  import { getUiStore } from './lib/stores/ui.svelte';
   import { system } from './lib/ts/ipc';
+  import type { View, MemoryEntry } from './lib/ts/types';
+  import Sidebar from './lib/components/Sidebar.svelte';
+  import Dashboard from './lib/components/Dashboard.svelte';
+  import MemoryList from './lib/components/MemoryList.svelte';
+  import MemoryDetail from './lib/components/MemoryDetail.svelte';
+  import MemoryEditor from './lib/components/MemoryEditor.svelte';
+  import GraphView from './lib/components/GraphView.svelte';
+  import RoomsView from './lib/components/RoomsView.svelte';
+  import SettingsView from './lib/components/SettingsView.svelte';
 
-  const ui = getUiStore();
+  // App state
+  let dataDirInitialized = $state(false);
+  let dataDir = $state<string | null>(null);
+  let activeView = $state<View>('dashboard');
+  let selectedMemoryId = $state<string | null>(null);
+  let sidebarCollapsed = $state(false);
+  let namespace = $state<string | null>(null);
+  let namespaces = $state<string[]>([]);
+  let showEditor = $state(false);
+  let editorMemory = $state<MemoryEntry | null>(null);
+  let searchQuery = $state<string | null>(null);
+
+  async function openDataDir() {
+    try {
+      const dir = await system.openDataDir();
+      dataDir = dir;
+      dataDirInitialized = true;
+      await loadNamespaces();
+    } catch (e) {
+      console.error('Failed to open data dir:', e);
+    }
+  }
+
+  async function loadNamespaces() {
+    try {
+      namespaces = await system.listNamespaces();
+    } catch {
+      namespaces = [];
+    }
+  }
+
+  function navigate(view: View) {
+    activeView = view;
+    selectedMemoryId = null;
+    searchQuery = null;
+  }
+
+  function selectMemory(id: string) {
+    selectedMemoryId = id;
+  }
+
+  function newMemory() {
+    editorMemory = null;
+    showEditor = true;
+  }
+
+  function editMemory(m: MemoryEntry) {
+    editorMemory = m;
+    showEditor = true;
+  }
+
+  function closeEditor() {
+    showEditor = false;
+    editorMemory = null;
+  }
+
+  function handleSave() {
+    showEditor = false;
+    editorMemory = null;
+    // Trigger re-render by toggling a state
+    if (activeView === 'dashboard' || activeView === 'memories') {
+      refreshKey++;
+    }
+  }
+
+  let refreshKey = $state(0);
+
+  function quickSearch(query: string) {
+    searchQuery = query;
+    activeView = 'memories';
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    // Ctrl+B: toggle sidebar
+    if (e.ctrlKey && e.key === 'b') {
+      e.preventDefault();
+      sidebarCollapsed = !sidebarCollapsed;
+    }
+    // Ctrl+N: new memory (only if not already in editor)
+    if (e.ctrlKey && e.key === 'n' && !showEditor) {
+      e.preventDefault();
+      newMemory();
+    }
+  }
 
   onMount(async () => {
-    // Check if we have a persisted data dir
-    // Phase 1: user must pick a data directory on first launch
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
   });
 </script>
 
-<div class="app">
-  {#if !ui.dataDirInitialized}
-    <div class="welcome-screen">
-      <div class="welcome-content">
-        <h1>Codecora Hub</h1>
-        <p>Desktop knowledge workstation powered by Uteke</p>
-        <button class="primary-btn" onclick={async () => {
-          try {
-            const dir = await system.openDataDir();
-            ui.dataDir = dir;
-            ui.dataDirInitialized = true;
-          } catch (e) {
-            console.error('Failed to open data dir:', e);
-          }
-        }}>
-          Open Data Directory
-        </button>
-        <p class="hint">Select or create a folder for your knowledge base.</p>
-      </div>
+{#if !dataDirInitialized}
+  <div class="welcome-screen">
+    <div class="welcome-content">
+      <div class="logo">◆</div>
+      <h1>Codecora Hub</h1>
+      <p>Desktop knowledge workstation powered by Uteke</p>
+      <button class="primary-btn" onclick={openDataDir}>Open Data Directory</button>
+      <p class="hint">Select or create a folder for your knowledge base.</p>
     </div>
-  {:else}
-    <!-- Main app layout will go here -->
-    <div class="main-layout">
-      <div class="placeholder">
-        <p>📊 Dashboard coming soon</p>
-      </div>
-    </div>
-  {/if}
-</div>
+  </div>
+{:else}
+  <div class="app-layout">
+    <Sidebar
+      activeView={activeView}
+      {namespace}
+      {namespaces}
+      collapsed={sidebarCollapsed}
+      onnavigate={navigate}
+      onnamespacechange={(ns) => {
+        namespace = ns;
+      }}
+      onnewmemory={newMemory}
+      oncollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+    />
+
+    <main class="main-content">
+      {#if selectedMemoryId}
+        <MemoryDetail
+          memoryId={selectedMemoryId}
+          onedit={editMemory}
+          onback={() => (selectedMemoryId = null)}
+          onneighborclick={selectMemory}
+        />
+      {:else if activeView === 'dashboard'}
+        <Dashboard {namespace} onmemoryclick={selectMemory} onquicksearch={quickSearch} />
+      {:else if activeView === 'memories'}
+        {#key refreshKey}
+          <MemoryList {namespace} onmemoryclick={selectMemory} onnewmemory={newMemory} />
+        {/key}
+      {:else if activeView === 'graph'}
+        <GraphView {namespace} onmemoryclick={selectMemory} />
+      {:else if activeView === 'rooms'}
+        <RoomsView {namespace} oncreateroom={newMemory} />
+      {:else if activeView === 'settings'}
+        <SettingsView />
+      {/if}
+    </main>
+  </div>
+{/if}
+
+{#if showEditor}
+  <MemoryEditor
+    memory={editorMemory}
+    {namespace}
+    onsave={handleSave}
+    onclose={closeEditor}
+  />
+{/if}
 
 <style>
-  .app {
+  .app-layout {
+    display: flex;
     width: 100%;
     height: 100vh;
-    display: flex;
-    background: var(--bg-primary, #0e0e12);
-    color: var(--text-primary, #cdd6f4);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-primary);
   }
 
   .welcome-screen {
-    flex: 1;
+    width: 100%;
+    height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: var(--bg-primary);
   }
 
   .welcome-content {
@@ -64,22 +190,28 @@
     max-width: 400px;
   }
 
+  .logo {
+    font-size: 3rem;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
   .welcome-content h1 {
     font-size: 2rem;
     font-weight: 700;
     margin-bottom: 0.5rem;
-    color: var(--accent, #89b4fa);
+    color: var(--accent);
   }
 
   .welcome-content p {
-    color: var(--text-muted, #6c7086);
+    color: var(--text-muted);
     margin-bottom: 1.5rem;
   }
 
   .primary-btn {
     padding: 10px 24px;
-    background: var(--accent, #89b4fa);
-    color: var(--bg-primary, #0e0e12);
+    background: var(--accent);
+    color: var(--bg-primary);
     border: none;
     border-radius: 6px;
     font-size: 0.95rem;
@@ -94,21 +226,6 @@
 
   .hint {
     font-size: 0.8rem;
-    margin-top: 0.75rem !important;
-  }
-
-  .main-layout {
-    flex: 1;
-    display: flex;
-    overflow: hidden;
-  }
-
-  .placeholder {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted, #6c7086);
-    font-size: 1.2rem;
+    margin-top: 0.75rem;
   }
 </style>
