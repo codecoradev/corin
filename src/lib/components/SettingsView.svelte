@@ -111,7 +111,7 @@
       <h3>About</h3>
       <div class="about-info">
         <p><strong>Codecora Hub</strong> v0.1.0</p>
-        <p>Desktop knowledge workstation powered by Uteke</p>
+        <p>Desktop knowledge workstation powered by codecora.dev</p>
       </div>
     </div>
   {/if}

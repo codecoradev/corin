@@ -24,14 +24,14 @@
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
 
-  async function openDataDir() {
+  async function initDataDir() {
     try {
       const dir = await system.openDataDir();
       dataDir = dir;
       dataDirInitialized = true;
       await loadNamespaces();
     } catch (e) {
-      console.error('Failed to open data dir:', e);
+      console.error('Failed to init data dir:', e);
     }
   }
 
@@ -99,6 +99,10 @@
 
   onMount(async () => {
     window.addEventListener('keydown', handleKeydown);
+    // Auto-init data directory on startup
+    // setup() hook in lib.rs already initializes ~/.codecora/
+    // This call just ensures the connection is stored in state
+    await initDataDir();
     return () => window.removeEventListener('keydown', handleKeydown);
   });
 </script>
@@ -108,9 +112,9 @@
     <div class="welcome-content">
       <div class="logo">◆</div>
       <h1>Codecora Hub</h1>
-      <p>Desktop knowledge workstation powered by Uteke</p>
-      <button class="primary-btn" onclick={openDataDir}>Open Data Directory</button>
-      <p class="hint">Select or create a folder for your knowledge base.</p>
+      <p>Desktop knowledge workstation powered by codecora.dev</p>
+      <button class="primary-btn" onclick={initDataDir}>Initialize Workspace</button>
+      <p class="hint">Data will be stored in <code>~/.codecora/hub/</code></p>
     </div>
   </div>
 {:else}
@@ -227,5 +231,14 @@
   .hint {
     font-size: 0.8rem;
     margin-top: 0.75rem;
+  }
+
+  .hint code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    color: var(--accent);
   }
 </style>

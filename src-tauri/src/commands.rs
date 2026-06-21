@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -1090,71 +1089,61 @@ fn export_all_edges(conn: &rusqlite::Connection) -> Result<Vec<GraphEdge>, Comma
 }
 
 #[tauri::command]
-pub async fn open_data_dir(
-    app: AppHandle,
+pub async fn init_data_dir(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<String, CommandError> {
-    // Use dialog to pick or create data directory
-    use tauri_plugin_dialog::DialogExt;
+    let mut s = state.lock().await;
 
-    let dir = app
-        .dialog()
-        .file()
-        .set_parent(&app.get_webview_window("main").unwrap())
-        .blocking_pick_folder();
-
-    match dir {
-        Some(path) => {
-            let data_dir = path
-                .into_path()
-                .map_err(|e| CommandError::Io(e.to_string()))?;
-            let db_path = data_dir.join("uteke.db");
-
-            // Initialize SQLite database
-            let conn = rusqlite::Connection::open(&db_path)
-                .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-            // Create tables if not exist
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS memories (
-                    id TEXT PRIMARY KEY,
-                    content TEXT NOT NULL,
-                    tags TEXT DEFAULT '[]',
-                    content_type TEXT,
-                    importance REAL,
-                    namespace TEXT,
-                    created_at TEXT,
-                    updated_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS graph_edges (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source TEXT NOT NULL,
-                    target TEXT NOT NULL,
-                    edge_type TEXT DEFAULT 'related',
-                    weight REAL DEFAULT 1.0,
-                    created_at TEXT
-                );
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace);
-                CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
-                CREATE INDEX IF NOT EXISTS idx_edges_source ON graph_edges(source);
-                CREATE INDEX IF NOT EXISTS idx_edges_target ON graph_edges(target);
-                ",
-            )
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-            let dir_str = data_dir.to_string_lossy().to_string();
-            let mut s = state.lock().await;
-            s.data_dir = Some(data_dir);
-            s.db_path = Some(db_path);
-            s.conn = Some(conn);
-
-            Ok(dir_str)
-        }
-        None => Err(CommandError::Io("No directory selected".to_string())),
+    // If already initialized, return existing path
+    if let Some(ref dir) = s.data_dir {
+        return Ok(dir.to_string_lossy().to_string());
     }
+
+    // Auto-initialize ~/.codecora/ environment
+    let (db_path, _config) =
+        crate::config::init_environment().map_err(|e| CommandError::Io(e.to_string()))?;
+
+    let conn =
+        rusqlite::Connection::open(&db_path).map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Ensure schema exists (same as setup hook in lib.rs)
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memories (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            tags TEXT DEFAULT '[]',
+            content_type TEXT,
+            importance REAL,
+            namespace TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS graph_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            target TEXT NOT NULL,
+            edge_type TEXT DEFAULT 'related',
+            weight REAL DEFAULT 1.0,
+            created_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace);
+        CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_edges_source ON graph_edges(source);
+        CREATE INDEX IF NOT EXISTS idx_edges_target ON graph_edges(target);
+        ",
+    )
+    .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let hub_dir = crate::config::hub_dir().map_err(|e| CommandError::Io(e.to_string()))?;
+
+    s.data_dir = Some(hub_dir.clone());
+    s.db_path = Some(db_path);
+    s.conn = Some(conn);
+
+    Ok(hub_dir.to_string_lossy().to_string())
 }
