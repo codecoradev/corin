@@ -37,17 +37,36 @@ export const graph = {
     invoke<GraphData>('get_graph_data', { namespace: opts?.namespace ?? null, limit: opts?.limit ?? null }),
   getNeighbors: (id: string, depth?: number) =>
     invoke<MemoryEntry[]>('get_neighbors', { id, depth: depth ?? null }),
+  addEdge: (source: string, target: string, opts?: { edgeType?: string; weight?: number }) =>
+    invoke<number>('add_edge', {
+      source,
+      target,
+      edge_type: opts?.edgeType ?? null,
+      weight: opts?.weight ?? null,
+    }),
+  removeEdge: (id: number) => invoke<void>('remove_edge', { id }),
 };
 
 export const room = {
   list: () => invoke<RoomEntry[]>('list_rooms'),
   getSummary: (id: string) => invoke<string>('get_room_summary', { room_id: id }),
+  getDocument: (id: string) => invoke<string>('get_room_document', { room_id: id }),
+  create: (name: string, opts?: { namespace?: string; tags?: string[] }) =>
+    invoke<string>('create_room', {
+      name,
+      namespace: opts?.namespace ?? null,
+      tags: opts?.tags ?? null,
+    }),
 };
 
 export const system = {
   stats: () => invoke<StatsResponse>('stats'),
   listNamespaces: () => invoke<string[]>('list_namespaces'),
   listTags: (namespace?: string) => invoke<Record<string, number>>('list_tags', { namespace: namespace ?? null }),
+  getSettings: () => invoke<Record<string, string>>('get_settings'),
+  setSettings: (settings: Record<string, string>) => invoke<void>('set_settings', { settings }),
+  exportData: (format: 'json' | 'markdown') => invoke<string>('export_data', { format }),
+  importData: (data: string) => invoke<number>('import_data', { data }),
   openDataDir: () => invoke<string>('open_data_dir'),
 };
 

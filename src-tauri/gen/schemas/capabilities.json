@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default permissions for Lontar","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default permissions for Codecora Hub","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open"]}}

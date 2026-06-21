@@ -22,13 +22,21 @@ pub fn run() {
             // Graph
             commands::get_graph_data,
             commands::get_neighbors,
+            commands::add_edge,
+            commands::remove_edge,
             // Room
             commands::list_rooms,
             commands::get_room_summary,
+            commands::create_room,
+            commands::get_room_document,
             // System
             commands::stats,
             commands::list_namespaces,
             commands::list_tags,
+            commands::get_settings,
+            commands::set_settings,
+            commands::export_data,
+            commands::import_data,
             commands::open_data_dir,
         ])
         .setup(|app| {
