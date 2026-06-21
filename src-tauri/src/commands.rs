@@ -62,6 +62,7 @@ pub struct SearchResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphEdge {
+    pub id: Option<i64>,
     pub source: String,
     pub target: String,
     pub weight: Option<f32>,
@@ -369,7 +370,7 @@ pub async fn get_graph_data(
     if node_ids.len() > 1 {
         let placeholders = node_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql_edges = format!(
-            "SELECT source, target, weight FROM graph_edges WHERE source IN ({0}) AND target IN ({0})",
+            "SELECT id, source, target, weight FROM graph_edges WHERE source IN ({0}) AND target IN ({0})",
             placeholders
         );
         let edge_params: Vec<Box<dyn rusqlite::types::ToSql>> = node_ids
@@ -385,9 +386,10 @@ pub async fn get_graph_data(
         edges = stmt_e
             .query_map(edge_param_refs.as_slice(), |row| {
                 Ok(GraphEdge {
-                    source: row.get(0)?,
-                    target: row.get(1)?,
-                    weight: row.get(2)?,
+                    id: row.get(0)?,
+                    source: row.get(1)?,
+                    target: row.get(2)?,
+                    weight: row.get(3)?,
                 })
             })
             .map_err(|e| CommandError::Uteke(e.to_string()))?
@@ -974,14 +976,51 @@ pub async fn import_data(
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let now = chrono::Utc::now().to_rfc3339();
+        // Preserve original timestamps if present, otherwise use now
+        let created_at = m
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| now.clone());
+        let updated_at = m
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| now.clone());
 
         conn.execute(
             "INSERT OR REPLACE INTO memories (id, content, tags, content_type, importance, namespace, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, content, tags_json, content_type, importance, namespace, now, now],
+            rusqlite::params![id, content, tags_json, content_type, importance, namespace, created_at, updated_at],
         )
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
         count += 1;
+    }
+
+    // Import edges if present
+    if let Some(edges) = parsed.get("edges").and_then(|v| v.as_array()) {
+        let now = chrono::Utc::now().to_rfc3339();
+        for e in edges {
+            let source = e
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let target = e
+                .get("target")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if source.is_empty() || target.is_empty() {
+                continue;
+            }
+            let weight = e.get("weight").and_then(|v| v.as_f64()).map(|f| f as f32);
+            conn.execute(
+                "INSERT INTO graph_edges (source, target, weight, created_at) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![source, target, weight, now],
+            )
+            .map_err(|err| CommandError::Uteke(err.to_string()))?;
+        }
     }
 
     Ok(count)
@@ -1016,14 +1055,15 @@ fn export_all_memories(conn: &rusqlite::Connection) -> Result<Vec<MemoryEntry>, 
 /// Helper: fetch all edges for export.
 fn export_all_edges(conn: &rusqlite::Connection) -> Result<Vec<GraphEdge>, CommandError> {
     let mut stmt = conn
-        .prepare("SELECT source, target, weight FROM graph_edges")
+        .prepare("SELECT id, source, target, weight FROM graph_edges")
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     let edges = stmt
         .query_map([], |row| {
             Ok(GraphEdge {
-                source: row.get(0)?,
-                target: row.get(1)?,
-                weight: row.get(2)?,
+                id: row.get(0)?,
+                source: row.get(1)?,
+                target: row.get(2)?,
+                weight: row.get(3)?,
             })
         })
         .map_err(|e| CommandError::Uteke(e.to_string()))?

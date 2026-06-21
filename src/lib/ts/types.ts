@@ -20,6 +20,7 @@ export interface SearchResult {
 
 // Graph edge
 export interface GraphEdge {
+  id: number | null;
   source: string;
   target: string;
   weight: number | null;
