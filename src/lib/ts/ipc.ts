@@ -79,3 +79,22 @@ import { check } from '@tauri-apps/plugin-updater';
 export const updater = {
   check: () => check(),
 };
+
+// Uteke Integration (read-only)
+export const uteke = {
+  available: () => invoke<boolean>('uteke_available'),
+  list: (opts?: { namespace?: string; tag?: string; limit?: number; offset?: number }) =>
+    invoke<MemoryEntry[]>('uteke_list', {
+      namespace: opts?.namespace ?? null,
+      tag: opts?.tag ?? null,
+      limit: opts?.limit ?? null,
+      offset: opts?.offset ?? null,
+    }),
+  search: (query: string, opts?: { namespace?: string; limit?: number }) =>
+    invoke<SearchResult[]>('uteke_search', {
+      query,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
+  stats: () => invoke<StatsResponse>('uteke_stats'),
+};

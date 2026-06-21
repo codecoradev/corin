@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { system, memory as memoryApi } from '../ts/ipc';
+  import { system, memory as memoryApi, uteke } from '../ts/ipc';
   import type { StatsResponse, MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -14,12 +14,30 @@
   let recent = $state<MemoryEntry[]>([]);
   let searchQuery = $state('');
   let loading = $state(true);
+  let utekeReady = $state(false);
+  let utekeStats = $state<StatsResponse | null>(null);
 
   async function loadData() {
     loading = true;
     try {
-      stats = await system.stats();
-      recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 });
+      // Check if Uteke is available and merge data
+      utekeReady = await uteke.available();
+
+      if (utekeReady) {
+        // Read from Uteke DB (has actual data)
+        utekeStats = await uteke.stats();
+        recent = await uteke.list({ namespace: namespace ?? undefined, limit: 10 });
+        // Also get Hub stats for local data
+        try {
+          stats = await system.stats();
+        } catch {
+          stats = utekeStats;
+        }
+      } else {
+        // Fallback to Hub DB only
+        stats = await system.stats();
+        recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 });
+      }
     } catch {
       // store not initialized yet
     } finally {
@@ -58,26 +76,49 @@
     <div class="loading">Loading...</div>
   {:else}
     <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-value">{stats?.total_memories ?? 0}</div>
-        <div class="stat-label">Memories</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
-        <div class="stat-label">Namespaces</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{stats?.total_tags ?? 0}</div>
-        <div class="stat-label">Tags</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{stats?.total_edges ?? 0}</div>
-        <div class="stat-label">Edges</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
-        <div class="stat-label">DB Size</div>
-      </div>
+      {#if utekeReady && utekeStats}
+        <div class="stat-card uteke-badge">
+          <div class="stat-value">{utekeStats.total_memories}</div>
+          <div class="stat-label">Uteke Memories</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{stats?.total_memories ?? 0}</div>
+          <div class="stat-label">Hub Memories</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{(utekeStats?.total_namespaces ?? 0) + (stats?.total_namespaces ?? 0)}</div>
+          <div class="stat-label">Namespaces</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{(utekeStats?.total_tags ?? 0) + (stats?.total_tags ?? 0)}</div>
+          <div class="stat-label">Tags</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{formatBytes((utekeStats?.db_size_bytes ?? 0) + (stats?.db_size_bytes ?? 0))}</div>
+          <div class="stat-label">Total DB Size</div>
+        </div>
+      {:else}
+        <div class="stat-card">
+          <div class="stat-value">{stats?.total_memories ?? 0}</div>
+          <div class="stat-label">Memories</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
+          <div class="stat-label">Namespaces</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{stats?.total_tags ?? 0}</div>
+          <div class="stat-label">Tags</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{stats?.total_edges ?? 0}</div>
+          <div class="stat-label">Edges</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
+          <div class="stat-label">DB Size</div>
+        </div>
+      {/if}
     </div>
 
     <div class="recent-section">
@@ -180,6 +221,14 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     margin-top: 4px;
+  }
+
+  .uteke-badge {
+    border-color: var(--teal);
+  }
+
+  .uteke-badge .stat-value {
+    color: var(--teal);
   }
 
   .recent-section h2 {

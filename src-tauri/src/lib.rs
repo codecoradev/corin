@@ -43,6 +43,11 @@ pub fn run() {
             commands::export_data,
             commands::import_data,
             commands::init_data_dir,
+            // Uteke Integration
+            commands::uteke_available,
+            commands::uteke_list,
+            commands::uteke_search,
+            commands::uteke_stats,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -68,6 +73,24 @@ pub fn run() {
                             s.data_dir = config::hub_dir().ok();
                             s.db_path = Some(db_path);
                             s.conn = Some(conn);
+
+                            // Open read-only connection to Uteke DB if available
+                            if let Some(uteke_path) = config::detect_uteke() {
+                                let uteke_db = uteke_path.join("uteke.db");
+                                match rusqlite::Connection::open_with_flags(
+                                    &uteke_db,
+                                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                                        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                                ) {
+                                    Ok(uteke_conn) => {
+                                        s.uteke_db_path = Some(uteke_db);
+                                        s.uteke_conn = Some(uteke_conn);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to open Uteke DB: {e}");
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");

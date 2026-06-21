@@ -101,11 +101,15 @@ pub struct StatsResponse {
 /// Phase 2: uteke-core library dep for full embedding + graph.
 #[derive(Default)]
 pub struct AppState {
-    /// Path to the SQLite database (uteke data directory).
+    /// Path to the Hub SQLite database (~/.codecora/hub/hub.db).
     pub db_path: Option<PathBuf>,
-    /// In-memory SQLite connection for uteke operations.
+    /// Hub SQLite connection for Hub-native operations.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
+    /// Path to Uteke database (~/.uteke/uteke.db via symlink).
+    pub uteke_db_path: Option<PathBuf>,
+    /// Read-only connection to Uteke database (None if not installed).
+    pub uteke_conn: Option<rusqlite::Connection>,
 }
 
 impl AppState {
@@ -694,6 +698,248 @@ pub async fn get_room_document(
     }
 
     Ok(doc)
+}
+
+// ---------------------------------------------------------------------------
+// Commands: Uteke Integration (read-only)
+// ---------------------------------------------------------------------------
+
+/// Check if Uteke database is available.
+#[tauri::command]
+pub async fn uteke_available(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+) -> Result<bool, CommandError> {
+    let s = state.lock().await;
+    Ok(s.uteke_conn.is_some())
+}
+
+/// List memories from Uteke database (read-only).
+///
+/// Queries the Uteke DB through the symlink at ~/.codecora/uteke/.
+/// Falls back to Hub DB if Uteke is not installed.
+#[tauri::command]
+pub async fn uteke_list(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    tag: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let mut s = state.lock().await;
+
+    let conn = s.uteke_conn.as_mut().ok_or(CommandError::Uteke(
+        "Uteke not installed. Install from https://github.com/codecoradev/uteke".to_string(),
+    ))?;
+
+    let limit = limit.unwrap_or(50) as i64;
+    let offset = offset.unwrap_or(0) as i64;
+
+    let mut sql = String::from(
+        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
+         FROM memories WHERE deprecated = 0",
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(ref ns) = namespace {
+        sql.push_str(" AND namespace = ?");
+        params.push(Box::new(ns.clone()));
+    }
+    if let Some(ref t) = tag {
+        sql.push_str(" AND tags LIKE ?");
+        params.push(Box::new(format!("%\"{}\"%", t)));
+    }
+
+    sql.push_str(" ORDER BY updated_at DESC LIMIT ? OFFSET ?");
+    params.push(Box::new(limit));
+    params.push(Box::new(offset));
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let results = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(MemoryEntry {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                tags,
+                content_type: row.get(3)?,
+                importance: row.get(4)?,
+                namespace: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(results)
+}
+
+/// Search memories in Uteke database using FTS5.
+#[tauri::command]
+pub async fn uteke_search(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    query: String,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<SearchResult>, CommandError> {
+    let mut s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_mut()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let limit = limit.unwrap_or(10) as i64;
+
+    // Try FTS5 first (Uteke has memories_fts table)
+    let mut sql = String::from(
+        "SELECT m.id, m.content, m.tags, bm25(memories_fts) as score
+         FROM memories_fts
+         JOIN memories m ON m.rowid = memories_fts.rowid
+         WHERE memories_fts MATCH ? AND m.deprecated = 0",
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(query.clone())];
+
+    if let Some(ref ns) = namespace {
+        sql.push_str(" AND m.namespace = ?");
+        params.push(Box::new(ns.clone()));
+    }
+
+    sql.push_str(" ORDER BY score LIMIT ?");
+    params.push(Box::new(limit));
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let fts_result = conn.prepare(&sql);
+
+    match fts_result {
+        Ok(mut stmt) => {
+            let results: Vec<SearchResult> = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                    let score: f64 = row.get(3).unwrap_or(0.0);
+                    Ok(SearchResult {
+                        id: row.get(0)?,
+                        content: row.get(1)?,
+                        score: score as f32,
+                        tags,
+                    })
+                })
+                .map_err(|e| CommandError::Uteke(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            if !results.is_empty() {
+                return Ok(results);
+            }
+        }
+        Err(e) => {
+            eprintln!("FTS5 query failed, falling back to LIKE: {e}");
+        }
+    }
+
+    // Fallback to LIKE search
+    let pattern = format!("%{}%", query);
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, content, tags FROM memories
+                     WHERE content LIKE ? AND deprecated = 0
+                     ORDER BY updated_at DESC LIMIT ?",
+        )
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let results = stmt
+        .query_map(rusqlite::params![pattern, limit], |row| {
+            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(SearchResult {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                score: 0.0,
+                tags,
+            })
+        })
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(results)
+}
+
+/// Get Uteke stats.
+#[tauri::command]
+pub async fn uteke_stats(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+) -> Result<StatsResponse, CommandError> {
+    let s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_ref()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let total_memories: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM memories WHERE deprecated = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let total_namespaces: i64 = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT namespace) FROM memories WHERE deprecated = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let total_edges: i64 = conn
+        .query_row("SELECT COUNT(*) FROM memory_edges", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    // Count unique tags
+    let tags_str: String = conn
+        .query_row(
+            "SELECT GROUP_CONCAT(tags) FROM memories WHERE tags IS NOT NULL AND deprecated = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_default();
+    let all_tags: Vec<String> = tags_str
+        .split(']')
+        .filter_map(|s| {
+            let cleaned = s.trim().trim_start_matches('[').trim();
+            if cleaned.is_empty() {
+                return None;
+            }
+            let tags: Vec<String> =
+                serde_json::from_str(&format!("[{}]", cleaned)).unwrap_or_default();
+            Some(tags)
+        })
+        .flatten()
+        .collect();
+    let unique_tags: std::collections::HashSet<String> = all_tags.into_iter().collect();
+
+    let db_size_bytes = s
+        .uteke_db_path
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    Ok(StatsResponse {
+        total_memories: total_memories as usize,
+        total_namespaces: total_namespaces as usize,
+        total_tags: unique_tags.len(),
+        total_edges: total_edges as usize,
+        db_size_bytes,
+    })
 }
 
 // ---------------------------------------------------------------------------
