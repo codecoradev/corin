@@ -26,7 +26,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check required secrets
+        id: secrets
+        run: |
+          if [ -z "${{ secrets.CORA_API_KEY }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::CORA_API_KEY not set — skipping cora review (forks lack secrets)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Cora AI Code Review
+        if: steps.secrets.outputs.skip != 'true'
         uses: codecoradev/cora-review-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
