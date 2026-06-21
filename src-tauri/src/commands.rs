@@ -156,7 +156,7 @@ pub async fn remember(
 pub async fn recall(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     query: String,
-    namespace: Option<String>,
+    _namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<SearchResult>, CommandError> {
     let mut s = state.lock().await;
@@ -171,7 +171,7 @@ pub async fn recall(
     ).map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     let results = stmt
-        .query_map(rusqlite::params![query_lower, limit], |row| {
+        .query_map(rusqlite::params![query_lower, limit as i64], |row| {
             let tags_str: String = row.get(2)?;
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
             Ok(SearchResult {
@@ -534,20 +534,29 @@ pub async fn stats(
     let conn = s.conn.as_mut().unwrap();
 
     let total_memories: usize = conn
-        .query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))
-        .unwrap_or(0);
+        .query_row("SELECT COUNT(*) FROM memories", [], |row| {
+            let count: i64 = row.get(0)?;
+            Ok(count)
+        })
+        .unwrap_or(0) as usize;
 
     let total_edges: usize = conn
-        .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| row.get(0))
-        .unwrap_or(0);
+        .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| {
+            let count: i64 = row.get(0)?;
+            Ok(count)
+        })
+        .unwrap_or(0) as usize;
 
     let total_namespaces: usize = conn
         .query_row(
             "SELECT COUNT(DISTINCT namespace) FROM memories WHERE namespace IS NOT NULL",
             [],
-            |row| row.get(0),
+            |row| {
+                let count: i64 = row.get(0)?;
+                Ok(count)
+            },
         )
-        .unwrap_or(0);
+        .unwrap_or(0) as usize;
 
     let tags_str: String = conn
         .query_row("SELECT GROUP_CONCAT(tags) FROM memories WHERE tags IS NOT NULL AND tags != '[]'", [], |row| row.get(0))
@@ -609,13 +618,13 @@ pub async fn list_tags(
 
     let all_memories: Vec<String> = if let Some(ns) = namespace {
         let mut stmt = conn.prepare("SELECT tags FROM memories WHERE namespace = ?1").unwrap();
-        stmt.query_map(rusqlite::params![ns], |row| row.get::<String, _>(0))
+        stmt.query_map(rusqlite::params![ns], |row| row.get::<_, String>(0))
             .unwrap()
             .filter_map(|r| r.ok())
             .collect()
     } else {
         let mut stmt = conn.prepare("SELECT tags FROM memories WHERE tags IS NOT NULL AND tags != '[]'").unwrap();
-        stmt.query_map([], |row| row.get::<String, _>(0))
+        stmt.query_map([], |row| row.get::<_, String>(0))
             .unwrap()
             .filter_map(|r| r.ok())
             .collect()

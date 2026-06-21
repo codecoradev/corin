@@ -3,6 +3,7 @@ pub mod uteke_adapter;
 
 use commands::AppState;
 use std::sync::Arc;
+use tauri::Manager;
 use tokio::sync::Mutex;
 
 pub fn run() {
