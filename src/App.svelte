@@ -112,7 +112,7 @@
     <div class="welcome-content">
       <div class="logo">◆</div>
       <h1>Codecora Hub</h1>
-      <p>Desktop knowledge workstation powered by Uteke</p>
+      <p>Desktop knowledge workstation powered by codecora.dev</p>
       <button class="primary-btn" onclick={initDataDir}>Initialize Workspace</button>
       <p class="hint">Data will be stored in <code>~/.codecora/hub/</code></p>
     </div>

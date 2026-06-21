@@ -1,6 +1,6 @@
 # Codecora Hub
 
-> Desktop knowledge workstation powered by [Uteke](https://github.com/codecoradev/uteke).
+> Desktop knowledge workstation powered by [codecora.dev](https://codecora.dev).
 
 Local-first, offline-capable desktop app for managing memories, knowledge graphs, and rooms. Think Obsidian — but with semantic search, auto-linking, and a Rust-native backend.
 

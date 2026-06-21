@@ -2,7 +2,7 @@
 name = "codecora-hub"
 version = "0.1.0"
 edition = "2024"
-description = "Codecora Hub — Desktop knowledge workstation powered by Uteke"
+description = "Codecora Hub — Desktop knowledge workstation powered by codecora.dev"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
