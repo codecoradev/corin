@@ -46,6 +46,7 @@ pub fn run() {
             // Uteke Integration
             commands::uteke_available,
             commands::uteke_get,
+            commands::uteke_graph,
             commands::uteke_list,
             commands::uteke_namespaces,
             commands::uteke_search,

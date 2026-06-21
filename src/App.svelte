@@ -155,7 +155,7 @@
       {:else if activeView === 'graph'}
         <GraphView {namespace} onmemoryclick={selectMemory} />
       {:else if activeView === 'rooms'}
-        <RoomsView {namespace} oncreateroom={newMemory} />
+        <RoomsView {namespace} onmemoryclick={selectMemory} />
       {:else if activeView === 'settings'}
         <SettingsView />
       {/if}

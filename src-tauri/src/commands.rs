@@ -921,6 +921,110 @@ pub async fn uteke_search(
     Ok(results)
 }
 
+/// Generate graph data from Uteke memories based on shared tags.
+///
+/// Two memories are connected if they share at least one tag.
+/// This creates an Obsidian-like knowledge graph.
+/// Edge weight = number of shared tags.
+#[tauri::command]
+pub async fn uteke_graph(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<GraphData, CommandError> {
+    let mut s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_mut()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let limit = limit.unwrap_or(100) as i64;
+
+    // Get memories with their tags
+    let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+        if let Some(ref ns) = namespace {
+            (
+            "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
+             FROM memories WHERE deprecated = 0 AND namespace = ?
+             ORDER BY updated_at DESC LIMIT ?"
+                .to_string(),
+            vec![Box::new(ns.clone()), Box::new(limit)],
+        )
+        } else {
+            (
+            "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
+             FROM memories WHERE deprecated = 0
+             ORDER BY updated_at DESC LIMIT ?"
+                .to_string(),
+            vec![Box::new(limit)],
+        )
+        };
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let nodes: Vec<MemoryEntry> = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(MemoryEntry {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                tags,
+                content_type: row.get(3)?,
+                importance: row.get(4)?,
+                namespace: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Build edge list from shared tags
+    use std::collections::{HashMap, HashSet};
+
+    // Map: tag -> list of memory indices
+    let mut tag_map: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        for tag in &node.tags {
+            tag_map.entry(tag.clone()).or_default().push(i);
+        }
+    }
+
+    // For each tag with 2+ memories, create edges between all pairs
+    let mut edge_set: HashSet<(usize, usize)> = HashSet::new();
+    for indices in tag_map.values() {
+        if indices.len() < 2 {
+            continue;
+        }
+        for i in 0..indices.len() {
+            for j in (i + 1)..indices.len() {
+                let a = indices[i];
+                let b = indices[j];
+                let pair = if a < b { (a, b) } else { (b, a) };
+                edge_set.insert(pair);
+            }
+        }
+    }
+
+    let edges: Vec<GraphEdge> = edge_set
+        .iter()
+        .map(|(a, b)| GraphEdge {
+            id: None,
+            source: nodes[*a].id.clone(),
+            target: nodes[*b].id.clone(),
+            weight: Some(1.0),
+        })
+        .collect();
+
+    Ok(GraphData { nodes, edges })
+}
+
 /// List distinct namespaces from Uteke database.
 #[tauri::command]
 pub async fn uteke_namespaces(

@@ -84,6 +84,11 @@ export const updater = {
 export const uteke = {
   available: () => invoke<boolean>('uteke_available'),
   get: (id: string) => invoke<MemoryEntry>('uteke_get', { id }),
+  graph: (opts?: { namespace?: string; limit?: number }) =>
+    invoke<GraphData>('uteke_graph', {
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
   namespaces: () => invoke<string[]>('uteke_namespaces'),
   list: (opts?: { namespace?: string; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
