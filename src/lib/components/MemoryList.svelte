@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { memory as memoryApi } from '../ts/ipc';
+  import { memory as memoryApi, uteke } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -16,20 +16,49 @@
   let searchQuery = $state('');
   let activeTag = $state<string | null>(null);
   let offset = $state(0);
+  let utekeReady = $state(false);
   const limit = 20;
 
   async function loadMemories() {
     loading = true;
     try {
+      utekeReady = await uteke.available();
+
       if (searchQuery.trim()) {
-        memories = await memoryApi.search(searchQuery, { namespace: namespace ?? undefined, limit });
+        if (utekeReady) {
+          const results = await uteke.search(searchQuery, {
+            namespace: namespace ?? undefined,
+            limit,
+          });
+          memories = results.map((r) => ({
+            id: r.id,
+            content: r.content,
+            tags: r.tags,
+            content_type: 'text',
+            importance: null,
+            namespace: namespace,
+            created_at: null,
+            updated_at: null,
+          }));
+        } else {
+          memories = await memoryApi.search(searchQuery, { namespace: namespace ?? undefined, limit });
+        }
       } else {
-        memories = await memoryApi.list({
-          namespace: namespace ?? undefined,
-          tag: activeTag ?? undefined,
-          limit,
-          offset,
-        });
+        if (utekeReady) {
+          memories = await uteke.list({
+            namespace: namespace ?? undefined,
+            tag: activeTag ?? undefined,
+            limit,
+            offset,
+          });
+        } else {
+          memories = await memoryApi.list({
+            namespace: namespace ?? undefined,
+            tag: activeTag ?? undefined,
+            limit,
+            offset,
+          });
+        }
       }
     } catch {
       memories = [];
