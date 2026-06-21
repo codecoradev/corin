@@ -86,11 +86,11 @@
           <div class="stat-label">Hub Memories</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">{(utekeStats?.total_namespaces ?? 0) + (stats?.total_namespaces ?? 0)}</div>
+          <div class="stat-value">{Math.max(utekeStats?.total_namespaces ?? 0, stats?.total_namespaces ?? 0)}</div>
           <div class="stat-label">Namespaces</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">{(utekeStats?.total_tags ?? 0) + (stats?.total_tags ?? 0)}</div>
+          <div class="stat-value">{Math.max(utekeStats?.total_tags ?? 0, stats?.total_tags ?? 0)}</div>
           <div class="stat-label">Tags</div>
         </div>
         <div class="stat-card">

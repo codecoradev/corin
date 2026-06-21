@@ -845,17 +845,32 @@ pub async fn uteke_search(
         }
     }
 
-    // Fallback to LIKE search
+    // Fallback to LIKE search (with namespace filter if provided)
     let pattern = format!("%{}%", query);
+    let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+        if let Some(ref ns) = namespace {
+            (
+                "SELECT id, content, tags FROM memories
+             WHERE content LIKE ? AND deprecated = 0 AND namespace = ?
+             ORDER BY updated_at DESC LIMIT ?"
+                    .to_string(),
+                vec![Box::new(pattern), Box::new(ns.clone()), Box::new(limit)],
+            )
+        } else {
+            (
+                "SELECT id, content, tags FROM memories
+             WHERE content LIKE ? AND deprecated = 0
+             ORDER BY updated_at DESC LIMIT ?"
+                    .to_string(),
+                vec![Box::new(pattern), Box::new(limit)],
+            )
+        };
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn
-        .prepare(
-            "SELECT id, content, tags FROM memories
-                     WHERE content LIKE ? AND deprecated = 0
-                     ORDER BY updated_at DESC LIMIT ?",
-        )
+        .prepare(&sql)
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     let results = stmt
-        .query_map(rusqlite::params![pattern, limit], |row| {
+        .query_map(param_refs.as_slice(), |row| {
             let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
             Ok(SearchResult {
