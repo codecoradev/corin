@@ -29,7 +29,7 @@
     "marked": "^18.0.3"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5",
+    "@sveltejs/vite-plugin-svelte": "^7",
     "@tauri-apps/cli": "^2",
     "jsdom": "^29.1.1",
     "svelte": "^5",
