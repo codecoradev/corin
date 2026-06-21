@@ -1,3 +1,6 @@
+// View type for navigation
+export type View = 'dashboard' | 'memories' | 'graph' | 'rooms' | 'settings';
+
 // Memory entry from uteke-core
 export interface MemoryEntry {
   id: string;

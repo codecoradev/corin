@@ -19,5 +19,5 @@ Thumbs.db
 .env
 .env.local
 
-# Hermes
-.hermes/
+# Cora
+.cora/
