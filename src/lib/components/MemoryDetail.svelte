@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
 
   interface Neighbor {
@@ -52,7 +52,17 @@
   });
 
   async function handleDelete() {
-    await memoryApi.forget(memoryId);
+    // Try server delete first (Uteke memory), fallback to Hub DB
+    try {
+      const status = await utekeServer.status();
+      if (status.available) {
+        await utekeServer.forget(memoryId);
+      } else {
+        await memoryApi.forget(memoryId);
+      }
+    } catch {
+      await memoryApi.forget(memoryId);
+    }
     onback();
   }
 

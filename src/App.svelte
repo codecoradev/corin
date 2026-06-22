@@ -123,11 +123,16 @@
         <MemoryDetail
           memoryId={selectedMemoryId}
           onedit={editMemory}
-          onback={() => (selectedMemoryId = null)}
+          onback={() => {
+            selectedMemoryId = null;
+            refreshKey++;
+          }}
           onneighborclick={selectMemory}
         />
       {:else if activeView === 'dashboard'}
-        <Dashboard {namespace} onmemoryclick={selectMemory} onquicksearch={quickSearch} />
+        {#key refreshKey}
+          <Dashboard {namespace} onmemoryclick={selectMemory} onquicksearch={quickSearch} />
+        {/key}
       {:else if activeView === 'memories'}
         {#key refreshKey}
           <MemoryList {namespace} onmemoryclick={selectMemory} onnewmemory={newMemory} />
