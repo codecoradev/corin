@@ -1,8 +1,8 @@
 [package]
-name = "codecora-hub"
+name = "corin"
 version = "0.1.0"
 edition = "2024"
-description = "Codecora Hub — Desktop knowledge workstation powered by codecora.dev"
+description = "CorIn — Cora Intelligence. Desktop knowledge workstation."
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
