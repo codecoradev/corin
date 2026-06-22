@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { graph as graphApi, uteke } from '../ts/ipc';
-  import type { GraphData, MemoryEntry } from '../ts/types';
+  import type { GraphData } from '../ts/types';
 
   interface Props {
     namespace: string | null;
@@ -16,9 +16,8 @@
   let utekeReady = $state(false);
   let hoveredNode = $state<string | null>(null);
 
-  // Simulation state
-  let width = $state(800);
-  let height = $state(600);
+  let width = 800;
+  let height = 600;
   let animFrame = 0;
 
   interface NodePos {
@@ -33,7 +32,8 @@
     connections: number;
   }
 
-  let nodes = $state<Map<string, NodePos>>(new Map());
+  // Non-reactive simulation state — NOT $state to avoid effect loops
+  let simNodes: Map<string, NodePos> = new Map();
 
   async function loadData() {
     loading = true;
@@ -51,26 +51,15 @@
     }
   }
 
+  // Effect: reload data when namespace changes
   $effect(() => {
     namespace;
     loadData();
   });
 
-  // Tag color mapping (like Obsidian)
-  const tagColors = [
-    '#89b4fa', '#a6e3a1', '#f9e2af', '#f38ba8', '#fab387',
-    '#cba6f7', '#94e2d5', '#f5c2e7', '#89dceb', '#eba0ac',
-  ];
-
-  function getTagColor(tags: string[]): string {
-    if (tags.length === 0) return '#6c7086';
-    // Hash first tag to a color
-    const hash = tags[0].charCodeAt(0) % tagColors.length;
-    return tagColors[hash];
-  }
-
+  // Effect: init simulation when data arrives
   $effect(() => {
-    if (!data || data.nodes.length === 0 || !canvas) return;
+    if (!data || data.nodes.length === 0) return;
 
     // Count connections per node
     const connCount = new Map<string, number>();
@@ -86,7 +75,7 @@
     const radius = Math.min(width, height) * 0.3;
 
     data.nodes.forEach((node, i) => {
-      const angle = (i / data!.nodes.length) * Math.PI * 2;
+      const angle = (i / data.nodes.length) * Math.PI * 2;
       newNodes.set(node.id, {
         x: cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 50,
         y: cy + Math.sin(angle) * radius + (Math.random() - 0.5) * 50,
@@ -99,147 +88,148 @@
         connections: connCount.get(node.id) ?? 0,
       });
     });
-    nodes = newNodes;
+    simNodes = newNodes;
     startSimulation();
   });
 
+  const tagColors = [
+    '#89b4fa', '#a6e3a1', '#f9e2af', '#f38ba8', '#fab387',
+    '#cba6f7', '#94e2d5', '#f5c2e7', '#89dceb', '#eba0ac',
+  ];
+
+  function getTagColor(tags: string[]): string {
+    if (tags.length === 0) return '#6c7086';
+    const hash = tags[0].charCodeAt(0) % tagColors.length;
+    return tagColors[hash];
+  }
+
   function startSimulation() {
     if (animFrame) cancelAnimationFrame(animFrame);
+    animFrame = requestAnimationFrame(tick);
+  }
 
-    function tick() {
-      if (!data || !canvas) {
-        animFrame = requestAnimationFrame(tick);
-        return;
-      }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        animFrame = requestAnimationFrame(tick);
-        return;
-      }
-
-      ctx.clearRect(0, 0, width, height);
-
-      const n = nodes;
-      const nodeArr = Array.from(n.values());
-
-      // ── Force simulation (Obsidian-like) ──
-
-      // Repulsion between all nodes (Coulomb)
-      const REPULSION = 1200;
-      for (let i = 0; i < nodeArr.length; i++) {
-        for (let j = i + 1; j < nodeArr.length; j++) {
-          const a = nodeArr[i];
-          const b = nodeArr[j];
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const distSq = dx * dx + dy * dy;
-          const dist = Math.sqrt(distSq) || 1;
-          const force = REPULSION / distSq;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-          a.vx -= fx;
-          a.vy -= fy;
-          b.vx += fx;
-          b.vy += fy;
-        }
-      }
-
-      // Attraction along edges (spring)
-      const SPRING_LENGTH = 80;
-      const SPRING_K = 0.02;
-      for (const edge of data.edges) {
-        const a = n.get(edge.source);
-        const b = n.get(edge.target);
-        if (!a || !b) continue;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = (dist - SPRING_LENGTH) * SPRING_K;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        a.vx += fx;
-        a.vy += fy;
-        b.vx -= fx;
-        b.vy -= fy;
-      }
-
-      // Center gravity
-      const GRAVITY = 0.0008;
-      for (const pos of n.values()) {
-        pos.vx += (width / 2 - pos.x) * GRAVITY;
-        pos.vy += (height / 2 - pos.y) * GRAVITY;
-      }
-
-      // Apply velocity with damping
-      const DAMPING = 0.85;
-      for (const pos of n.values()) {
-        pos.vx *= DAMPING;
-        pos.vy *= DAMPING;
-        pos.x += pos.vx;
-        pos.y += pos.vy;
-
-        // Keep within bounds
-        pos.x = Math.max(20, Math.min(width - 20, pos.x));
-        pos.y = Math.max(20, Math.min(height - 20, pos.y));
-      }
-
-      // ── Draw ──
-
-      // Draw edges
-      for (const edge of data.edges) {
-        const a = n.get(edge.source);
-        const b = n.get(edge.target);
-        if (!a || !b) continue;
-
-        const isHighlighted =
-          hoveredNode === a.id || hoveredNode === b.id;
-        ctx.strokeStyle = isHighlighted
-          ? 'rgba(137, 180, 250, 0.5)'
-          : 'rgba(49, 50, 68, 0.3)';
-        ctx.lineWidth = isHighlighted ? 1.5 : 0.8;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-
-      // Draw nodes
-      for (const node of data.nodes) {
-        const pos = n.get(node.id);
-        if (!pos) continue;
-
-        const color = getTagColor(node.tags);
-        const isHovered = hoveredNode === node.id;
-        const radius = Math.max(3, Math.min(10, 3 + pos.connections * 0.8));
-
-        // Glow for hovered
-        if (isHovered) {
-          ctx.beginPath();
-          ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2);
-          ctx.fillStyle = color + '33';
-          ctx.fill();
-        }
-
-        // Node circle
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = isHovered ? '#cdd6f4' : color;
-        ctx.fill();
-
-        // Label for hovered or well-connected nodes
-        if (isHovered || pos.connections >= 3) {
-          ctx.font = '11px -apple-system, sans-serif';
-          ctx.fillStyle = isHovered ? '#cdd6f4' : '#6c7086';
-          ctx.textAlign = 'center';
-          const label = pos.label.slice(0, 25);
-          ctx.fillText(label, pos.x, pos.y - radius - 5);
-        }
-      }
-
+  function tick() {
+    if (!data || !canvas) {
       animFrame = requestAnimationFrame(tick);
+      return;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      animFrame = requestAnimationFrame(tick);
+      return;
     }
 
-    tick();
+    ctx.clearRect(0, 0, width, height);
+
+    const n = simNodes;
+    const nodeArr = Array.from(n.values());
+
+    // ── Repulsion (Coulomb) ──
+    const REPULSION = 1200;
+    for (let i = 0; i < nodeArr.length; i++) {
+      for (let j = i + 1; j < nodeArr.length; j++) {
+        const a = nodeArr[i];
+        const b = nodeArr[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distSq = dx * dx + dy * dy;
+        const dist = Math.sqrt(distSq) || 1;
+        const force = REPULSION / distSq;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        a.vx -= fx;
+        a.vy -= fy;
+        b.vx += fx;
+        b.vy += fy;
+      }
+    }
+
+    // ── Attraction along edges (spring) ──
+    const SPRING_LENGTH = 80;
+    const SPRING_K = 0.02;
+    for (const edge of data.edges) {
+      const a = n.get(edge.source);
+      const b = n.get(edge.target);
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = (dist - SPRING_LENGTH) * SPRING_K;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      a.vx += fx;
+      a.vy += fy;
+      b.vx -= fx;
+      b.vy -= fy;
+    }
+
+    // ── Center gravity ──
+    const GRAVITY = 0.0008;
+    for (const pos of n.values()) {
+      pos.vx += (width / 2 - pos.x) * GRAVITY;
+      pos.vy += (height / 2 - pos.y) * GRAVITY;
+    }
+
+    // ── Apply velocity with damping ──
+    const DAMPING = 0.85;
+    for (const pos of n.values()) {
+      pos.vx *= DAMPING;
+      pos.vy *= DAMPING;
+      pos.x += pos.vx;
+      pos.y += pos.vy;
+      pos.x = Math.max(20, Math.min(width - 20, pos.x));
+      pos.y = Math.max(20, Math.min(height - 20, pos.y));
+    }
+
+    // ── Draw edges ──
+    for (const edge of data.edges) {
+      const a = n.get(edge.source);
+      const b = n.get(edge.target);
+      if (!a || !b) continue;
+
+      const isHighlighted =
+        hoveredNode === a.id || hoveredNode === b.id;
+      ctx.strokeStyle = isHighlighted
+        ? 'rgba(137, 180, 250, 0.5)'
+        : 'rgba(49, 50, 68, 0.3)';
+      ctx.lineWidth = isHighlighted ? 1.5 : 0.8;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // ── Draw nodes ──
+    for (const node of data.nodes) {
+      const pos = n.get(node.id);
+      if (!pos) continue;
+
+      const color = getTagColor(node.tags);
+      const isHovered = hoveredNode === node.id;
+      const radius = Math.max(3, Math.min(10, 3 + pos.connections * 0.8));
+
+      if (isHovered) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2);
+        ctx.fillStyle = color + '33';
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = isHovered ? '#cdd6f4' : color;
+      ctx.fill();
+
+      if (isHovered || pos.connections >= 3) {
+        ctx.font = '11px -apple-system, sans-serif';
+        ctx.fillStyle = isHovered ? '#cdd6f4' : '#6c7086';
+        ctx.textAlign = 'center';
+        const label = pos.label.slice(0, 25);
+        ctx.fillText(label, pos.x, pos.y - radius - 5);
+      }
+    }
+
+    animFrame = requestAnimationFrame(tick);
   }
 
   function handleMouseMove(e: MouseEvent) {
@@ -249,7 +239,7 @@
     const y = e.clientY - rect.top;
 
     let found: string | null = null;
-    for (const [id, pos] of nodes) {
+    for (const [id, pos] of simNodes) {
       const dx = pos.x - x;
       const dy = pos.y - y;
       if (dx * dx + dy * dy < 144) {
@@ -261,7 +251,7 @@
     if (canvas) canvas.style.cursor = found ? 'pointer' : 'default';
   }
 
-  function handleClick(e: MouseEvent) {
+  function handleClick(_e: MouseEvent) {
     if (!hoveredNode) return;
     onmemoryclick(hoveredNode);
   }
