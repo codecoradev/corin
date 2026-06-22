@@ -1,6 +1,7 @@
-# Codecora Hub — Feature Roadmap
+# CorIn — Feature Roadmap
 
-> Reference: Uteke features that Hub should integrate with or expose via UI.
+> Reference: Uteke features that CorIn should integrate with or expose via UI.
+> Updated: 2026-06-22 (Uteke v0.3.1, schema v11)
 
 ## 🔍 Search & Retrieval
 
@@ -69,10 +70,25 @@
 
 ---
 
+## 🆕 Uteke v0.3.x Features (NEW)
+
+| Feature | Uteke API | Description | CorIn Integration |
+|---------|-----------|-------------|-------------------|
+| Document Engine | `uteke doc create/get/list/delete/export` | Wiki/knowledge base. Simpan markdown utuh, auto-chunk per heading, tiap chunk dapat embedding. Obsidian/Outline-style. | Phase 2: markdown editor + doc list |
+| Cosine Auto-Linking | Automatic on `remember()` | Memory baru otomatis dicari kemiripan. ≥0.80 → similar_to, ≥0.92 → possible_duplicate | Phase 2: auto-edges in graph + detail |
+| Markdown Chunker | `chunk_markdown()` | Pisah dokumen by # heading. Code block tidak di-split. Paragraph fallback. | Phase 2: CodeMirror integration |
+| Embed-aware Chunking | `chunk_markdown_embed_aware()` | Chunk size from embedder.max_seq_len(). ONNX=1024, OpenAI=32K per chunk. | Phase 2: automatic via uteke-core |
+| Graph API | `GET /graph` | Server endpoint return nodes + edges + stats JSON | Phase 2: replace direct DB read |
+| View-Only API Key | `--read-only-token` | Read-only token (GET only, 403 for POST/DELETE) | Phase 3: settings UI |
+| Configurable Limits | `[limits]` config + env vars | Content 10K→100K, payload 1MB→10MB. Override via UTEKE_MAX_* | Phase 2: advanced settings |
+| Room Remember | Hermes plugin action | `room_remember` — simpan memory ke room dengan author attribution | Phase 3: create room from CorIn |
+
+---
+
 ## Phase Mapping
 
 | Phase | Focus | Issues |
 |-------|-------|--------|
-| **Phase 1 (current)** | Hub MVP: CRUD, graph (tag-based), namespaces, rooms, settings | ✅ Done |
-| **Phase 2** | uteke-core integration: hybrid search, real graph edges, auto-linking, document engine | #16, #17, #18 |
-| **Phase 3** | Advanced: timeline, maintenance, multi-product dashboard, Hermes plugin | #19, #20, #37 |
+| **Phase 1 (current)** | CorIn MVP: CRUD, graph (tag-based), namespaces, rooms, settings | ✅ Done |
+| **Phase 2** | uteke-core integration: hybrid search, real graph edges, auto-linking, document engine, markdown editor | #16, #17, #18 |
+| **Phase 3** | Advanced: timeline, maintenance, multi-product dashboard, Hermes plugin, view-only keys | #19, #20, #37 |
