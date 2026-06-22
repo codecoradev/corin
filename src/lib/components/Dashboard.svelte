@@ -77,17 +77,6 @@
     <button onclick={() => searchQuery.trim() && onquicksearch(searchQuery.trim())}>Search</button>
   </div>
 
-  {#if serverOnline}
-    <div class="server-badge">
-      <span class="pulse"></span>
-      Uteke Server — semantic search active
-    </div>
-  {:else if utekeReady}
-    <div class="server-badge offline">
-      Uteke DB connected — run <kbd>uteke-serve</kbd> for semantic search
-    </div>
-  {/if}
-
   {#if loading}
     <div class="loading">Loading...</div>
   {:else}
@@ -125,10 +114,6 @@
         <div class="stat-card">
           <div class="stat-value">{stats?.total_tags ?? 0}</div>
           <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_edges ?? 0}</div>
-          <div class="stat-label">Edges</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
@@ -210,38 +195,6 @@
 
   .quick-search button:hover {
     opacity: 0.85;
-  }
-
-  .server-badge {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.8rem;
-    color: var(--teal);
-    margin-bottom: 20px;
-    padding: 6px 12px;
-    background: rgba(137, 180, 250, 0.08);
-    border-radius: 6px;
-    border: 1px solid rgba(137, 180, 250, 0.2);
-  }
-
-  .server-badge.offline {
-    color: var(--text-muted);
-    background: var(--bg-tertiary);
-    border-color: var(--border);
-  }
-
-  .pulse {
-    width: 8px;
-    height: 8px;
-    background: var(--teal);
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
   }
 
   .stats-grid {

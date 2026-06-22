@@ -11,25 +11,30 @@
 
   let { memory, namespace, onsave, onclose }: Props = $props();
 
-  let content = $state(memory?.content ?? '');
-  let tagsInput = $state(memory?.tags.join(', ') ?? '');
-  let contentType = $state(memory?.content_type ?? 'memory');
-  let importance = $state(memory?.importance ?? 0.5);
-  let ns = $state(memory?.namespace ?? namespace ?? '');
+  // Derive initial values reactively from props
+  let content = $state('');
+  let tagsInput = $state('');
+  let contentType = $state('memory');
+  let importance = $state(0.5);
+  let ns = $state('');
   let namespaces = $state<string[]>([]);
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let initialized = $state(false);
+
+  // Initialize form when memory prop first becomes available
+  $effect(() => {
+    if (!initialized) {
+      content = memory?.content ?? '';
+      tagsInput = memory?.tags.join(', ') ?? '';
+      contentType = memory?.content_type ?? 'memory';
+      importance = memory?.importance ?? 0.5;
+      ns = memory?.namespace ?? namespace ?? '';
+      initialized = true;
+    }
+  });
 
   const contentTypes = ['memory', 'task', 'procedure', 'fact', 'decision'];
-
-  $effect(() => {
-    // Reset when memory prop changes
-    content = memory?.content ?? '';
-    tagsInput = memory?.tags.join(', ') ?? '';
-    contentType = memory?.content_type ?? 'memory';
-    importance = memory?.importance ?? 0.5;
-    ns = memory?.namespace ?? namespace ?? '';
-  });
 
   async function loadNamespaces() {
     try {
