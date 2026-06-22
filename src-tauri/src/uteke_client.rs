@@ -78,6 +78,7 @@ pub struct UtekeRoom {
 }
 
 /// HTTP client for uteke-serve.
+#[derive(Clone)]
 pub struct UtekeClient {
     client: reqwest::Client,
     base_url: String,
@@ -196,14 +197,19 @@ impl UtekeClient {
 
     /// Get a single memory by ID.
     pub async fn get(&self, id: &str) -> Result<UtekeMemory, String> {
-        self.client
-            .get(format!("{}/memory?id={}", self.base_url, id))
+        let resp = self
+            .client
+            .get(format!("{}/memory", self.base_url))
+            .query(&[("id", id)])
             .send()
             .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
     }
 
     /// Get stats.
@@ -232,36 +238,34 @@ impl UtekeClient {
 
     /// Get graph data (nodes + edges from memory_edges + graph_edges).
     pub async fn graph(&self, namespace: Option<&str>) -> Result<GraphResponse, String> {
-        let url = match namespace {
-            Some(ns) => format!("{}/graph?namespace={}", self.base_url, ns),
-            None => format!("{}/graph", self.base_url),
-        };
+        let mut req = self.client.get(format!("{}/graph", self.base_url));
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
 
-        self.client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
     }
 
     /// List rooms.
     pub async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<UtekeRoom>, String> {
-        let url = match namespace {
-            Some(ns) => format!("{}/room/list?namespace={}", self.base_url, ns),
-            None => format!("{}/room/list", self.base_url),
-        };
+        let mut req = self.client.get(format!("{}/room/list", self.base_url));
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
 
-        self.client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
     }
 
     /// Create a new memory (also triggers cosine auto-linking).
@@ -300,11 +304,18 @@ impl UtekeClient {
 
     /// Delete a memory by ID.
     pub async fn forget(&self, id: &str) -> Result<(), String> {
-        self.client
-            .delete(format!("{}/forget?id={}", self.base_url, id))
+        let resp = self
+            .client
+            .delete(format!("{}/forget", self.base_url))
+            .query(&[("id", id)])
             .send()
             .await
             .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
         Ok(())
     }
 

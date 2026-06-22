@@ -1839,9 +1839,12 @@ pub async fn init_data_dir(
 pub async fn uteke_server_status(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, CommandError> {
-    let s = state.lock().await;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
 
-    let Some(client) = &s.uteke_client else {
+    let Some(client) = client else {
         return Ok(serde_json::json!({
             "available": false,
             "hint": "Uteke client not initialized",
@@ -1884,9 +1887,12 @@ pub async fn uteke_recall(
     limit: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, CommandError> {
     let limit = limit.unwrap_or(20);
-    let s = state.lock().await;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
 
-    let Some(client) = &s.uteke_client else {
+    let Some(client) = client else {
         return Ok(vec![]);
     };
 
@@ -1928,10 +1934,13 @@ pub async fn uteke_remember(
     tags: Option<Vec<String>>,
     namespace: Option<String>,
 ) -> Result<String, CommandError> {
-    let s = state.lock().await;
     let tags = tags.unwrap_or_default();
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
 
-    let Some(client) = &s.uteke_client else {
+    let Some(client) = client else {
         return Err(CommandError::Uteke(
             "Uteke server not initialized.".to_string(),
         ));
@@ -1955,9 +1964,12 @@ pub async fn uteke_forget(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<(), CommandError> {
-    let s = state.lock().await;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
 
-    let Some(client) = &s.uteke_client else {
+    let Some(client) = client else {
         return Err(CommandError::Uteke("Uteke client not initialized.".into()));
     };
 
@@ -1977,9 +1989,12 @@ pub async fn uteke_server_graph(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
-    let s = state.lock().await;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
 
-    let Some(client) = &s.uteke_client else {
+    let Some(client) = client else {
         return Ok(serde_json::json!({
             "nodes": [],
             "edges": [],
@@ -2014,9 +2029,12 @@ pub async fn uteke_server_graph(
 pub async fn uteke_server_stats(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, CommandError> {
-    let s = state.lock().await;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
 
-    let Some(client) = &s.uteke_client else {
+    let Some(client) = client else {
         return Ok(serde_json::json!({
             "available": false,
             "hint": "Uteke client not initialized",
