@@ -113,3 +113,48 @@ export const uteke = {
   neighbors: (id: string, limit?: number) =>
     invoke<{ id: string; content: string; tags: string[]; namespace: string | null; importance: number | null; content_type: string | null; created_at: string | null; relationship: string; score: number | null; shared_tags: string[] }[]>('uteke_neighbors', { id, limit: limit ?? null }),
 };
+
+// Uteke Server Integration (HTTP — semantic search, auto-linking)
+export const utekeServer = {
+  status: () => invoke<{
+    available: boolean;
+    url?: string;
+    hint?: string;
+    stats?: { total_memories: number; unique_tags: number; db_size_bytes: number; hot: number; warm: number; cold: number };
+  }>('uteke_server_status'),
+
+  recall: (query: string, opts?: { namespace?: string; limit?: number }) =>
+    invoke<Array<MemoryEntry & { score: number }>>('uteke_recall', {
+      query,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
+
+  remember: (content: string, opts?: { tags?: string[]; namespace?: string }) =>
+    invoke<{ id?: string; duplicate: boolean; existing_id?: string; existing_content?: string; score?: number; hint?: string }>('uteke_remember', {
+      content,
+      tags: opts?.tags ?? null,
+      namespace: opts?.namespace ?? null,
+    }),
+
+  forget: (id: string) => invoke<void>('uteke_forget', { id }),
+
+  graph: (namespace?: string) =>
+    invoke<{
+      nodes: Array<{ id: string; label: string; entity_type: string | null }>;
+      edges: Array<{ source: string; target: string; relation: string; weight: number }>;
+      stats: { node_count: number; edge_count: number; relation_types: string[] };
+      hint?: string;
+    }>('uteke_server_graph', { namespace: namespace ?? null }),
+
+  stats: () => invoke<{
+    total_memories?: number;
+    unique_tags?: number;
+    db_size_bytes?: number;
+    hot?: number;
+    warm?: number;
+    cold?: number;
+    available?: boolean;
+    hint?: string;
+  }>('uteke_server_stats'),
+};

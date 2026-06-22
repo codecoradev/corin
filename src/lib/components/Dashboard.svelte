@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { system, memory as memoryApi, uteke } from '../ts/ipc';
+  import { system, memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import type { StatsResponse, MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -16,12 +16,17 @@
   let loading = $state(true);
   let utekeReady = $state(false);
   let utekeStats = $state<StatsResponse | null>(null);
+  let serverOnline = $state(false);
 
   async function loadData() {
     loading = true;
     try {
       // Check if Uteke is available and merge data
       utekeReady = await uteke.available();
+
+      // Check if uteke-serve is running (semantic search)
+      const status = await utekeServer.status();
+      serverOnline = status.available;
 
       if (utekeReady) {
         // Read from Uteke DB (has actual data)
@@ -62,7 +67,7 @@
   <div class="quick-search">
     <input
       type="text"
-      placeholder="Search memories..."
+      placeholder={serverOnline ? 'Semantic search...' : 'Search memories...'}
       value={searchQuery}
       oninput={(e) => (searchQuery = e.currentTarget.value)}
       onkeydown={(e) => {
@@ -109,10 +114,6 @@
         <div class="stat-card">
           <div class="stat-value">{stats?.total_tags ?? 0}</div>
           <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_edges ?? 0}</div>
-          <div class="stat-label">Edges</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
@@ -164,7 +165,7 @@
   .quick-search {
     display: flex;
     gap: 8px;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
   }
 
   .quick-search input {

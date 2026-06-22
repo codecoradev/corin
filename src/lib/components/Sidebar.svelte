@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { View } from '../ts/types';
+  import { utekeServer } from '../ts/ipc';
 
   interface Props {
     activeView: View;
@@ -10,6 +11,28 @@
   }
 
   let { activeView, collapsed, onnavigate, onnewmemory, oncollapse }: Props = $props();
+
+  // Uteke server status — always visible in sidebar
+  let serverOnline = $state(false);
+  let serverChecking = $state(true);
+
+  async function checkServer() {
+    try {
+      const status = await utekeServer.status();
+      serverOnline = status.available;
+    } catch {
+      serverOnline = false;
+    } finally {
+      serverChecking = false;
+    }
+  }
+
+  // Check on mount + periodically
+  $effect(() => {
+    checkServer();
+    const interval = setInterval(checkServer, 30_000);
+    return () => clearInterval(interval);
+  });
 
   const navItems: { view: View; label: string; icon: string }[] = [
     { view: 'dashboard', label: 'Dashboard', icon: '◧' },
@@ -57,6 +80,23 @@
   </nav>
 
   <div class="nav-bottom">
+    {#if !collapsed}
+      <div class="server-status" class:online={serverOnline} class:offline={!serverOnline}>
+        <span class="status-dot"></span>
+        {#if serverChecking}
+          <span>Connecting...</span>
+        {:else if serverOnline}
+          <span>Semantic Search</span>
+        {:else}
+          <span>uteke-serve offline</span>
+        {/if}
+      </div>
+    {:else}
+      <div class="server-status-collapsed" class:online={serverOnline} title={serverOnline ? 'Semantic search active' : 'uteke-serve offline'}>
+        <span class="status-dot"></span>
+      </div>
+    {/if}
+
     {#each bottomItems as item}
       <button
         class="nav-item"
@@ -152,6 +192,38 @@
   .sidebar-footer { padding: 8px 16px; border-top: 1px solid var(--border); }
 
   .nav-bottom { padding: 8px 0; border-top: 1px solid var(--border); }
+
+  .server-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .server-status.online { color: var(--green); }
+  .server-status.offline { color: var(--text-muted); }
+  .server-status-collapsed {
+    display: flex;
+    justify-content: center;
+    padding: 6px;
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+  }
+  .online .status-dot {
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(166, 227, 161, 0.5);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
 
   .nav-bottom .nav-item { /* same styling as main nav */ }
 

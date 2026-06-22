@@ -77,6 +77,37 @@ pub fn uteke_symlink_path() -> Result<PathBuf, ConfigError> {
     Ok(codecora_root()?.join("uteke"))
 }
 
+/// Resolve the ONNX model directory.
+///
+/// Priority:
+/// 1. `~/.uteke/models/embeddinggemma-q4/` — reuse Uteke's model (no duplicate download)
+/// 2. `~/.codecora/uteke/models/embeddinggemma-q4/` — CorIn standalone copy
+///
+/// Returns the first path that contains the model files.
+pub fn resolve_model_dir() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+
+    // 1. Try Uteke's model directory first
+    let uteke_models = home.join(".uteke/models/embeddinggemma-q4");
+    if uteke_models.join("onnx/model_q4.onnx").exists() {
+        return Some(uteke_models);
+    }
+
+    // 2. Try CorIn's standalone model directory
+    let corin_models = codecora_root().ok()?.join("uteke/models/embeddinggemma-q4");
+    if corin_models.join("onnx/model_q4.onnx").exists() {
+        return Some(corin_models);
+    }
+
+    None
+}
+
+/// Get the model directory path for CorIn standalone use.
+/// This is where models are downloaded if Uteke is not installed.
+pub fn corin_model_dir() -> Result<PathBuf, ConfigError> {
+    Ok(codecora_root()?.join("uteke/models/embeddinggemma-q4"))
+}
+
 /// Detect if Uteke is installed on this machine.
 ///
 /// Checks common locations:

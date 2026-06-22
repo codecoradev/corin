@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -110,6 +111,9 @@ pub struct AppState {
     pub uteke_db_path: Option<PathBuf>,
     /// Read-only connection to Uteke database (None if not installed).
     pub uteke_conn: Option<rusqlite::Connection>,
+    /// HTTP client for uteke-serve (semantic search, cosine auto-link).
+    /// None if server is not running.
+    pub uteke_client: Option<crate::uteke_client::UtekeClient>,
 }
 
 impl AppState {
@@ -1825,4 +1829,258 @@ pub async fn init_data_dir(
     s.conn = Some(conn);
 
     Ok(hub_dir.to_string_lossy().to_string())
+}
+
+// ─── Uteke Server Integration (HTTP API) ───────────────────────────────
+
+/// Check if uteke-serve is running and accessible.
+/// Returns server health status + stats if available.
+#[tauri::command]
+pub async fn uteke_server_status(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    let Some(client) = client else {
+        return Ok(serde_json::json!({
+            "available": false,
+            "hint": "Uteke client not initialized",
+        }));
+    };
+
+    if !client.is_available().await {
+        return Ok(serde_json::json!({
+            "available": false,
+            "hint": "Run 'uteke-serve' to enable semantic search and auto-linking",
+        }));
+    }
+
+    let stats = client
+        .stats()
+        .await
+        .unwrap_or(crate::uteke_client::UtekeStats {
+            total_memories: 0,
+            unique_tags: 0,
+            db_size_bytes: 0,
+            hot: 0,
+            warm: 0,
+            cold: 0,
+        });
+
+    Ok(serde_json::json!({
+        "available": true,
+        "url": "http://127.0.0.1:8767",
+        "stats": stats,
+    }))
+}
+
+/// Semantic recall via uteke-serve (vector + FTS5 hybrid search).
+/// Falls back to uteke_search (FTS5 only) if server is not running.
+#[tauri::command]
+pub async fn uteke_recall(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    query: String,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let limit = limit.unwrap_or(20);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+
+    let results = client
+        .recall(&query, namespace.as_deref(), limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(results
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.memory.id,
+                "content": r.memory.content,
+                "tags": r.memory.tags,
+                "namespace": r.memory.namespace,
+                "importance": r.memory.importance,
+                "memory_type": r.memory.memory_type,
+                "content_type": r.memory.content_type,
+                "created_at": r.memory.created_at,
+                "updated_at": r.memory.updated_at,
+                "pinned": r.memory.pinned,
+                "score": r.score,
+            })
+        })
+        .collect())
+}
+
+/// Semantic remember via uteke-serve.
+/// Pre-checks for duplicates via recall before inserting.
+/// Returns the new ID, or a duplicate warning.
+#[tauri::command]
+pub async fn uteke_remember(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    content: String,
+    tags: Option<Vec<String>>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let tags = tags.unwrap_or_default();
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    let Some(client) = client else {
+        return Err(CommandError::Uteke(
+            "Uteke server not initialized.".to_string(),
+        ));
+    };
+
+    if !client.is_available().await {
+        return Err(CommandError::Uteke(
+            "Uteke server not running. Start it with 'uteke-serve'.".to_string(),
+        ));
+    }
+
+    // Pre-check: search for duplicates in the target namespace.
+    // If score >= 0.92, flag as possible duplicate.
+    let dup_check_ns = namespace.as_deref().unwrap_or("default");
+    if let Ok(existing) = client.recall(&content, Some(dup_check_ns), 3).await
+        && let Some(dup) = existing.iter().find(|r| r.score >= 0.92)
+    {
+        return Ok(serde_json::json!({
+            "duplicate": true,
+            "existing_id": dup.memory.id,
+            "existing_content": dup.memory.content,
+            "score": dup.score,
+            "hint": "This memory appears to be a duplicate of an existing one.",
+        }));
+    }
+
+    // No duplicate found — insert.
+    let id = client
+        .remember(&content, &tags, namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(serde_json::json!({
+        "id": id,
+        "duplicate": false,
+    }))
+}
+
+/// Delete memory via uteke-serve.
+#[tauri::command]
+pub async fn uteke_forget(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke client not initialized.".into()));
+    };
+
+    if !client.is_available().await {
+        return Err(CommandError::Uteke("Uteke server not running.".into()));
+    }
+
+    client
+        .forget(&id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Get graph data from uteke-serve (real cosine edges, not tag-based).
+#[tauri::command]
+pub async fn uteke_server_graph(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    let Some(client) = client else {
+        return Ok(serde_json::json!({
+            "nodes": [],
+            "edges": [],
+            "stats": {"node_count": 0, "edge_count": 0, "relation_types": []},
+            "hint": "Uteke client not initialized",
+        }));
+    };
+
+    if !client.is_available().await {
+        return Ok(serde_json::json!({
+            "nodes": [],
+            "edges": [],
+            "stats": {"node_count": 0, "edge_count": 0, "relation_types": []},
+            "hint": "Start uteke-serve for cosine auto-linked graph",
+        }));
+    }
+
+    let graph = client
+        .graph(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(serde_json::json!({
+        "nodes": graph.nodes,
+        "edges": graph.edges,
+        "stats": graph.stats,
+    }))
+}
+
+/// Get server stats via HTTP.
+#[tauri::command]
+pub async fn uteke_server_stats(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    let Some(client) = client else {
+        return Ok(serde_json::json!({
+            "available": false,
+            "hint": "Uteke client not initialized",
+        }));
+    };
+
+    if !client.is_available().await {
+        return Ok(serde_json::json!({
+            "available": false,
+            "hint": "Start uteke-serve",
+        }));
+    }
+
+    let stats = client
+        .stats()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(serde_json::json!({
+        "total_memories": stats.total_memories,
+        "unique_tags": stats.unique_tags,
+        "db_size_bytes": stats.db_size_bytes,
+        "hot": stats.hot,
+        "warm": stats.warm,
+        "cold": stats.cold,
+    }))
 }
