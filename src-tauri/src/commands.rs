@@ -1926,14 +1926,15 @@ pub async fn uteke_recall(
 }
 
 /// Semantic remember via uteke-serve.
-/// Creates memory + auto-links via cosine similarity.
+/// Pre-checks for duplicates via recall before inserting.
+/// Returns the new ID, or a duplicate warning.
 #[tauri::command]
 pub async fn uteke_remember(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     content: String,
     tags: Option<Vec<String>>,
     namespace: Option<String>,
-) -> Result<String, CommandError> {
+) -> Result<serde_json::Value, CommandError> {
     let tags = tags.unwrap_or_default();
     let client = {
         let s = state.lock().await;
@@ -1952,10 +1953,31 @@ pub async fn uteke_remember(
         ));
     }
 
-    client
+    // Pre-check: search for duplicates in the target namespace.
+    // If score >= 0.92, flag as possible duplicate.
+    let dup_check_ns = namespace.as_deref().unwrap_or("default");
+    if let Ok(existing) = client.recall(&content, Some(dup_check_ns), 3).await
+        && let Some(dup) = existing.iter().find(|r| r.score >= 0.92)
+    {
+        return Ok(serde_json::json!({
+            "duplicate": true,
+            "existing_id": dup.memory.id,
+            "existing_content": dup.memory.content,
+            "score": dup.score,
+            "hint": "This memory appears to be a duplicate of an existing one.",
+        }));
+    }
+
+    // No duplicate found — insert.
+    let id = client
         .remember(&content, &tags, namespace.as_deref())
         .await
-        .map_err(|e| CommandError::Uteke(e.to_string()))
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(serde_json::json!({
+        "id": id,
+        "duplicate": false,
+    }))
 }
 
 /// Delete memory via uteke-serve.
