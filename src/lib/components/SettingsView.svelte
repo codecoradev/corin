@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { system, updater, utekeServer } from '../ts/ipc';
+  import { system, updater } from '../ts/ipc';
   import type { Update } from '@tauri-apps/plugin-updater';
 
   let settings = $state<Record<string, string>>({});
@@ -11,9 +11,6 @@
   let installingUpdate = $state(false);
   let updateStatus = $state<string | null>(null);
   let pendingUpdate: Update | null = $state(null);
-
-  // Uteke server status
-  let serverStatus = $state<{ available: boolean; url?: string; hint?: string; stats?: { total_memories: number; unique_tags: number; hot: number } } | null>(null);
 
   // Editable local copies
   let theme = $state('catppuccin-mocha');
@@ -35,9 +32,6 @@
   }
 
   onMount(loadSettings);
-
-  // Check uteke-serve status
-  utekeServer.status().then((s) => (serverStatus = s)).catch(() => {});
 
   async function handleSave() {
     saving = true;
@@ -150,34 +144,6 @@
         <button class="data-btn" onclick={() => handleExport('markdown')}>
           ↓ Export Markdown
         </button>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <h3>Uteke Server</h3>
-      <div class="server-status">
-        {#if serverStatus?.available}
-          <div class="status-row">
-            <span class="status-dot online">●</span>
-            <span>Connected to <strong>{serverStatus.url}</strong></span>
-          </div>
-          {#if serverStatus.stats}
-            <div class="server-stats">
-              <span>{serverStatus.stats.total_memories} memories</span>
-              <span>·</span>
-              <span>{serverStatus.stats.unique_tags} tags</span>
-              <span>·</span>
-              <span>{serverStatus.stats.hot} hot</span>
-            </div>
-          {/if}
-          <p class="status-hint">Semantic search and auto-linking are active.</p>
-        {:else}
-          <div class="status-row">
-            <span class="status-dot offline">●</span>
-            <span>Not running</span>
-          </div>
-          <p class="status-hint">{serverStatus?.hint ?? 'Run uteke-serve to enable semantic search.'}</p>
-        {/if}
       </div>
     </div>
 
@@ -306,45 +272,6 @@
     color: var(--text-muted);
     font-size: 0.85rem;
     line-height: 1.6;
-  }
-
-  .server-status {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .status-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-    color: var(--text-primary);
-  }
-
-  .status-dot {
-    font-size: 0.65rem;
-  }
-
-  .status-dot.online {
-    color: var(--green);
-  }
-
-  .status-dot.offline {
-    color: var(--text-muted);
-  }
-
-  .server-stats {
-    display: flex;
-    gap: 6px;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .status-hint {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    line-height: 1.5;
   }
 
   .update-section {
