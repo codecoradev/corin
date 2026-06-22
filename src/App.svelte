@@ -88,12 +88,12 @@
     }
   }
 
-  onMount(async () => {
+  onMount(() => {
     window.addEventListener('keydown', handleKeydown);
     // Auto-init data directory on startup
     // setup() hook in lib.rs already initializes ~/.codecora/
     // This call just ensures the connection is stored in state
-    await initDataDir();
+    initDataDir();
     return () => window.removeEventListener('keydown', handleKeydown);
   });
 </script>

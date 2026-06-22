@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { system, memory as memoryApi, uteke } from '../ts/ipc';
+  import { system, memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import type { StatsResponse, MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -16,12 +16,17 @@
   let loading = $state(true);
   let utekeReady = $state(false);
   let utekeStats = $state<StatsResponse | null>(null);
+  let serverOnline = $state(false);
 
   async function loadData() {
     loading = true;
     try {
       // Check if Uteke is available and merge data
       utekeReady = await uteke.available();
+
+      // Check if uteke-serve is running (semantic search)
+      const status = await utekeServer.status();
+      serverOnline = status.available;
 
       if (utekeReady) {
         // Read from Uteke DB (has actual data)
@@ -62,7 +67,7 @@
   <div class="quick-search">
     <input
       type="text"
-      placeholder="Search memories..."
+      placeholder={serverOnline ? 'Semantic search...' : 'Search memories...'}
       value={searchQuery}
       oninput={(e) => (searchQuery = e.currentTarget.value)}
       onkeydown={(e) => {
@@ -71,6 +76,17 @@
     />
     <button onclick={() => searchQuery.trim() && onquicksearch(searchQuery.trim())}>Search</button>
   </div>
+
+  {#if serverOnline}
+    <div class="server-badge">
+      <span class="pulse"></span>
+      Uteke Server — semantic search active
+    </div>
+  {:else if utekeReady}
+    <div class="server-badge offline">
+      Uteke DB connected — run <kbd>uteke-serve</kbd> for semantic search
+    </div>
+  {/if}
 
   {#if loading}
     <div class="loading">Loading...</div>
@@ -164,7 +180,7 @@
   .quick-search {
     display: flex;
     gap: 8px;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
   }
 
   .quick-search input {
@@ -194,6 +210,38 @@
 
   .quick-search button:hover {
     opacity: 0.85;
+  }
+
+  .server-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--teal);
+    margin-bottom: 20px;
+    padding: 6px 12px;
+    background: rgba(137, 180, 250, 0.08);
+    border-radius: 6px;
+    border: 1px solid rgba(137, 180, 250, 0.2);
+  }
+
+  .server-badge.offline {
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+  }
+
+  .pulse {
+    width: 8px;
+    height: 8px;
+    background: var(--teal);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
 
   .stats-grid {
