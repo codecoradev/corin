@@ -1,6 +1,5 @@
 pub mod commands;
 pub mod config;
-pub mod uteke_adapter;
 pub mod uteke_client;
 
 use std::sync::Arc;
@@ -89,25 +88,8 @@ pub fn run() {
                             s.db_path = Some(db_path);
                             s.conn = Some(conn);
 
-                            // Open read-only connection to Uteke DB if available
-                            if let Some(uteke_path) = config::detect_uteke() {
-                                let uteke_db = uteke_path.join("uteke.db");
-                                match rusqlite::Connection::open_with_flags(
-                                    &uteke_db,
-                                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
-                                        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                                ) {
-                                    Ok(uteke_conn) => {
-                                        s.uteke_db_path = Some(uteke_db);
-                                        s.uteke_conn = Some(uteke_conn);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to open Uteke DB: {e}");
-                                    }
-                                }
-                            }
-
-                            // Initialize Uteke HTTP client for semantic search
+                            // All Uteke access via HTTP API (no direct SQLite).
+                            // Server URL configurable — localhost or remote domain.
                             let client = UtekeClient::default();
                             s.uteke_client = Some(client);
                         }
