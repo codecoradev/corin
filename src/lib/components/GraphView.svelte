@@ -287,31 +287,32 @@
 </script>
 
 <div class="graph-view">
-  {#if loading}
-    <div class="center-msg">Loading graph...</div>
-  {:else if !data || data.nodes.length === 0}
-    <div class="center-msg">
-      <p>No memories to visualize.</p>
-      <p class="sub">Create memories with tags to see connections.</p>
-    </div>
-  {:else}
+  {#if !loading && data && data.nodes.length > 0}
     <div class="graph-toolbar">
       <span class="graph-info">{data.nodes.length} nodes · {data.edges.length} edges</span>
       {#if utekeReady}
         <span class="uteke-tag">Uteke</span>
       {/if}
     </div>
-    <div class="canvas-container">
-      <canvas
-        bind:this={canvas}
-        width={width}
-        height={height}
-        onmousemove={handleMouseMove}
-        onclick={handleClick}
-        onmouseleave={() => (hoveredNode = null)}
-      ></canvas>
-    </div>
   {/if}
+  <div class="canvas-container">
+    <canvas
+      bind:this={canvas}
+      width={width}
+      height={height}
+      onmousemove={handleMouseMove}
+      onclick={handleClick}
+      onmouseleave={() => (hoveredNode = null)}
+    ></canvas>
+    {#if loading}
+      <div class="overlay-msg">Loading graph...</div>
+    {:else if !data || data.nodes.length === 0}
+      <div class="overlay-msg">
+        <p>No memories to visualize.</p>
+        <p class="sub">Create memories with tags to see connections.</p>
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -349,13 +350,9 @@
     overflow: hidden;
   }
 
-  canvas {
-    display: block;
-    cursor: default;
-  }
-
-  .center-msg {
-    flex: 1;
+  .overlay-msg {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -363,10 +360,16 @@
     color: var(--text-muted);
     text-align: center;
     gap: 8px;
+    pointer-events: none;
   }
 
-  .center-msg .sub {
+  .overlay-msg .sub {
     font-size: 0.85rem;
     opacity: 0.7;
+  }
+
+  canvas {
+    display: block;
+    cursor: default;
   }
 </style>
