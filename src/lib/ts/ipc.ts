@@ -131,7 +131,7 @@ export const utekeServer = {
     }),
 
   remember: (content: string, opts?: { tags?: string[]; namespace?: string }) =>
-    invoke<string>('uteke_remember', {
+    invoke<{ id?: string; duplicate: boolean; existing_id?: string; existing_content?: string; score?: number; hint?: string }>('uteke_remember', {
       content,
       tags: opts?.tags ?? null,
       namespace: opts?.namespace ?? null,
