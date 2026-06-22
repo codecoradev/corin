@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { memory as memoryApi, uteke } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -17,6 +17,7 @@
   let activeTag = $state<string | null>(null);
   let offset = $state(0);
   let utekeReady = $state(false);
+  let useSemantic = $state(false);
   const limit = 20;
 
   async function loadMemories() {
@@ -24,8 +25,28 @@
     try {
       utekeReady = await uteke.available();
 
+      // Check if semantic search is available
+      const status = await utekeServer.status();
+      useSemantic = status.available;
+
       if (searchQuery.trim()) {
-        if (utekeReady) {
+        // Try semantic search first (vector + FTS5 hybrid)
+        if (useSemantic) {
+          const results = await utekeServer.recall(searchQuery, {
+            namespace: namespace ?? undefined,
+            limit,
+          });
+          memories = results.map((r) => ({
+            id: r.id,
+            content: r.content,
+            tags: r.tags,
+            content_type: 'text',
+            importance: r.importance ?? null,
+            namespace: namespace,
+            created_at: null,
+            updated_at: null,
+          }));
+        } else if (utekeReady) {
           const results = await uteke.search(searchQuery, {
             namespace: namespace ?? undefined,
             limit,
@@ -41,7 +62,17 @@
             updated_at: null,
           }));
         } else {
-          memories = await memoryApi.search(searchQuery, { namespace: namespace ?? undefined, limit });
+          const results = await memoryApi.search(searchQuery, { namespace: namespace ?? undefined, limit });
+          memories = results.map((r) => ({
+            id: r.id,
+            content: r.content,
+            tags: r.tags,
+            content_type: 'text',
+            importance: null,
+            namespace,
+            created_at: null,
+            updated_at: null,
+          }));
         }
       } else {
         if (utekeReady) {
@@ -88,7 +119,7 @@
     <div class="search-bar">
       <input
         type="text"
-        placeholder="Search memories..."
+        placeholder={useSemantic ? 'Semantic search...' : 'Search memories...'}
         value={searchQuery}
         oninput={(e) => (searchQuery = e.currentTarget.value)}
         onkeydown={(e) => e.key === 'Enter' && handleSearch()}

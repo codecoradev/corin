@@ -52,15 +52,20 @@
   });
 
   function setupGraph() {
-    if (!data || !data.nodes.length) { nodes = []; edges = []; return; }
+    if (!data || !data.nodes.length) {
+      nodes = [];
+      edges = [];
+      return;
+    }
+    const d = data;
     const conns = new Map<string, number>();
-    for (const e of data.edges) {
+    for (const e of d.edges) {
       conns.set(e.source, (conns.get(e.source) ?? 0) + 1);
       conns.set(e.target, (conns.get(e.target) ?? 0) + 1);
     }
     nodeId.clear();
-    nodes = data.nodes.map((n, i) => {
-      const angle = (i / data.nodes.length) * Math.PI * 2;
+    nodes = d.nodes.map((n, i) => {
+      const angle = (i / d.nodes.length) * Math.PI * 2;
       const r = Math.min(W, H) * 0.3;
       nodeId.set(n.id, i);
       return {
@@ -73,7 +78,7 @@
         conns: conns.get(n.id) ?? 0,
       };
     });
-    edges = data.edges.map(e => ({ source: e.source, target: e.target }));
+    edges = d.edges.map(e => ({ source: e.source, target: e.target }));
     physicsActive = true;
     calmFrames = 0;
     needRedraw = true;

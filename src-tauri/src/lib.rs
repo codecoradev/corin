@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod config;
 pub mod uteke_adapter;
+pub mod uteke_client;
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use tokio::sync::Mutex;
 
 use commands::AppState;
 use config::init_environment;
+use uteke_client::UtekeClient;
 
 pub fn run() {
     tauri::Builder::default()
@@ -54,6 +56,13 @@ pub fn run() {
             commands::uteke_room_recall,
             commands::uteke_search,
             commands::uteke_stats,
+            // Uteke Server Integration (HTTP)
+            commands::uteke_server_status,
+            commands::uteke_recall,
+            commands::uteke_remember,
+            commands::uteke_forget,
+            commands::uteke_server_graph,
+            commands::uteke_server_stats,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -97,6 +106,10 @@ pub fn run() {
                                     }
                                 }
                             }
+
+                            // Initialize Uteke HTTP client for semantic search
+                            let client = UtekeClient::default();
+                            s.uteke_client = Some(client);
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");
