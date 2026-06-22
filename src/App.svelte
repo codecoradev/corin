@@ -1,7 +1,7 @@
 <script lang="ts">
   import './app.css';
   import { onMount } from 'svelte';
-  import { system, uteke } from './lib/ts/ipc';
+  import { system } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
@@ -11,6 +11,7 @@
   import GraphView from './lib/components/GraphView.svelte';
   import RoomsView from './lib/components/RoomsView.svelte';
   import SettingsView from './lib/components/SettingsView.svelte';
+  import NamespacesView from './lib/components/NamespacesView.svelte';
 
   // App state
   let dataDirInitialized = $state(false);
@@ -19,7 +20,6 @@
   let selectedMemoryId = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
   let namespace = $state<string | null>(null);
-  let namespaces = $state<string[]>([]);
   let showEditor = $state(false);
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
@@ -29,23 +29,8 @@
       const dir = await system.openDataDir();
       dataDir = dir;
       dataDirInitialized = true;
-      await loadNamespaces();
     } catch (e) {
       console.error('Failed to init data dir:', e);
-    }
-  }
-
-  async function loadNamespaces() {
-    try {
-      // Merge namespaces from Hub DB + Uteke DB (if available)
-      const hubNs = await system.listNamespaces().catch(() => []);
-      let utekeNs: string[] = [];
-      if (await uteke.available().catch(() => false)) {
-        utekeNs = await uteke.namespaces().catch(() => []);
-      }
-      namespaces = [...new Set([...hubNs, ...utekeNs])].sort();
-    } catch {
-      namespaces = [];
     }
   }
 
@@ -127,13 +112,8 @@
   <div class="app-layout">
     <Sidebar
       activeView={activeView}
-      {namespace}
-      {namespaces}
       collapsed={sidebarCollapsed}
       onnavigate={navigate}
-      onnamespacechange={(ns) => {
-        namespace = ns;
-      }}
       onnewmemory={newMemory}
       oncollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
     />
@@ -152,8 +132,12 @@
         {#key refreshKey}
           <MemoryList {namespace} onmemoryclick={selectMemory} onnewmemory={newMemory} />
         {/key}
+      {:else if activeView === 'namespaces'}
+        <NamespacesView
+          onmemoryclick={selectMemory}
+        />
       {:else if activeView === 'graph'}
-        <GraphView {namespace} onmemoryclick={selectMemory} />
+        <GraphView onmemoryclick={selectMemory} />
       {:else if activeView === 'rooms'}
         <RoomsView {namespace} onmemoryclick={selectMemory} />
       {:else if activeView === 'settings'}

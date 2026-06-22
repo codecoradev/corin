@@ -3,22 +3,23 @@
 
   interface Props {
     activeView: View;
-    namespace: string | null;
-    namespaces: string[];
     collapsed: boolean;
     onnavigate: (view: View) => void;
-    onnamespacechange: (ns: string | null) => void;
     onnewmemory: () => void;
     oncollapse: () => void;
   }
 
-  let { activeView, namespace, namespaces, collapsed, onnavigate, onnamespacechange, onnewmemory, oncollapse }: Props = $props();
+  let { activeView, collapsed, onnavigate, onnewmemory, oncollapse }: Props = $props();
 
   const navItems: { view: View; label: string; icon: string }[] = [
     { view: 'dashboard', label: 'Dashboard', icon: '◧' },
     { view: 'memories', label: 'Memories', icon: '☰' },
+    { view: 'namespaces', label: 'Namespaces', icon: '◫' },
     { view: 'graph', label: 'Graph', icon: '◉' },
     { view: 'rooms', label: 'Rooms', icon: '▣' },
+  ];
+
+  const bottomItems: { view: View; label: string; icon: string }[] = [
     { view: 'settings', label: 'Settings', icon: '⚙' },
   ];
 </script>
@@ -30,21 +31,6 @@
         <span class="logo-icon">◆</span>
         <span class="logo-text">Codecora Hub</span>
       </div>
-    </div>
-
-    <div class="namespace-section">
-      <label class="ns-label" for="ns-select">Namespace</label>
-      <select
-        id="ns-select"
-        class="ns-select"
-        value={namespace ?? ''}
-        onchange={(e) => onnamespacechange(e.currentTarget.value || null)}
-      >
-        <option value="">All namespaces</option>
-        {#each namespaces as ns}
-          <option value={ns}>{ns}</option>
-        {/each}
-      </select>
     </div>
 
     <button class="new-memory-btn" onclick={onnewmemory}>
@@ -70,6 +56,22 @@
     {/each}
   </nav>
 
+  <div class="nav-bottom">
+    {#each bottomItems as item}
+      <button
+        class="nav-item"
+        class:active={activeView === item.view}
+        onclick={() => onnavigate(item.view)}
+        title={collapsed ? item.label : ''}
+      >
+        <span class="nav-icon">{item.icon}</span>
+        {#if !collapsed}
+          <span class="nav-label">{item.label}</span>
+        {/if}
+      </button>
+    {/each}
+  </div>
+
   <div class="sidebar-footer">
     <button class="collapse-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'}>
       {collapsed ? '▶' : '◀'}
@@ -89,62 +91,16 @@
     flex-shrink: 0;
   }
 
-  .sidebar.collapsed {
-    width: 56px;
-  }
+  .sidebar.collapsed { width: 56px; }
 
   .sidebar-header {
     padding: 16px 16px 12px;
     border-bottom: 1px solid var(--border);
   }
 
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .logo-icon {
-    font-size: 1.3rem;
-    color: var(--accent);
-  }
-
-  .logo-text {
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    white-space: nowrap;
-  }
-
-  .namespace-section {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .ns-label {
-    display: block;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-    letter-spacing: 0.5px;
-  }
-
-  .ns-select {
-    width: 100%;
-    padding: 6px 8px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 0.85rem;
-    outline: none;
-    cursor: pointer;
-  }
-
-  .ns-select:focus {
-    border-color: var(--accent);
-  }
+  .logo { display: flex; align-items: center; gap: 8px; }
+  .logo-icon { font-size: 1.3rem; color: var(--accent); }
+  .logo-text { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
 
   .new-memory-btn {
     margin: 12px 16px;
@@ -161,16 +117,8 @@
     cursor: pointer;
     transition: opacity 0.15s;
   }
-
-  .new-memory-btn:hover {
-    opacity: 0.85;
-  }
-
-  .btn-icon {
-    font-size: 1.1rem;
-    line-height: 1;
-  }
-
+  .new-memory-btn:hover { opacity: 0.85; }
+  .btn-icon { font-size: 1.1rem; line-height: 1; }
   kbd {
     margin-left: auto;
     font-size: 0.7rem;
@@ -180,12 +128,7 @@
     font-family: var(--font-mono);
   }
 
-  .nav {
-    flex: 1;
-    padding: 8px 0;
-    display: flex;
-    flex-direction: column;
-  }
+  .nav { flex: 1; padding: 8px 0; display: flex; flex-direction: column; }
 
   .nav-item {
     display: flex;
@@ -201,32 +144,16 @@
     text-align: left;
     width: 100%;
   }
+  .nav-item:hover { background: var(--bg-hover); }
+  .nav-item.active { background: var(--bg-hover); color: var(--accent); border-left: 2px solid var(--accent); }
+  .nav-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+  .nav-label { white-space: nowrap; flex: 1; }
 
-  .nav-item:hover {
-    background: var(--bg-hover);
-  }
+  .sidebar-footer { padding: 8px 16px; border-top: 1px solid var(--border); }
 
-  .nav-item.active {
-    background: var(--bg-hover);
-    color: var(--accent);
-    border-left: 2px solid var(--accent);
-  }
+  .nav-bottom { padding: 8px 0; border-top: 1px solid var(--border); }
 
-  .nav-icon {
-    font-size: 1rem;
-    width: 20px;
-    text-align: center;
-    flex-shrink: 0;
-  }
-
-  .nav-label {
-    white-space: nowrap;
-  }
-
-  .sidebar-footer {
-    padding: 8px 16px;
-    border-top: 1px solid var(--border);
-  }
+  .nav-bottom .nav-item { /* same styling as main nav */ }
 
   .collapse-btn {
     width: 100%;
@@ -240,20 +167,10 @@
     border-radius: 4px;
     transition: background 0.1s;
   }
-
-  .collapse-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-  }
+  .collapse-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
 
   .sidebar.collapsed .sidebar-header,
-  .sidebar.collapsed .namespace-section,
-  .sidebar.collapsed .new-memory-btn {
-    display: none;
-  }
-
-  .sidebar.collapsed .nav-item {
-    justify-content: center;
-    padding: 8px;
-  }
+  .sidebar.collapsed .new-memory-btn { display: none; }
+  .sidebar.collapsed .nav-item { justify-content: center; padding: 8px; }
+  .sidebar.collapsed .nav-bottom .nav-item { justify-content: center; padding: 8px; }
 </style>

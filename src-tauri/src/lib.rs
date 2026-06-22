@@ -48,6 +48,7 @@ pub fn run() {
             commands::uteke_get,
             commands::uteke_graph,
             commands::uteke_list,
+            commands::uteke_neighbors,
             commands::uteke_namespaces,
             commands::uteke_rooms,
             commands::uteke_room_recall,

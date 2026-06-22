@@ -1106,6 +1106,155 @@ pub async fn uteke_rooms(
     Ok(rooms)
 }
 
+/// Neighbor entry — a memory connected to another with relationship info.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeighborEntry {
+    pub id: String,
+    pub content: String,
+    pub tags: Vec<String>,
+    pub namespace: Option<String>,
+    pub importance: Option<f32>,
+    pub content_type: Option<String>,
+    pub created_at: Option<String>,
+    pub relationship: String,
+    pub score: Option<f32>,
+    pub shared_tags: Vec<String>,
+}
+
+/// Find connected memories for a given memory ID.
+///
+/// Combines:
+/// 1. Explicit edges from memory_edges table (if any)
+/// 2. Shared-tag neighbors (computed, always works)
+#[tauri::command]
+pub async fn uteke_neighbors(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    id: String,
+    limit: Option<usize>,
+) -> Result<Vec<NeighborEntry>, CommandError> {
+    let s = state.lock().await;
+
+    let conn = s
+        .uteke_conn
+        .as_ref()
+        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
+
+    let limit_i = limit.unwrap_or(20) as i64;
+
+    // Get the source memory's tags
+    let source_tags: Vec<String> = conn
+        .query_row(
+            "SELECT tags FROM memories WHERE id = ?1 AND deprecated = 0",
+            rusqlite::params![id],
+            |row| {
+                let tags_str: String = row.get::<_, Option<String>>(0)?.unwrap_or_default();
+                Ok(serde_json::from_str(&tags_str).unwrap_or_default())
+            },
+        )
+        .map_err(|_| CommandError::NotFound(id.clone()))?;
+
+    let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(id.clone());
+
+    // 1. Explicit edges from memory_edges
+    let edge_sql =
+        "SELECT m.id, m.content, m.tags, m.namespace, m.importance, m.content_type, m.created_at,
+                    e.edge_type, e.weight
+                    FROM memory_edges e
+                    JOIN memories m ON (m.id = e.target_id OR m.id = e.source_id)
+                    WHERE (e.source_id = ?1 OR e.target_id = ?1) AND m.id != ?1 AND m.deprecated = 0
+                    LIMIT ?2";
+    if let Ok(mut stmt) = conn.prepare(edge_sql) {
+        let edges = stmt
+            .query_map(rusqlite::params![id, limit_i], |row| {
+                let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                Ok(NeighborEntry {
+                    id: row.get(0)?,
+                    content: row.get(1)?,
+                    tags,
+                    namespace: row.get(3)?,
+                    importance: row.get(4)?,
+                    content_type: row.get(5)?,
+                    created_at: row.get(6)?,
+                    relationship: row
+                        .get::<_, String>(7)
+                        .unwrap_or_else(|_| "related".to_string()),
+                    score: row.get(8).ok(),
+                    shared_tags: vec![],
+                })
+            })
+            .ok();
+        if let Some(edges) = edges {
+            for e in edges.flatten() {
+                if seen.insert(e.id.clone()) {
+                    results.push(e);
+                }
+            }
+        }
+    }
+
+    // 2. Shared-tag neighbors (computed)
+    if !source_tags.is_empty() && results.len() < limit_i as usize {
+        // Build tag filter
+        let tag_conditions: Vec<String> = source_tags
+            .iter()
+            .map(|t| format!("tags LIKE '%\"{}\"%'", t.replace('"', "")))
+            .collect();
+        let tag_sql = format!(
+            "SELECT id, content, tags, namespace, importance, content_type, created_at
+             FROM memories
+             WHERE id != ?1 AND deprecated = 0 AND ({})
+             ORDER BY updated_at DESC LIMIT ?2",
+            tag_conditions.join(" OR ")
+        );
+
+        if let Ok(mut stmt) = conn.prepare(&tag_sql) {
+            let tag_neighbors = stmt
+                .query_map(rusqlite::params![id, limit_i], |row| {
+                    let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                    let shared: Vec<String> = tags
+                        .iter()
+                        .filter(|t| source_tags.contains(t))
+                        .cloned()
+                        .collect();
+                    let score = if source_tags.is_empty() {
+                        0.0
+                    } else {
+                        shared.len() as f32 / source_tags.len() as f32
+                    };
+                    Ok(NeighborEntry {
+                        id: row.get(0)?,
+                        content: row.get(1)?,
+                        tags,
+                        namespace: row.get(3)?,
+                        importance: row.get(4)?,
+                        content_type: row.get(5)?,
+                        created_at: row.get(6)?,
+                        relationship: format!("shared_tag ({})", shared.len()),
+                        score: Some(score),
+                        shared_tags: shared,
+                    })
+                })
+                .ok();
+            if let Some(tag_neighbors) = tag_neighbors {
+                for n in tag_neighbors.flatten() {
+                    if seen.insert(n.id.clone()) {
+                        results.push(n);
+                        if results.len() >= limit_i as usize {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 /// Recall memories linked to a Uteke room.
 #[tauri::command]
 pub async fn uteke_room_recall(
