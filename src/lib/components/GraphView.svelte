@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { graph as graphApi, uteke } from '../ts/ipc';
+  import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
   import type { GraphData } from '../ts/types';
 
   interface Props {
@@ -13,6 +13,7 @@
   let data = $state<GraphData | null>(null);
   let loading = $state(true);
   let utekeReady = $state(false);
+  let serverOnline = $state(false);
   let hoveredNode = $state<string | null>(null);
 
   // Simulation state — ALL plain variables, no $state
@@ -37,9 +38,55 @@
     loading = true;
     try {
       utekeReady = await uteke.available();
-      data = utekeReady
-        ? await uteke.graph({ limit: 150 })
-        : await graphApi.getData({ limit: 150 });
+
+      // Check if server is online for cosine edges
+      try {
+        const status = await utekeServer.status();
+        serverOnline = status.available;
+      } catch {
+        // Server check failed — continue with fallback
+      }
+
+      if (serverOnline) {
+        // Use server graph (real cosine auto-linked edges)
+        try {
+          const serverGraph = await utekeServer.graph();
+          if (serverGraph.nodes.length > 0) {
+            data = {
+              nodes: serverGraph.nodes.map((n) => ({
+                id: n.id,
+                content: n.label,
+                tags: [],
+                content_type: null,
+                importance: null,
+                namespace: null,
+                created_at: null,
+                updated_at: null,
+              })),
+              edges: serverGraph.edges.map((e, i) => ({
+                id: i,
+                source: e.source,
+                target: e.target,
+                weight: e.weight,
+              })),
+            };
+          } else {
+            // Server returned empty graph — fallback to tag-based
+            data = utekeReady
+              ? await uteke.graph({ limit: 150 })
+              : await graphApi.getData({ limit: 150 });
+          }
+        } catch {
+          // Server graph call failed — fallback
+          data = utekeReady
+            ? await uteke.graph({ limit: 150 })
+            : await graphApi.getData({ limit: 150 });
+        }
+      } else {
+        data = utekeReady
+          ? await uteke.graph({ limit: 150 })
+          : await graphApi.getData({ limit: 150 });
+      }
     } catch {
       data = null;
     }
@@ -260,7 +307,11 @@
   {#if !loading && data && data.nodes.length > 0}
     <div class="graph-toolbar">
       <span class="graph-info">{data.nodes.length} nodes · {data.edges.length} edges</span>
-      {#if utekeReady}<span class="uteke-tag">Uteke</span>{/if}
+      {#if serverOnline}
+        <span class="cosine-tag">Cosine Auto-Link</span>
+      {:else if utekeReady}
+        <span class="uteke-tag">Tag-Based</span>
+      {/if}
     </div>
   {/if}
   <div class="canvas-wrap">
@@ -284,6 +335,7 @@
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 12px; border-bottom: 1px solid var(--border); }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
   .uteke-tag { font-size: 0.7rem; padding: 2px 8px; background: rgba(148,226,213,0.15); color: var(--teal); border-radius: 3px; font-weight: 600; }
+  .cosine-tag { font-size: 0.7rem; padding: 2px 8px; background: rgba(166,227,161,0.15); color: var(--green); border-radius: 3px; font-weight: 600; }
   .canvas-wrap { flex: 1; position: relative; overflow: hidden; }
   .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); pointer-events: none; }
 </style>
