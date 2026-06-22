@@ -108,17 +108,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "CorIn ${{ github.ref_name }}"
           releaseBody: |
-            ## CorIn ${{ github.ref_name }}
-
-            Cora Intelligence — desktop knowledge workstation.
-
-            ### Downloads
-            - **macOS (Apple Silicon)**: `.dmg`
-            - **macOS (Intel)**: `.dmg`
-            - **Linux**: `.deb` / `.AppImage`
-            - **Windows**: `.msi` / `.exe`
-
-            Auto-update is enabled — existing installs will update automatically.
+            See the assets below to download this version.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.settings.args }}

@@ -1,6 +1,6 @@
 [package]
 name = "corin"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "CorIn — Cora Intelligence. Desktop knowledge workstation."
 
@@ -24,3 +24,10 @@ toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
+panic = "abort"
