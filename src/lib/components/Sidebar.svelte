@@ -28,8 +28,8 @@
   {#if !collapsed}
     <div class="sidebar-header">
       <div class="logo">
-        <span class="logo-icon">◆</span>
-        <span class="logo-text">Codecora Hub</span>
+        <img src="/corin-logo.png" alt="CorIn" class="logo-img" />
+        <span class="logo-text">CorIn</span>
       </div>
     </div>
 
@@ -99,7 +99,7 @@
   }
 
   .logo { display: flex; align-items: center; gap: 8px; }
-  .logo-icon { font-size: 1.3rem; color: var(--accent); }
+  .logo-img { width: 24px; height: 24px; }
   .logo-text { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
 
   .new-memory-btn {

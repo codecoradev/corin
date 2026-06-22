@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "Codecora Hub",
+  "productName": "CorIn",
   "version": "0.1.0",
-  "identifier": "dev.codecora.hub",
+  "identifier": "dev.codecora.corin",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Codecora Hub",
+        "title": "CorIn",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

@@ -101,9 +101,9 @@
 {#if !dataDirInitialized}
   <div class="welcome-screen">
     <div class="welcome-content">
-      <div class="logo">◆</div>
-      <h1>Codecora Hub</h1>
-      <p>Desktop knowledge workstation powered by codecora.dev</p>
+      <img src="/corin-logo.png" alt="CorIn" class="welcome-logo" />
+      <h1>CorIn</h1>
+      <p>Cora Intelligence — desktop knowledge workstation</p>
       <button class="primary-btn" onclick={initDataDir}>Initialize Workspace</button>
       <p class="hint">Data will be stored in <code>~/.codecora/hub/</code></p>
     </div>
@@ -184,9 +184,9 @@
     max-width: 400px;
   }
 
-  .logo {
-    font-size: 3rem;
-    color: var(--accent);
+  .welcome-logo {
+    width: 64px;
+    height: 64px;
     margin-bottom: 12px;
   }
 

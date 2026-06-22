@@ -1,6 +1,6 @@
-# Codecora Hub
+# CorIn
 
-> Desktop knowledge workstation powered by [codecora.dev](https://codecora.dev).
+> CorIn — Cora Intelligence. Desktop knowledge workstation.
 
 Local-first, offline-capable desktop app for managing memories, knowledge graphs, and rooms. Think Obsidian — but with semantic search, auto-linking, and a Rust-native backend.
 

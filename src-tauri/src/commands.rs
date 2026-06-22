@@ -1580,7 +1580,7 @@ pub async fn export_data(
         }
         "markdown" => {
             let memories = export_all_memories(conn)?;
-            let mut doc = String::from("# Codecora Hub Export\n\n");
+            let mut doc = String::from("# CorIn Export\n\n");
             for m in memories {
                 doc.push_str(&format!(
                     "## {}\n\n{}\n\n**Tags:** {}\n**Namespace:** {}\n**Created:** {}\n\n---\n\n",
