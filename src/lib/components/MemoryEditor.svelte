@@ -151,7 +151,7 @@
           />
           <datalist id="ns-list">
             {#each namespaces as n}
-              <option value={n} />
+              <option value={n}>{n}</option>
             {/each}
           </datalist>
         </div>

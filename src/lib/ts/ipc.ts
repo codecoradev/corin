@@ -110,4 +110,6 @@ export const uteke = {
       limit: opts?.limit ?? null,
     }),
   stats: () => invoke<StatsResponse>('uteke_stats'),
+  neighbors: (id: string, limit?: number) =>
+    invoke<{ id: string; content: string; tags: string[]; namespace: string | null; importance: number | null; content_type: string | null; created_at: string | null; relationship: string; score: number | null; shared_tags: string[] }[]>('uteke_neighbors', { id, limit: limit ?? null }),
 };
