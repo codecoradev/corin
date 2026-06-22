@@ -83,7 +83,7 @@ pub struct RoomEntry {
     pub created_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatsResponse {
     pub total_memories: usize,
     pub total_namespaces: usize,
@@ -107,10 +107,7 @@ pub struct AppState {
     /// Hub SQLite connection for Hub-native operations.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
-    /// Path to Uteke database (~/.uteke/uteke.db via symlink).
-    pub uteke_db_path: Option<PathBuf>,
-    /// Read-only connection to Uteke database (None if not installed).
-    pub uteke_conn: Option<rusqlite::Connection>,
+    /// HTTP client for uteke-serve.
     /// HTTP client for uteke-serve (semantic search, cosine auto-link).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
@@ -708,674 +705,348 @@ pub async fn get_room_document(
 // Commands: Uteke Integration (read-only)
 // ---------------------------------------------------------------------------
 
-/// Check if Uteke database is available.
+/// Check if Uteke server is available (HTTP health check).
 #[tauri::command]
 pub async fn uteke_available(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<bool, CommandError> {
-    let s = state.lock().await;
-    Ok(s.uteke_conn.is_some())
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(false);
+    };
+    Ok(client.is_available().await)
 }
 
-/// List memories from Uteke database (read-only).
-///
-/// Queries the Uteke DB through the symlink at ~/.codecora/uteke/.
-/// Falls back to Hub DB if Uteke is not installed.
+/// List memories via HTTP (always fresh).
 #[tauri::command]
 pub async fn uteke_list(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
     tag: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
-    let mut s = state.lock().await;
-
-    let conn = s.uteke_conn.as_mut().ok_or(CommandError::Uteke(
-        "Uteke not installed. Install from https://github.com/codecoradev/uteke".to_string(),
-    ))?;
-
-    let limit = limit.unwrap_or(50) as i64;
-    let offset = offset.unwrap_or(0) as i64;
-
-    let mut sql = String::from(
-        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
-         FROM memories WHERE deprecated = 0",
-    );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    if let Some(ref ns) = namespace {
-        sql.push_str(" AND namespace = ?");
-        params.push(Box::new(ns.clone()));
+    let limit = limit.unwrap_or(50);
+    let offset = offset.unwrap_or(0);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
     }
-    if let Some(ref t) = tag {
-        sql.push_str(" AND tags LIKE ?");
-        params.push(Box::new(format!("%\"{}\"%", t)));
-    }
-
-    sql.push_str(" ORDER BY updated_at DESC LIMIT ? OFFSET ?");
-    params.push(Box::new(limit));
-    params.push(Box::new(offset));
-
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut stmt = conn
-        .prepare(&sql)
+    let memories = client
+        .list(namespace.as_deref(), tag.as_deref(), limit, offset)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
+    Ok(memories
+        .into_iter()
+        .map(|m| MemoryEntry {
+            id: m.id,
+            content: m.content,
+            tags: m.tags,
+            content_type: Some(m.content_type),
+            importance: Some(m.importance),
+            namespace: Some(m.namespace),
+            created_at: Some(m.created_at),
+            updated_at: Some(m.updated_at),
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(results)
+        .collect())
 }
 
-/// Get a single memory from Uteke database by ID (read-only).
+/// Get a single memory by ID via HTTP.
 #[tauri::command]
 pub async fn uteke_get(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<MemoryEntry, CommandError> {
-    let s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_ref()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    conn.query_row(
-        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
-         FROM memories WHERE id = ?1 AND deprecated = 0",
-        rusqlite::params![id],
-        |row| {
-            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        },
-    )
-    .map_err(|_| CommandError::NotFound(id))
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    let m = client
+        .get(&id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(MemoryEntry {
+        id: m.id,
+        content: m.content,
+        tags: m.tags,
+        content_type: Some(m.content_type),
+        importance: Some(m.importance),
+        namespace: Some(m.namespace),
+        created_at: Some(m.created_at),
+        updated_at: Some(m.updated_at),
+    })
 }
 
-/// Search memories in Uteke database using FTS5.
+/// FTS5 keyword search via HTTP.
 #[tauri::command]
 pub async fn uteke_search(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     query: String,
     namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<SearchResult>, CommandError> {
-    let mut s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_mut()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let limit = limit.unwrap_or(10) as i64;
-
-    // Try FTS5 first (Uteke has memories_fts table)
-    let mut sql = String::from(
-        "SELECT m.id, m.content, m.tags, bm25(memories_fts) as score
-         FROM memories_fts
-         JOIN memories m ON m.rowid = memories_fts.rowid
-         WHERE memories_fts MATCH ? AND m.deprecated = 0",
-    );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(query.clone())];
-
-    if let Some(ref ns) = namespace {
-        sql.push_str(" AND m.namespace = ?");
-        params.push(Box::new(ns.clone()));
+    let limit = limit.unwrap_or(20);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
     }
-
-    sql.push_str(" ORDER BY score LIMIT ?");
-    params.push(Box::new(limit));
-
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let fts_result = conn.prepare(&sql);
-
-    match fts_result {
-        Ok(mut stmt) => {
-            let results: Vec<SearchResult> = stmt
-                .query_map(param_refs.as_slice(), |row| {
-                    let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-                    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-                    let score: f64 = row.get(3).unwrap_or(0.0);
-                    Ok(SearchResult {
-                        id: row.get(0)?,
-                        content: row.get(1)?,
-                        score: score as f32,
-                        tags,
-                    })
-                })
-                .map_err(|e| CommandError::Uteke(e.to_string()))?
-                .filter_map(|r| r.ok())
-                .collect();
-
-            if !results.is_empty() {
-                return Ok(results);
-            }
-        }
-        Err(e) => {
-            eprintln!("FTS5 query failed, falling back to LIKE: {e}");
-        }
-    }
-
-    // Fallback to LIKE search (with namespace filter if provided)
-    let pattern = format!("%{}%", query);
-    let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
-        if let Some(ref ns) = namespace {
-            (
-                "SELECT id, content, tags FROM memories
-             WHERE content LIKE ? AND deprecated = 0 AND namespace = ?
-             ORDER BY updated_at DESC LIMIT ?"
-                    .to_string(),
-                vec![Box::new(pattern), Box::new(ns.clone()), Box::new(limit)],
-            )
-        } else {
-            (
-                "SELECT id, content, tags FROM memories
-             WHERE content LIKE ? AND deprecated = 0
-             ORDER BY updated_at DESC LIMIT ?"
-                    .to_string(),
-                vec![Box::new(pattern), Box::new(limit)],
-            )
-        };
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut stmt = conn
-        .prepare(&sql)
+    let results = client
+        .search(&query, namespace.as_deref(), limit)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(SearchResult {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                score: 0.0,
-                tags,
-            })
+    Ok(results
+        .into_iter()
+        .map(|r| SearchResult {
+            id: r.memory.id,
+            content: r.memory.content,
+            score: r.score,
+            tags: r.memory.tags,
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-    Ok(results)
+        .collect())
 }
 
-/// Generate graph data from Uteke memories based on shared tags.
-///
-/// Two memories are connected if they share at least one tag.
-/// This creates an Obsidian-like knowledge graph.
-/// Edge weight = number of shared tags.
+/// Graph data via HTTP (cosine edges from memory_edges).
 #[tauri::command]
 pub async fn uteke_graph(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
-    limit: Option<usize>,
+    _limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    let mut s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_mut()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let limit = limit.unwrap_or(100) as i64;
-
-    // Get memories with their tags
-    let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
-        if let Some(ref ns) = namespace {
-            (
-            "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
-             FROM memories WHERE deprecated = 0 AND namespace = ?
-             ORDER BY updated_at DESC LIMIT ?"
-                .to_string(),
-            vec![Box::new(ns.clone()), Box::new(limit)],
-        )
-        } else {
-            (
-            "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at
-             FROM memories WHERE deprecated = 0
-             ORDER BY updated_at DESC LIMIT ?"
-                .to_string(),
-            vec![Box::new(limit)],
-        )
-        };
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let mut stmt = conn
-        .prepare(&sql)
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(GraphData {
+            nodes: vec![],
+            edges: vec![],
+        });
+    };
+    if !client.is_available().await {
+        return Ok(GraphData {
+            nodes: vec![],
+            edges: vec![],
+        });
+    }
+    let graph = client
+        .graph(namespace.as_deref())
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let nodes: Vec<MemoryEntry> = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+    Ok(GraphData {
+        nodes: graph
+            .nodes
+            .into_iter()
+            .map(|n| MemoryEntry {
+                id: n.id,
+                content: n.label,
+                tags: vec![],
+                content_type: n.entity_type,
+                importance: None,
+                namespace: None,
+                created_at: None,
+                updated_at: None,
             })
-        })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    // Build edge list from shared tags
-    use std::collections::{HashMap, HashSet};
-
-    // Map: tag -> list of memory indices
-    let mut tag_map: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, node) in nodes.iter().enumerate() {
-        for tag in &node.tags {
-            tag_map.entry(tag.clone()).or_default().push(i);
-        }
-    }
-
-    // For each tag with 2+ memories, create edges between all pairs
-    let mut edge_set: HashSet<(usize, usize)> = HashSet::new();
-    for indices in tag_map.values() {
-        if indices.len() < 2 {
-            continue;
-        }
-        for i in 0..indices.len() {
-            for j in (i + 1)..indices.len() {
-                let a = indices[i];
-                let b = indices[j];
-                let pair = if a < b { (a, b) } else { (b, a) };
-                edge_set.insert(pair);
-            }
-        }
-    }
-
-    let edges: Vec<GraphEdge> = edge_set
-        .iter()
-        .map(|(a, b)| GraphEdge {
-            id: None,
-            source: nodes[*a].id.clone(),
-            target: nodes[*b].id.clone(),
-            weight: Some(1.0),
-        })
-        .collect();
-
-    Ok(GraphData { nodes, edges })
+            .collect(),
+        edges: graph
+            .edges
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| GraphEdge {
+                id: Some(i as i64),
+                source: e.source,
+                target: e.target,
+                weight: Some(e.weight),
+            })
+            .collect(),
+    })
 }
 
-/// List distinct namespaces from Uteke database.
+/// List namespaces via HTTP.
 #[tauri::command]
 pub async fn uteke_namespaces(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Vec<String>, CommandError> {
-    let s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_ref()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let mut stmt = conn
-        .prepare("SELECT DISTINCT namespace FROM memories WHERE deprecated = 0 ORDER BY namespace")
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let namespaces = stmt
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(namespaces)
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    client
+        .namespaces()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
-/// Uteke room entry (maps to Uteke rooms table).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UtekeRoom {
-    pub id: String,
-    pub title: Option<String>,
-    pub namespace: String,
-    pub memory_count: usize,
-    pub participant_count: usize,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// List rooms from Uteke database.
-/// Returns actual Uteke rooms (rooms table + room_memories).
+/// List rooms via HTTP.
 #[tauri::command]
 pub async fn uteke_rooms(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    _namespace: Option<String>,
-) -> Result<Vec<UtekeRoom>, CommandError> {
-    let s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_ref()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT r.id, r.title, r.namespace, r.created_at, r.updated_at,
-             (SELECT COUNT(*) FROM room_memories rm WHERE rm.room_id = r.id),
-             (SELECT COUNT(DISTINCT rm.author) FROM room_memories rm WHERE rm.room_id = r.id)
-             FROM rooms r ORDER BY r.updated_at DESC",
-        )
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    let rooms = client
+        .rooms(namespace.as_deref())
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let rooms = stmt
-        .query_map([], |row| {
-            let mem_count: i64 = row.get(5).unwrap_or(0);
-            let part_count: i64 = row.get(6).unwrap_or(0);
-            Ok(UtekeRoom {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                namespace: row.get(2)?,
-                memory_count: mem_count as usize,
-                participant_count: part_count as usize,
-                created_at: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                updated_at: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+    Ok(rooms
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "title": r.title,
+                "namespace": r.namespace,
+                "memory_count": 0,
+                "participant_count": 0,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
             })
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(rooms)
+        .collect())
 }
 
-/// Neighbor entry — a memory connected to another with relationship info.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NeighborEntry {
-    pub id: String,
-    pub content: String,
-    pub tags: Vec<String>,
-    pub namespace: Option<String>,
-    pub importance: Option<f32>,
-    pub content_type: Option<String>,
-    pub created_at: Option<String>,
-    pub relationship: String,
-    pub score: Option<f32>,
-    pub shared_tags: Vec<String>,
-}
-
-/// Find connected memories for a given memory ID.
-///
-/// Combines:
-/// 1. Explicit edges from memory_edges table (if any)
-/// 2. Shared-tag neighbors (computed, always works)
+/// Find neighbors via semantic recall (query with memory content).
 #[tauri::command]
 pub async fn uteke_neighbors(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     id: String,
     limit: Option<usize>,
-) -> Result<Vec<NeighborEntry>, CommandError> {
-    let s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_ref()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let limit_i = limit.unwrap_or(20) as i64;
-
-    // Get the source memory's tags
-    let source_tags: Vec<String> = conn
-        .query_row(
-            "SELECT tags FROM memories WHERE id = ?1 AND deprecated = 0",
-            rusqlite::params![id],
-            |row| {
-                let tags_str: String = row.get::<_, Option<String>>(0)?.unwrap_or_default();
-                Ok(serde_json::from_str(&tags_str).unwrap_or_default())
-            },
-        )
-        .map_err(|_| CommandError::NotFound(id.clone()))?;
-
-    let mut results = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    seen.insert(id.clone());
-
-    // 1. Explicit edges from memory_edges
-    let edge_sql =
-        "SELECT m.id, m.content, m.tags, m.namespace, m.importance, m.content_type, m.created_at,
-                    e.edge_type, e.weight
-                    FROM memory_edges e
-                    JOIN memories m ON (m.id = e.target_id OR m.id = e.source_id)
-                    WHERE (e.source_id = ?1 OR e.target_id = ?1) AND m.id != ?1 AND m.deprecated = 0
-                    LIMIT ?2";
-    if let Ok(mut stmt) = conn.prepare(edge_sql) {
-        let edges = stmt
-            .query_map(rusqlite::params![id, limit_i], |row| {
-                let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-                Ok(NeighborEntry {
-                    id: row.get(0)?,
-                    content: row.get(1)?,
-                    tags,
-                    namespace: row.get(3)?,
-                    importance: row.get(4)?,
-                    content_type: row.get(5)?,
-                    created_at: row.get(6)?,
-                    relationship: row
-                        .get::<_, String>(7)
-                        .unwrap_or_else(|_| "related".to_string()),
-                    score: row.get(8).ok(),
-                    shared_tags: vec![],
-                })
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let limit = limit.unwrap_or(10);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    // Get the memory first, use its content as recall query
+    let memory = client
+        .get(&id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let results = client
+        .recall(&memory.content, Some(&memory.namespace), limit + 1)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    // Filter out self, map to neighbor format
+    Ok(results
+        .into_iter()
+        .filter(|r| r.memory.id != id)
+        .take(limit)
+        .map(|r| {
+            serde_json::json!({
+                "id": r.memory.id,
+                "content": r.memory.content,
+                "tags": r.memory.tags,
+                "namespace": r.memory.namespace,
+                "importance": r.memory.importance,
+                "content_type": r.memory.content_type,
+                "created_at": r.memory.created_at,
+                "relationship": if r.score >= 0.92 { "possible_duplicate" } else { "similar_to" },
+                "score": r.score,
+                "shared_tags": [],
             })
-            .ok();
-        if let Some(edges) = edges {
-            for e in edges.flatten() {
-                if seen.insert(e.id.clone()) {
-                    results.push(e);
-                }
-            }
-        }
-    }
-
-    // 2. Shared-tag neighbors (computed)
-    if !source_tags.is_empty() && results.len() < limit_i as usize {
-        // Build tag filter
-        let tag_conditions: Vec<String> = source_tags
-            .iter()
-            .map(|t| format!("tags LIKE '%\"{}\"%'", t.replace('"', "")))
-            .collect();
-        let tag_sql = format!(
-            "SELECT id, content, tags, namespace, importance, content_type, created_at
-             FROM memories
-             WHERE id != ?1 AND deprecated = 0 AND ({})
-             ORDER BY updated_at DESC LIMIT ?2",
-            tag_conditions.join(" OR ")
-        );
-
-        if let Ok(mut stmt) = conn.prepare(&tag_sql) {
-            let tag_neighbors = stmt
-                .query_map(rusqlite::params![id, limit_i], |row| {
-                    let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-                    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-                    let shared: Vec<String> = tags
-                        .iter()
-                        .filter(|t| source_tags.contains(t))
-                        .cloned()
-                        .collect();
-                    let score = if source_tags.is_empty() {
-                        0.0
-                    } else {
-                        shared.len() as f32 / source_tags.len() as f32
-                    };
-                    Ok(NeighborEntry {
-                        id: row.get(0)?,
-                        content: row.get(1)?,
-                        tags,
-                        namespace: row.get(3)?,
-                        importance: row.get(4)?,
-                        content_type: row.get(5)?,
-                        created_at: row.get(6)?,
-                        relationship: format!("shared_tag ({})", shared.len()),
-                        score: Some(score),
-                        shared_tags: shared,
-                    })
-                })
-                .ok();
-            if let Some(tag_neighbors) = tag_neighbors {
-                for n in tag_neighbors.flatten() {
-                    if seen.insert(n.id.clone()) {
-                        results.push(n);
-                        if results.len() >= limit_i as usize {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(results)
+        })
+        .collect())
 }
 
-/// Recall memories linked to a Uteke room.
+/// Room recall via HTTP.
 #[tauri::command]
 pub async fn uteke_room_recall(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
     limit: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
-    let s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_ref()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let limit_i = limit.unwrap_or(50) as i64;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT m.id, m.content, m.tags, m.content_type, m.importance, m.namespace, m.created_at, m.updated_at
-             FROM memories m
-             INNER JOIN room_memories rm ON m.id = rm.memory_id
-             WHERE rm.room_id = ?1 AND m.deprecated = 0
-             ORDER BY rm.joined_at ASC
-             LIMIT ?2",
-        )
+    let limit = limit.unwrap_or(20);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    let results = client
+        .room_recall(&room_id, limit)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let results = stmt
-        .query_map(rusqlite::params![room_id, limit_i], |row| {
-            let tags_str: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
+    Ok(results
+        .into_iter()
+        .map(|r| MemoryEntry {
+            id: r.memory.id,
+            content: r.memory.content,
+            tags: r.memory.tags,
+            content_type: Some(r.memory.content_type),
+            importance: Some(r.memory.importance),
+            namespace: Some(r.memory.namespace),
+            created_at: Some(r.memory.created_at),
+            updated_at: Some(r.memory.updated_at),
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(results)
+        .collect())
 }
 
-/// Get Uteke stats.
+/// Stats via HTTP (always fresh).
 #[tauri::command]
 pub async fn uteke_stats(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<StatsResponse, CommandError> {
-    let s = state.lock().await;
-
-    let conn = s
-        .uteke_conn
-        .as_ref()
-        .ok_or(CommandError::Uteke("Uteke not installed".to_string()))?;
-
-    let total_memories: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM memories WHERE deprecated = 0",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    let total_namespaces: i64 = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT namespace) FROM memories WHERE deprecated = 0",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
-
-    let total_edges: i64 = conn
-        .query_row("SELECT COUNT(*) FROM memory_edges", [], |row| row.get(0))
-        .unwrap_or(0);
-
-    // Count unique tags
-    let tags_str: String = conn
-        .query_row(
-            "SELECT GROUP_CONCAT(tags) FROM memories WHERE tags IS NOT NULL AND deprecated = 0",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_default();
-    let all_tags: Vec<String> = tags_str
-        .split(']')
-        .filter_map(|s| {
-            let cleaned = s.trim().trim_start_matches('[').trim();
-            if cleaned.is_empty() {
-                return None;
-            }
-            let tags: Vec<String> =
-                serde_json::from_str(&format!("[{}]", cleaned)).unwrap_or_default();
-            Some(tags)
-        })
-        .flatten()
-        .collect();
-    let unique_tags: std::collections::HashSet<String> = all_tags.into_iter().collect();
-
-    let db_size_bytes = s
-        .uteke_db_path
-        .as_ref()
-        .and_then(|p| std::fs::metadata(p).ok())
-        .map(|m| m.len())
-        .unwrap_or(0);
-
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(StatsResponse::default());
+    };
+    if !client.is_available().await {
+        return Ok(StatsResponse::default());
+    }
+    let stats = client
+        .stats()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(StatsResponse {
-        total_memories: total_memories as usize,
-        total_namespaces: total_namespaces as usize,
-        total_tags: unique_tags.len(),
-        total_edges: total_edges as usize,
-        db_size_bytes,
+        total_memories: stats.total_memories,
+        total_namespaces: 0,
+        total_tags: stats.unique_tags,
+        total_edges: 0,
+        db_size_bytes: stats.db_size_bytes,
     })
 }
 
