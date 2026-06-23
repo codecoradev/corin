@@ -1677,6 +1677,11 @@ pub async fn uteke_forget(
 }
 
 /// Get graph data from uteke-serve (real cosine edges, not tag-based).
+///
+/// If the server returns 0 edges (cosine auto-link not yet generated),
+/// falls back to a tag-based graph: memories sharing at least one tag
+/// are connected. This ensures the graph view is never empty when the
+/// server has memories but no cosine edges yet.
 #[tauri::command]
 pub async fn uteke_server_graph(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -1710,10 +1715,103 @@ pub async fn uteke_server_graph(
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
+    // If server already has cosine edges, return them as-is.
+    if !graph.edges.is_empty() {
+        return Ok(serde_json::json!({
+            "nodes": graph.nodes,
+            "edges": graph.edges,
+            "stats": graph.stats,
+        }));
+    }
+
+    // Fallback: build a tag-based graph from memories fetched via /list.
+    // Cosine auto-linking may not be active on the installed uteke version,
+    // so we generate edges from shared tags to keep the graph useful.
+    let memories = client
+        .list(namespace.as_deref(), None, 150, 0)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    if memories.is_empty() {
+        return Ok(serde_json::json!({
+            "nodes": [],
+            "edges": [],
+            "stats": {"node_count": 0, "edge_count": 0, "relation_types": []},
+            "hint": "No memories yet — create some to see the graph",
+        }));
+    }
+
+    // Build nodes from memories.
+    let nodes: Vec<serde_json::Value> = memories
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "label": m.content.chars().take(60).collect::<String>(),
+                "entity_type": m.tags.first().cloned(),
+            })
+        })
+        .collect();
+
+    // Build edges from shared tags.
+    // For each tag, collect all memory IDs that have it, then connect them.
+    let mut tag_to_memories: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for m in &memories {
+        for tag in &m.tags {
+            tag_to_memories.entry(tag.as_str()).or_default().push(&m.id);
+        }
+    }
+
+    let mut edges: Vec<serde_json::Value> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+    for (_tag, ids) in &tag_to_memories {
+        // Connect all pairs within the same tag (cap at 5 per tag to avoid clutter).
+        let max_pairs = 5;
+        let mut count = 0;
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                if count >= max_pairs {
+                    break;
+                }
+                let key = (
+                    ids[i].to_string(),
+                    ids[j].to_string(),
+                );
+                if seen.insert(key.clone()) {
+                    edges.push(serde_json::json!({
+                        "source": ids[i],
+                        "target": ids[j],
+                        "relation": "shared_tag",
+                        "weight": 0.5,
+                    }));
+                    count += 1;
+                }
+            }
+            if count >= max_pairs {
+                break;
+            }
+        }
+    }
+
+    let node_count = nodes.len();
+    let edge_count = edges.len();
+    let relation_types: Vec<&str> = if edges.is_empty() {
+        vec![]
+    } else {
+        vec!["shared_tag"]
+    };
+
     Ok(serde_json::json!({
-        "nodes": graph.nodes,
-        "edges": graph.edges,
-        "stats": graph.stats,
+        "nodes": nodes,
+        "edges": edges,
+        "stats": {
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "relation_types": relation_types,
+        },
+        "hint": "Tag-based fallback graph (cosine auto-link not active on uteke v0.3.2)",
     }))
 }
 

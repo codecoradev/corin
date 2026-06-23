@@ -11,6 +11,93 @@ use commands::AppState;
 use config::init_environment;
 use uteke_client::UtekeClient;
 
+/// Check if a TCP port is listening (server already running).
+fn is_port_open(host: &str, port: u16) -> bool {
+    std::net::TcpStream::connect((host, port)).is_ok()
+}
+
+/// Ensure uteke-serve is running.
+///
+/// If the server is already reachable at the detected URL, do nothing.
+/// Otherwise, try to start `uteke-serve` as a detached background process
+/// (if the binary is in PATH) and wait briefly for it to come up.
+///
+/// Returns the server URL on success.
+fn ensure_uteke_server() -> String {
+    let server_url = config::detect_uteke_serve_url();
+
+    // Parse host:port from the URL (e.g. "http://127.0.0.1:8767").
+    let (host, port) = match parse_host_port(&server_url) {
+        Some(hp) => hp,
+        None => return server_url,
+    };
+
+    // Already running? Nothing to do.
+    if is_port_open(&host, port) {
+        return server_url;
+    }
+
+    // Try to start uteke-serve from PATH.
+    if let Some(uteke_serve) = find_in_path("uteke-serve") {
+        eprintln!("CorIn: starting uteke-serve ({})...", uteke_serve.display());
+
+        let result = std::process::Command::new(&uteke_serve)
+            .arg("--host").arg(&host)
+            .arg("--port").arg(port.to_string())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        match result {
+            Ok(child) => {
+                eprintln!("CorIn: uteke-serve started (PID {})", child.id());
+                // Wait up to 5 seconds for the server to become available.
+                for _ in 0..50 {
+                    if is_port_open(&host, port) {
+                        eprintln!("CorIn: uteke-serve is ready at {server_url}");
+                        return server_url;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                eprintln!("CorIn: uteke-serve did not become ready within 5s");
+            }
+            Err(e) => {
+                eprintln!("CorIn: failed to start uteke-serve: {e}");
+            }
+        }
+    } else {
+        eprintln!(
+            "CorIn: uteke-serve not found in PATH — semantic search will be unavailable. \
+             Install uteke or start uteke-serve manually."
+        );
+    }
+
+    server_url
+}
+
+/// Extract (host, port) from a URL like `http://127.0.0.1:8767`.
+fn parse_host_port(url: &str) -> Option<(String, u16)> {
+    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
+    let (host, port_str) = rest.rsplit_once(':')?;
+    let port: u16 = port_str.parse().ok()?;
+    Some((host.to_string(), port))
+}
+
+/// Find an executable in PATH.
+fn find_in_path(name: &str) -> Option<std::path::PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths).find_map(|dir| {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                Some(candidate)
+            } else {
+                None
+            }
+        })
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -89,9 +176,9 @@ pub fn run() {
                             s.conn = Some(conn);
 
                             // All Uteke access via HTTP API (no direct SQLite).
-                            // Server URL resolved dynamically from ~/.uteke/config.toml
-                            // when available, falling back to localhost:8767.
-                            let server_url = config::detect_uteke_serve_url();
+                            // Ensure uteke-serve is running — auto-start from
+                            // PATH if needed, then create the HTTP client.
+                            let server_url = ensure_uteke_server();
                             let client = UtekeClient::new(&server_url);
                             s.uteke_client = Some(client);
                         }
