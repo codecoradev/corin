@@ -18,62 +18,147 @@ fn is_port_open(host: &str, port: u16) -> bool {
 
 /// Ensure uteke-serve is running.
 ///
-/// If the server is already reachable at the detected URL, do nothing.
-/// Otherwise, try to start `uteke-serve` as a detached background process
-/// (if the binary is in PATH) and wait briefly for it to come up.
+/// Flow:
+/// 1. If server already reachable at detected URL → done.
+/// 2. If `uteke-serve` binary in PATH → start it.
+/// 3. If neither → run official install script, then try start again.
 ///
-/// Returns the server URL on success.
+/// Returns the server URL.
 fn ensure_uteke_server() -> String {
     let server_url = config::detect_uteke_serve_url();
 
-    // Parse host:port from the URL (e.g. "http://127.0.0.1:8767").
     let (host, port) = match parse_host_port(&server_url) {
         Some(hp) => hp,
         None => return server_url,
     };
 
-    // Already running? Nothing to do.
+    // 1. Already running?
     if is_port_open(&host, port) {
         return server_url;
     }
 
-    // Try to start uteke-serve from PATH.
-    if let Some(uteke_serve) = find_in_path("uteke-serve") {
-        eprintln!("CorIn: starting uteke-serve ({})...", uteke_serve.display());
-
-        let result = std::process::Command::new(&uteke_serve)
-            .arg("--host").arg(&host)
-            .arg("--port").arg(port.to_string())
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-
-        match result {
-            Ok(child) => {
-                eprintln!("CorIn: uteke-serve started (PID {})", child.id());
-                // Wait up to 5 seconds for the server to become available.
-                for _ in 0..50 {
-                    if is_port_open(&host, port) {
-                        eprintln!("CorIn: uteke-serve is ready at {server_url}");
-                        return server_url;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-                eprintln!("CorIn: uteke-serve did not become ready within 5s");
+    // 2. Try to start from PATH, or install first if missing.
+    let uteke_serve = match find_in_path("uteke-serve") {
+        Some(path) => path,
+        None => {
+            eprintln!("CorIn: uteke-serve not found — running installer...");
+            if !install_uteke() {
+                eprintln!(
+                    "CorIn: uteke installation failed — semantic search will be unavailable. \
+                     Install manually: curl -fsSL https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh | sh"
+                );
+                return server_url;
             }
-            Err(e) => {
-                eprintln!("CorIn: failed to start uteke-serve: {e}");
+            // After install, find it again.
+            match find_in_path("uteke-serve") {
+                Some(path) => path,
+                None => {
+                    eprintln!("CorIn: uteke-serve still not found after install");
+                    return server_url;
+                }
             }
         }
-    } else {
-        eprintln!(
-            "CorIn: uteke-serve not found in PATH — semantic search will be unavailable. \
-             Install uteke or start uteke-serve manually."
-        );
+    };
+
+    // Start the server.
+    eprintln!("CorIn: starting uteke-serve ({})...", uteke_serve.display());
+    let result = std::process::Command::new(&uteke_serve)
+        .arg("--host").arg(&host)
+        .arg("--port").arg(port.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    match result {
+        Ok(child) => {
+            eprintln!("CorIn: uteke-serve started (PID {})", child.id());
+            for _ in 0..50 {
+                if is_port_open(&host, port) {
+                    eprintln!("CorIn: uteke-serve is ready at {server_url}");
+                    return server_url;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            eprintln!("CorIn: uteke-serve did not become ready within 5s");
+        }
+        Err(e) => {
+            eprintln!("CorIn: failed to start uteke-serve: {e}");
+        }
     }
 
     server_url
+}
+
+/// Run the official uteke install script.
+///
+/// Downloads `install.sh` from GitHub and pipes it to `sh`.
+/// Installs both `uteke` and `uteke-serve` into `~/.local/bin/`.
+///
+/// Returns `true` if the install succeeded (exit code 0).
+fn install_uteke() -> bool {
+    eprintln!("CorIn: installing uteke via official script...");
+
+    let curl = std::process::Command::new("curl")
+        .args(["-fsSL", "https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn();
+
+    let mut curl_child = match curl {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("CorIn: failed to run curl for install: {e}");
+            return false;
+        }
+    };
+
+    let stdout = curl_child.stdout.take();
+
+    let mut sh_cmd = std::process::Command::new("sh");
+    sh_cmd
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+
+    if let Some(stdout) = stdout {
+        sh_cmd.stdin(stdout);
+    } else {
+        sh_cmd.stdin(std::process::Stdio::null());
+    }
+
+    let sh_status = match sh_cmd.status() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("CorIn: failed to run sh for install: {e}");
+            let _ = curl_child.kill();
+            return false;
+        }
+    };
+
+    // Ensure curl is reaped.
+    let _ = curl_child.wait();
+
+    // Ensure ~/.local/bin is in PATH for subsequent lookups.
+    if let Some(home) = dirs::home_dir() {
+        let local_bin = home.join(".local/bin");
+        if let Some(path) = std::env::var_os("PATH") {
+            let mut paths: Vec<std::path::PathBuf> = std::env::split_paths(&path).collect();
+            if !paths.contains(&local_bin) {
+                paths.insert(0, local_bin);
+                let new_path = std::env::join_paths(paths).unwrap_or(path);
+                // SAFETY: setting PATH is safe in single-threaded setup context.
+                unsafe { std::env::set_var("PATH", new_path); }
+            }
+        }
+    }
+
+    let ok = sh_status.success();
+    if ok {
+        eprintln!("CorIn: uteke installed successfully");
+    } else {
+        eprintln!("CorIn: uteke install script exited with non-zero status");
+    }
+    ok
 }
 
 /// Extract (host, port) from a URL like `http://127.0.0.1:8767`.

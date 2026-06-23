@@ -217,19 +217,21 @@
 
       // Apply
       for (const p of nodes) {
-        p.vx += (W / 2 - p.x) * 0.001;
-        p.vy += (H / 2 - p.y) * 0.001;
-        p.vx *= 0.8;
-        p.vy *= 0.8;
+        p.vx += (W / 2 - p.x) * 0.002;
+        p.vy += (H / 2 - p.y) * 0.002;
+        p.vx *= 0.72; // stronger damping for faster settle
+        p.vy *= 0.72;
         totalV += Math.abs(p.vx) + Math.abs(p.vy);
         p.x = Math.max(15, Math.min(W - 15, p.x + p.vx));
         p.y = Math.max(15, Math.min(H - 15, p.y + p.vy));
       }
 
-      // Settle check
-      if (totalV < 1.5) {
+      // Settle check — scale threshold with node count so large graphs
+      // don't oscillate forever.
+      const settleThreshold = Math.max(1.5, nodes.length * 0.15);
+      if (totalV < settleThreshold) {
         calmFrames++;
-        if (calmFrames > 20) {
+        if (calmFrames > 10) {
           physicsActive = false; // STOP physics
           needRedraw = true;
           console.log('[Graph] physics settled');
