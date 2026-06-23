@@ -79,7 +79,7 @@
 
 <div class="memory-detail">
   <div class="detail-header">
-    <button class="back-btn" onclick={onback}>← Back</button>
+    <button class="back-btn" onclick={onback}>✕ Close <kbd>Esc</kbd></button>
     {#if memory}
       <div class="header-actions">
         <button class="edit-btn" onclick={() => onedit(memory!)}>Edit</button>
@@ -199,11 +199,12 @@
 </div>
 
 <style>
-  .memory-detail { padding: 16px 24px; max-width: 700px; margin: 0 auto; }
+  .memory-detail { padding: 16px 24px; }
 
   .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
   .back-btn:hover { background: var(--bg-hover); }
+  .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: 3px; opacity: 0.7; }
   .header-actions { display: flex; gap: 8px; }
   .edit-btn, .delete-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
   .edit-btn { background: var(--bg-tertiary); color: var(--text-primary); }
