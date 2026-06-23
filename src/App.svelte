@@ -22,6 +22,7 @@
   let namespace = $state<string | null>(null);
   let showEditor = $state(false);
   let showSettings = $state(false);
+  let graphDetailId = $state<string | null>(null);
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
 
@@ -49,6 +50,15 @@
 
   function selectMemory(id: string) {
     selectedMemoryId = id;
+  }
+
+  // From graph: open detail as overlay (don't unmount the graph)
+  function openGraphDetail(id: string) {
+    graphDetailId = id;
+  }
+
+  function closeGraphDetail() {
+    graphDetailId = null;
   }
 
   function newMemory() {
@@ -153,7 +163,7 @@
           onmemoryclick={selectMemory}
         />
       {:else if activeView === 'graph'}
-        <GraphView onmemoryclick={selectMemory} />
+        <GraphView onmemoryclick={openGraphDetail} />
       {:else if activeView === 'rooms'}
         <RoomsView {namespace} onmemoryclick={selectMemory} />
       {/if}
@@ -163,6 +173,17 @@
 
 {#if showSettings}
   <SettingsModal onclose={closeSettings} />
+{/if}
+
+{#if graphDetailId}
+  <div class="graph-detail-overlay">
+    <MemoryDetail
+      memoryId={graphDetailId}
+      onedit={editMemory}
+      onback={closeGraphDetail}
+      onneighborclick={(id) => { graphDetailId = id; }}
+    />
+  </div>
 {/if}
 
 {#if showEditor}
@@ -234,5 +255,19 @@
 
   .primary-btn:hover {
     opacity: 0.85;
+  }
+
+  .graph-detail-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 480px;
+    max-width: 90vw;
+    height: 100vh;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+    z-index: 90;
+    overflow-y: auto;
   }
 </style>
