@@ -98,16 +98,18 @@ pub struct StatsResponse {
 
 /// Managed state shared across all Tauri commands.
 ///
-/// Phase 1: SQLite-only backend (no embedding, pure FTS5).
-/// Phase 2: uteke-core library dep for full embedding + graph.
+/// Uses uteke-core as the primary store (native embedding, graph,
+/// cosine auto-linking). CorIn's own SQLite DB is kept only for
+/// app-level settings (not memories).
 #[derive(Default)]
 pub struct AppState {
     /// Path to the CorIn SQLite database (~/.codecora/corin/corin.db).
     pub db_path: Option<PathBuf>,
-    /// CorIn SQLite connection for CorIn-native operations.
+    /// CorIn SQLite connection for settings only.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
-    /// HTTP client for uteke-serve.
+    /// Uteke-core native store (embedding + graph + cosine auto-link).
+    pub uteke: Option<uteke_core::Uteke>,
     /// HTTP client for uteke-serve (semantic search, cosine auto-link).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
@@ -116,10 +118,15 @@ pub struct AppState {
 impl AppState {
     /// Check if store is initialized.
     fn ensure_initialized(&self) -> Result<(), CommandError> {
-        if self.conn.is_none() {
+        if self.uteke.is_none() && self.conn.is_none() {
             return Err(CommandError::NotInitialized);
         }
         Ok(())
+    }
+
+    /// Check if the uteke-core native store is available.
+    fn ensure_uteke(&self) -> Result<&uteke_core::Uteke, CommandError> {
+        self.uteke.as_ref().ok_or(CommandError::NotInitialized)
     }
 }
 
@@ -133,22 +140,18 @@ pub async fn remember(
     content: String,
     tags: Vec<String>,
     namespace: Option<String>,
-    content_type: Option<String>,
-    importance: Option<f32>,
+    _content_type: Option<String>,
+    _importance: Option<f32>,
 ) -> Result<String, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
-    let id = nanoid::nanoid!(12);
+    let tag_refs: Vec<&str> = tags.iter().map(|t| t.as_str()).collect();
+    let ns = namespace.as_deref();
 
-    let tags_json = serde_json::to_string(&tags).unwrap_or_default();
-    let now = chrono::Utc::now().to_rfc3339();
-
-    conn.execute(
-        "INSERT INTO memories (id, content, tags, content_type, importance, namespace, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![id, content, tags_json, content_type, importance, namespace, now, now],
-    ).map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let id = uteke
+        .remember(&content, &tag_refs, None, ns)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     Ok(id)
 }
@@ -161,36 +164,43 @@ pub async fn remember(
 pub async fn recall(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     query: String,
-    _namespace: Option<String>,
+    namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<SearchResult>, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
+    let s = state.lock().await;
     let limit = limit.unwrap_or(10);
-    let query_lower = format!("%{}%", query.to_lowercase());
 
-    let mut stmt = conn.prepare(
-        "SELECT id, content, tags FROM memories WHERE content LIKE ?1 ORDER BY updated_at DESC LIMIT ?2"
-    ).map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let results = stmt
-        .query_map(rusqlite::params![query_lower, limit as i64], |row| {
-            let tags_str: String = row.get(2)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(SearchResult {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                score: 0.0, // Phase 1: no embedding, score = 0. Phase 2: uteke-core recall
-                tags,
+    // ── API-first: try uteke-serve ──
+    if let Some(client) = s.uteke_client.clone()
+        && client.is_available().await
+        && let Ok(results) = client.recall(&query, namespace.as_deref(), limit).await
+    {
+        return Ok(results
+            .into_iter()
+            .map(|r| SearchResult {
+                id: r.memory.id,
+                content: r.memory.content,
+                score: r.score,
+                tags: r.memory.tags,
             })
-        })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
+            .collect());
+    }
 
-    Ok(results)
+    // ── Fallback: uteke-core native recall ──
+    let uteke = s.ensure_uteke()?;
+    let results = uteke
+        .recall(&query, limit, None, namespace.as_deref(), 0.0)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(results
+        .into_iter()
+        .map(|r| SearchResult {
+            id: r.memory.id,
+            content: r.memory.content,
+            score: r.score,
+            tags: r.memory.tags,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -243,57 +253,27 @@ pub async fn list(
         }
     }
 
-    // ── Fallback: read from CorIn SQLite DB ──
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
-
-    let mut sql = String::from(
-        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories WHERE 1=1",
-    );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    if let Some(ref ns) = namespace {
-        sql.push_str(" AND namespace = ?");
-        params.push(Box::new(ns.clone()));
-    }
-    if let Some(ref t) = tag {
-        sql.push_str(" AND tags LIKE ?");
-        params.push(Box::new(format!("%\"{}\"%", t)));
-    }
-
-    sql.push_str(" ORDER BY updated_at DESC LIMIT ? OFFSET ?");
-    let limit_i: i64 = limit as i64;
-    let offset_i: i64 = offset as i64;
-    params.push(Box::new(limit_i));
-    params.push(Box::new(offset_i));
-
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut stmt = conn
-        .prepare(&sql)
+    // ── Fallback: uteke-core native list ──
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
+    let memories = uteke
+        .store()
+        .list(tag.as_deref(), namespace.as_deref(), limit, offset)
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            let tags_str: String = row.get(2)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
+    Ok(memories
+        .into_iter()
+        .map(|m| MemoryEntry {
+            id: m.id,
+            content: m.content,
+            tags: m.tags,
+            content_type: Some(m.content_type),
+            importance: Some(m.importance as f32),
+            namespace: Some(m.namespace.clone()),
+            created_at: Some(m.created_at.to_rfc3339()),
+            updated_at: Some(m.updated_at.to_rfc3339()),
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(results)
+        .collect())
 }
 
 #[tauri::command]
@@ -301,18 +281,12 @@ pub async fn forget(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<(), CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
-    conn.execute("DELETE FROM memories WHERE id = ?1", rusqlite::params![id])
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
+    uteke
+        .store()
+        .delete(&id)
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    conn.execute(
-        "DELETE FROM graph_edges WHERE source = ?1 OR target = ?1",
-        rusqlite::params![id],
-    )
-    .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
     Ok(())
 }
 
@@ -321,29 +295,24 @@ pub async fn get_memory(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<MemoryEntry, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
+    let m = uteke
+        .store()
+        .get_by_id(&id)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .ok_or(CommandError::NotFound(id))?;
 
-    let conn = s.conn.as_mut().unwrap();
-    conn.query_row(
-        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories WHERE id = ?1",
-        rusqlite::params![id],
-        |row| {
-            let tags_str: String = row.get(2)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        },
-    )
-    .map_err(|_| CommandError::NotFound(id))
+    Ok(MemoryEntry {
+        id: m.id,
+        content: m.content,
+        tags: m.tags,
+        content_type: Some(m.content_type),
+        importance: Some(m.importance as f32),
+        namespace: Some(m.namespace),
+        created_at: Some(m.created_at.to_rfc3339()),
+        updated_at: Some(m.updated_at.to_rfc3339()),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -356,80 +325,50 @@ pub async fn get_graph_data(
     namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
     let limit = limit.unwrap_or(100);
 
-    // Get nodes
-    let mut sql_nodes = String::from(
-        "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories",
-    );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    if let Some(ref ns) = namespace {
-        sql_nodes.push_str(" WHERE namespace = ?");
-        params.push(Box::new(ns.clone()));
-    }
-    sql_nodes.push_str(&format!(" LIMIT {}", limit));
-
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut stmt = conn
-        .prepare(&sql_nodes)
+    let gd = uteke
+        .graph_data(namespace.as_deref())
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    let nodes: Vec<MemoryEntry> = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            let tags_str: String = row.get(2)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+    // Convert uteke-core GraphData → CorIn GraphData
+    let nodes: Vec<MemoryEntry> = gd
+        .nodes
+        .into_iter()
+        .take(limit)
+        .filter_map(|n| {
+            // GraphNode has memory_id; fetch memory to get content
+            let mid = n.memory_id.as_deref()?;
+            let m = uteke.get_by_id(mid).ok()??;
+            Some(MemoryEntry {
+                id: m.id,
+                content: m.content,
+                tags: m.tags,
+                content_type: Some(m.content_type),
+                importance: Some(m.importance as f32),
+                namespace: Some(m.namespace),
+                created_at: Some(m.created_at.to_rfc3339()),
+                updated_at: Some(m.updated_at.to_rfc3339()),
             })
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
         .collect();
 
-    let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let node_id_set: std::collections::HashSet<String> =
+        nodes.iter().map(|n| n.id.clone()).collect();
 
-    // Get edges between nodes
-    let mut edges = Vec::new();
-    if node_ids.len() > 1 {
-        let placeholders = node_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql_edges = format!(
-            "SELECT id, source, target, weight FROM graph_edges WHERE source IN ({0}) AND target IN ({0})",
-            placeholders
-        );
-        let edge_params: Vec<Box<dyn rusqlite::types::ToSql>> = node_ids
-            .iter()
-            .map(|id| Box::new(id.clone()) as Box<dyn rusqlite::types::ToSql>)
-            .collect();
-        let edge_param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            edge_params.iter().map(|p| p.as_ref()).collect();
-
-        let mut stmt_e = conn
-            .prepare(&sql_edges)
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-        edges = stmt_e
-            .query_map(edge_param_refs.as_slice(), |row| {
-                Ok(GraphEdge {
-                    id: row.get(0)?,
-                    source: row.get(1)?,
-                    target: row.get(2)?,
-                    weight: row.get(3)?,
-                })
-            })
-            .map_err(|e| CommandError::Uteke(e.to_string()))?
-            .filter_map(|r| r.ok())
-            .collect();
-    }
+    let edges: Vec<GraphEdge> = gd
+        .edges
+        .into_iter()
+        .filter(|e| node_id_set.contains(&e.source_id) && node_id_set.contains(&e.target_id))
+        .map(|e| GraphEdge {
+            id: None,
+            source: e.source_id,
+            target: e.target_id,
+            weight: Some(e.weight as f32),
+        })
+        .collect();
 
     Ok(GraphData { nodes, edges })
 }
@@ -440,67 +379,41 @@ pub async fn get_neighbors(
     id: String,
     depth: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
-    let depth = depth.unwrap_or(1);
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let _depth = depth.unwrap_or(1);
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    // Use graph_store to find neighbors via edges
+    let gd = uteke
+        .graph_data(None)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    // BFS from the given ID
-    let mut visited = std::collections::HashSet::new();
-    visited.insert(id.clone());
-    let mut frontier = vec![id.clone()];
-    let mut result_ids = Vec::new();
-
-    for _ in 0..depth {
-        let mut next_frontier = Vec::new();
-        for node_id in &frontier {
-            let mut stmt = conn
-                .prepare("SELECT source, target FROM graph_edges WHERE source = ?1 OR target = ?1")
-                .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-            let neighbors: Vec<String> = stmt
-                .query_map(rusqlite::params![node_id], |row| {
-                    let source: String = row.get(0)?;
-                    let target: String = row.get(1)?;
-                    Ok(if source == *node_id { target } else { source })
-                })
-                .map_err(|e| CommandError::Uteke(e.to_string()))?
-                .filter_map(|r| r.ok())
-                .filter(|n| !visited.contains(n))
-                .collect();
-
-            for n in &neighbors {
-                visited.insert(n.clone());
-                next_frontier.push(n.clone());
-                result_ids.push(n.clone());
+    let neighbor_ids: std::collections::HashSet<String> = gd
+        .edges
+        .iter()
+        .filter(|e| e.source_id == id || e.target_id == id)
+        .map(|e| {
+            if e.source_id == id {
+                e.target_id.clone()
+            } else {
+                e.source_id.clone()
             }
-        }
-        frontier = next_frontier;
-    }
+        })
+        .collect();
 
-    // Fetch the memory entries
     let mut entries = Vec::new();
-    for id in result_ids {
-        if let Ok(entry) = conn.query_row(
-            "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories WHERE id = ?1",
-            rusqlite::params![id],
-            |row| {
-                let tags_str: String = row.get(2)?;
-                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-                Ok(MemoryEntry {
-                    id: row.get(0)?,
-                    content: row.get(1)?,
-                    tags,
-                    content_type: row.get(3)?,
-                    importance: row.get(4)?,
-                    namespace: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                })
-            },
-        ) {
-            entries.push(entry);
+    for nid in neighbor_ids {
+        if let Ok(Some(m)) = uteke.get_by_id(&nid) {
+            entries.push(MemoryEntry {
+                id: m.id,
+                content: m.content,
+                tags: m.tags,
+                content_type: Some(m.content_type),
+                importance: Some(m.importance as f32),
+                namespace: Some(m.namespace),
+                created_at: Some(m.created_at.to_rfc3339()),
+                updated_at: Some(m.updated_at.to_rfc3339()),
+            });
         }
     }
 
@@ -522,65 +435,45 @@ pub async fn add_edge(
         ));
     }
 
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
     // Verify both nodes exist
-    let exists: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM memories WHERE id = ?1)",
-            rusqlite::params![source],
-            |row| row.get(0),
-        )
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    if !exists {
+    if uteke
+        .get_by_id(&source)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .is_none()
+    {
         return Err(CommandError::NotFound(source));
     }
-    let exists: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM memories WHERE id = ?1)",
-            rusqlite::params![target],
-            |row| row.get(0),
-        )
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    if !exists {
+    if uteke
+        .get_by_id(&target)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .is_none()
+    {
         return Err(CommandError::NotFound(target));
     }
 
-    let now = chrono::Utc::now().to_rfc3339();
-    let edge_type = edge_type.unwrap_or_else(|| "related".to_string());
-    let weight = weight.unwrap_or(1.0);
+    let rel = edge_type.as_deref().unwrap_or("related");
+    let w = weight.unwrap_or(1.0) as f64;
 
-    conn.execute(
-        "INSERT INTO graph_edges (source, target, edge_type, weight, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![source, target, edge_type, weight, now],
-    )
-    .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let gs = uteke_core::graph::GraphStore::new(uteke.graph_store());
+    gs.add_edge(&source, &target, rel, w)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    let id = conn.last_insert_rowid();
-    Ok(id)
+    Ok(0) // uteke-core edges use string IDs, not auto-increment i64
 }
 
 #[tauri::command]
 pub async fn remove_edge(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    id: i64,
+    _id: i64,
 ) -> Result<(), CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
-    let affected = conn
-        .execute(
-            "DELETE FROM graph_edges WHERE id = ?1",
-            rusqlite::params![id],
-        )
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    if affected == 0 {
-        return Err(CommandError::NotFound(id.to_string()));
-    }
+    // Edge removal by numeric ID is no longer supported with uteke-core
+    // (edges use string-based source/target keys). Frontend should
+    // use source+target to identify edges for deletion.
+    // This command is kept for backward compatibility but is a no-op.
+    let _ = state.lock().await;
     Ok(())
 }
 
@@ -592,38 +485,29 @@ pub async fn remove_edge(
 pub async fn list_rooms(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<Vec<RoomEntry>, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    let rooms = uteke
+        .store()
+        .list_rooms(None)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    // Phase 1: Rooms are memories with room: tag prefix
-    let mut stmt = conn.prepare(
-        "SELECT id, content, tags, namespace, created_at FROM memories WHERE tags LIKE '%\"room:%' ORDER BY created_at DESC"
-    ).map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let rooms: Vec<RoomEntry> = stmt
-        .query_map([], |row| {
-            let tags_str: String = row.get(2)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            let room_name = tags
-                .iter()
-                .find(|t| t.starts_with("room:"))
-                .map(|t| t.replace("room:", ""))
-                .unwrap_or("unnamed".to_string());
-            Ok(RoomEntry {
-                id: row.get(0)?,
-                name: room_name,
-                participant_count: 1,
-                memory_count: 1,
-                created_at: row.get(4)?,
-            })
+    let entries: Vec<RoomEntry> = rooms
+        .into_iter()
+        .map(|r| {
+            let stats = uteke.store().room_stats(&r.id).unwrap_or(None);
+            RoomEntry {
+                id: r.id.clone(),
+                name: r.title.unwrap_or_else(|| r.id.clone()),
+                participant_count: stats.as_ref().map(|s| s.participant_count).unwrap_or(0),
+                memory_count: stats.as_ref().map(|s| s.memory_count).unwrap_or(0),
+                created_at: Some(r.created_at.clone()),
+            }
         })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
         .collect();
 
-    Ok(rooms)
+    Ok(entries)
 }
 
 #[tauri::command]
@@ -631,49 +515,41 @@ pub async fn get_room_summary(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<String, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
-    let content: String = conn
-        .query_row(
-            "SELECT content FROM memories WHERE id = ?1",
-            rusqlite::params![room_id],
-            |row| row.get(0),
-        )
-        .map_err(|_| CommandError::NotFound(room_id))?;
+    let memories = uteke
+        .store()
+        .recall_room(&room_id, None, 100)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    Ok(content)
+    let summary = memories
+        .iter()
+        .map(|m| format!("- {}", m.content.chars().take(80).collect::<String>()))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(summary)
 }
 
 #[tauri::command]
 pub async fn create_room(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     name: String,
-    namespace: Option<String>,
-    tags: Option<Vec<String>>,
+    _namespace: Option<String>,
+    _tags: Option<Vec<String>>,
 ) -> Result<String, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    let room_id = nanoid::nanoid!(12);
+    let ns = _namespace.as_deref().unwrap_or("default");
+    uteke
+        .store()
+        .create_room(&room_id, Some(&name), ns)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    // Rooms are memories with room:<name> tag
-    let mut room_tags = tags.unwrap_or_default();
-    room_tags.push(format!("room:{}", name));
-
-    let id = nanoid::nanoid!(12);
-    let tags_json = serde_json::to_string(&room_tags).unwrap_or_default();
-    let now = chrono::Utc::now().to_rfc3339();
-    let content = format!("# Room: {}\n\n", name);
-
-    conn.execute(
-        "INSERT INTO memories (id, content, tags, content_type, importance, namespace, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![id, content, tags_json, "room", 0.5, namespace, now, now],
-    )
-    .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    Ok(id)
+    Ok(room_id)
 }
 
 #[tauri::command]
@@ -681,49 +557,27 @@ pub async fn get_room_document(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<String, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    let room = uteke
+        .store()
+        .get_room(&room_id)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .ok_or_else(|| CommandError::NotFound(room_id.clone()))?;
 
-    // Fetch all memories that share the room:<name> tag
-    let room_content: String = conn
-        .query_row(
-            "SELECT content FROM memories WHERE id = ?1",
-            rusqlite::params![room_id],
-            |row| row.get(0),
-        )
-        .map_err(|_| CommandError::NotFound(room_id.clone()))?;
-
-    // Extract room name from content
-    let room_name = room_content
-        .strip_prefix("# Room: ")
-        .and_then(|s| s.trim().strip_suffix('\n').or_else(|| Some(s.trim())))
-        .unwrap_or("unnamed");
-    let room_tag = format!("\"room:{}\"", room_name);
-
-    // Get all memories with this room tag
-    let mut stmt = conn
-        .prepare(
-            "SELECT content FROM memories WHERE tags LIKE ?1 AND id != ?2 ORDER BY created_at ASC",
-        )
+    let room_name = room.title.as_deref().unwrap_or("unnamed");
+    let memories = uteke
+        .store()
+        .recall_room(&room_id, None, 100)
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     let mut doc = format!("# Room: {}\n\n", room_name);
-    let entries: Vec<String> = stmt
-        .query_map(
-            rusqlite::params![format!("%{}%", room_tag), room_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    if entries.is_empty() {
+    if memories.is_empty() {
         doc.push_str("_No memories in this room yet._\n");
     } else {
-        for entry in &entries {
-            doc.push_str(entry);
+        for m in &memories {
+            doc.push_str(&m.content);
             doc.push_str("\n\n---\n\n");
         }
     }
@@ -812,7 +666,7 @@ pub async fn uteke_get(
         content: m.content,
         tags: m.tags,
         content_type: Some(m.content_type),
-        importance: Some(m.importance),
+        importance: Some(m.importance as f32),
         namespace: Some(m.namespace),
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
@@ -1092,7 +946,7 @@ pub async fn uteke_stats(
 pub async fn stats(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<StatsResponse, CommandError> {
-    // ── API-first: try uteke-serve before touching local DB ──
+    // ── API-first: try uteke-serve before touching local store ──
     {
         let client = {
             let s = state.lock().await;
@@ -1113,67 +967,28 @@ pub async fn stats(
         }
     }
 
-    // ── Fallback: read from CorIn SQLite DB ──
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    // ── Fallback: read from uteke-core native store ──
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    let total_memories = uteke.count(None).unwrap_or(0);
+    let namespaces = uteke.list_namespaces().unwrap_or_default();
+    let total_namespaces = namespaces.len();
+    let tags = uteke.store().unique_tags(None).unwrap_or_default();
 
-    let total_memories: usize = conn
-        .query_row("SELECT COUNT(*) FROM memories", [], |row| {
-            let count: i64 = row.get(0)?;
-            Ok(count)
-        })
-        .unwrap_or(0) as usize;
+    let graph = uteke.graph_data(None).map(|gd| gd.edges.len()).unwrap_or(0);
 
-    let total_edges: usize = conn
-        .query_row("SELECT COUNT(*) FROM graph_edges", [], |row| {
-            let count: i64 = row.get(0)?;
-            Ok(count)
-        })
-        .unwrap_or(0) as usize;
-
-    let total_namespaces: usize = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT namespace) FROM memories WHERE namespace IS NOT NULL",
-            [],
-            |row| {
-                let count: i64 = row.get(0)?;
-                Ok(count)
-            },
-        )
-        .unwrap_or(0) as usize;
-
-    let tags_str: String = conn
-        .query_row(
-            "SELECT GROUP_CONCAT(tags) FROM memories WHERE tags IS NOT NULL AND tags != '[]'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_default();
-    let all_tags: Vec<String> = tags_str
-        .split(']')
-        .filter_map(|s| {
-            let cleaned = s.trim().trim_start_matches('[').trim();
-            if cleaned.is_empty() {
-                return None;
-            }
-            let tags: Vec<String> =
-                serde_json::from_str(&format!("[{}]", cleaned)).unwrap_or_default();
-            Some(tags)
-        })
-        .flatten()
-        .collect();
-    let unique_tags: std::collections::HashSet<String> = all_tags.into_iter().collect();
-
-    let db_path = s.data_dir.as_ref().unwrap().join("corin.db");
-    let db_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let db_size_bytes = uteke_core::uteke_home()
+        .ok()
+        .and_then(|p| std::fs::metadata(p.join("uteke.db")).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     Ok(StatsResponse {
         total_memories,
         total_namespaces,
-        total_tags: unique_tags.len(),
-        total_edges,
+        total_tags: tags.len(),
+        total_edges: graph,
         db_size_bytes,
     })
 }
@@ -1182,20 +997,12 @@ pub async fn stats(
 pub async fn list_namespaces(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<Vec<String>, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT namespace FROM memories WHERE namespace IS NOT NULL ORDER BY namespace"
-    ).map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let namespaces = stmt
-        .query_map([], |row| row.get(0))
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
+    let namespaces = uteke
+        .store()
+        .list_namespaces()
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(namespaces)
 }
 
@@ -1204,37 +1011,15 @@ pub async fn list_tags(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     namespace: Option<String>,
 ) -> Result<HashMap<String, usize>, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    let tags = uteke
+        .store()
+        .tags_with_counts(namespace.as_deref())
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    let all_memories: Vec<String> = if let Some(ns) = namespace {
-        let mut stmt = conn
-            .prepare("SELECT tags FROM memories WHERE namespace = ?1")
-            .unwrap();
-        stmt.query_map(rusqlite::params![ns], |row| row.get::<_, String>(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
-    } else {
-        let mut stmt = conn
-            .prepare("SELECT tags FROM memories WHERE tags IS NOT NULL AND tags != '[]'")
-            .unwrap();
-        stmt.query_map([], |row| row.get::<_, String>(0))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
-    };
-
-    let mut tag_counts: HashMap<String, usize> = HashMap::new();
-    for tags_str in all_memories {
-        if let Ok(tags) = serde_json::from_str::<Vec<String>>(&tags_str) {
-            for tag in tags {
-                *tag_counts.entry(tag).or_insert(0) += 1;
-            }
-        }
-    }
+    let tag_counts: HashMap<String, usize> = tags.into_iter().map(|t| (t.name, t.count)).collect();
 
     // Sort by count descending, take top 50
     let mut sorted: Vec<(String, usize)> = tag_counts.into_iter().collect();
@@ -1292,34 +1077,40 @@ pub async fn export_data(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     format: String,
 ) -> Result<String, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
+    let memories = uteke
+        .store()
+        .list(None, None, 10000, 0)
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     match format.as_str() {
         "json" => {
-            let memories = export_all_memories(conn)?;
-            let edges = export_all_edges(conn)?;
             let export = serde_json::json!({
-                "version": "1.0",
+                "version": "2.0",
                 "exported_at": chrono::Utc::now().to_rfc3339(),
-                "memories": memories,
-                "edges": edges,
+                "memories": memories.iter().map(|m| serde_json::json!({
+                    "id": m.id,
+                    "content": m.content,
+                    "tags": m.tags,
+                    "namespace": m.namespace,
+                    "created_at": m.created_at.to_rfc3339(),
+                    "updated_at": m.updated_at.to_rfc3339(),
+                })).collect::<Vec<_>>(),
             });
             Ok(serde_json::to_string_pretty(&export).unwrap_or_default())
         }
         "markdown" => {
-            let memories = export_all_memories(conn)?;
             let mut doc = String::from("# CorIn Export\n\n");
-            for m in memories {
+            for m in &memories {
                 doc.push_str(&format!(
                     "## {}\n\n{}\n\n**Tags:** {}\n**Namespace:** {}\n**Created:** {}\n\n---\n\n",
                     m.id,
                     m.content,
                     m.tags.join(", "),
-                    m.namespace.unwrap_or_else(|| "-".to_string()),
-                    m.created_at.unwrap_or_else(|| "-".to_string()),
+                    m.namespace,
+                    m.created_at.to_rfc3339(),
                 ));
             }
             Ok(doc)
@@ -1336,10 +1127,9 @@ pub async fn import_data(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     data: String,
 ) -> Result<usize, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
 
-    let conn = s.conn.as_mut().unwrap();
     let parsed: serde_json::Value =
         serde_json::from_str(&data).map_err(|e| CommandError::Uteke(e.to_string()))?;
 
@@ -1352,16 +1142,10 @@ pub async fn import_data(
 
     let mut count = 0usize;
     for m in memories {
-        let id = m
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| nanoid::nanoid!(12));
-        let content = m
-            .get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if content.is_empty() {
+            continue;
+        }
         let tags: Vec<String> = m
             .get("tags")
             .and_then(|v| v.as_array())
@@ -1371,131 +1155,19 @@ pub async fn import_data(
                     .collect()
             })
             .unwrap_or_default();
-        let tags_json = serde_json::to_string(&tags).unwrap_or_default();
-        let content_type = m
-            .get("content_type")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let importance = m
-            .get("importance")
-            .and_then(|v| v.as_f64())
-            .map(|f| f as f32);
         let namespace = m
             .get("namespace")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let now = chrono::Utc::now().to_rfc3339();
-        // Preserve original timestamps if present, otherwise use now
-        let created_at = m
-            .get("created_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| now.clone());
-        let updated_at = m
-            .get("updated_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| now.clone());
 
-        conn.execute(
-            "INSERT OR REPLACE INTO memories (id, content, tags, content_type, importance, namespace, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, content, tags_json, content_type, importance, namespace, created_at, updated_at],
-        )
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+        let tag_refs: Vec<&str> = tags.iter().map(|t| t.as_str()).collect();
+        uteke
+            .remember(content, &tag_refs, None, namespace.as_deref())
+            .map_err(|e| CommandError::Uteke(e.to_string()))?;
         count += 1;
     }
 
-    // Import edges if present
-    if let Some(edges) = parsed.get("edges").and_then(|v| v.as_array()) {
-        for e in edges {
-            let source = e
-                .get("source")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let target = e
-                .get("target")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if source.is_empty() || target.is_empty() {
-                continue;
-            }
-            let weight = e.get("weight").and_then(|v| v.as_f64()).map(|f| f as f32);
-            let created_at = e
-                .get("created_at")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
-
-            // Skip if edge with same source+target already exists (dedup)
-            let exists: bool = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM graph_edges WHERE source = ?1 AND target = ?2)",
-                    rusqlite::params![source, target],
-                    |row| row.get(0),
-                )
-                .unwrap_or(false);
-            if exists {
-                continue;
-            }
-
-            conn.execute(
-                "INSERT INTO graph_edges (source, target, weight, created_at) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![source, target, weight, created_at],
-            )
-            .map_err(|err| CommandError::Uteke(err.to_string()))?;
-        }
-    }
-
     Ok(count)
-}
-
-/// Helper: fetch all memories for export.
-fn export_all_memories(conn: &rusqlite::Connection) -> Result<Vec<MemoryEntry>, CommandError> {
-    let mut stmt = conn
-        .prepare("SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories")
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    let entries = stmt
-        .query_map([], |row| {
-            let tags_str: String = row.get(2)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                tags,
-                content_type: row.get(3)?,
-                importance: row.get(4)?,
-                namespace: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-    Ok(entries)
-}
-
-/// Helper: fetch all edges for export.
-fn export_all_edges(conn: &rusqlite::Connection) -> Result<Vec<GraphEdge>, CommandError> {
-    let mut stmt = conn
-        .prepare("SELECT id, source, target, weight FROM graph_edges")
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    let edges = stmt
-        .query_map([], |row| {
-            Ok(GraphEdge {
-                id: row.get(0)?,
-                source: row.get(1)?,
-                target: row.get(2)?,
-                weight: row.get(3)?,
-            })
-        })
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .filter_map(|r| r.ok())
-        .collect();
-    Ok(edges)
 }
 
 #[tauri::command]
@@ -1509,51 +1181,34 @@ pub async fn init_data_dir(
         return Ok(dir.to_string_lossy().to_string());
     }
 
-    // Auto-initialize ~/.codecora/ environment
+    // Auto-initialize ~/.codecora/ environment for settings DB
     let (db_path, _config) =
         crate::config::init_environment().map_err(|e| CommandError::Io(e.to_string()))?;
 
+    // Open CorIn DB for settings only (not memories)
     let conn =
         rusqlite::Connection::open(&db_path).map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    // Ensure schema exists (same as setup hook in lib.rs)
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS memories (
-            id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
-            tags TEXT DEFAULT '[]',
-            content_type TEXT,
-            importance REAL,
-            namespace TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS graph_edges (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            target TEXT NOT NULL,
-            edge_type TEXT DEFAULT 'related',
-            weight REAL DEFAULT 1.0,
-            created_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS settings (
+        "CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace);
-        CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
-        CREATE INDEX IF NOT EXISTS idx_edges_source ON graph_edges(source);
-        CREATE INDEX IF NOT EXISTS idx_edges_target ON graph_edges(target);
-        ",
+        );",
     )
     .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Open uteke-core native store (~/.uteke) with embedding + graph
+    let uteke_home = uteke_core::uteke_home().map_err(|e| CommandError::Io(e.to_string()))?;
+    let uteke_store =
+        uteke_core::Uteke::open(&uteke_home).map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     let corin_dir = crate::config::corin_dir().map_err(|e| CommandError::Io(e.to_string()))?;
 
     s.data_dir = Some(corin_dir.clone());
     s.db_path = Some(db_path);
     s.conn = Some(conn);
+    s.uteke = Some(uteke_store);
 
     Ok(corin_dir.to_string_lossy().to_string())
 }
