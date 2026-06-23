@@ -150,8 +150,10 @@ fn ensure_uteke_server() -> String {
     // 4. Start the server.
     eprintln!("CorIn: starting uteke-serve...");
     let result = std::process::Command::new(&uteke_serve)
-        .arg("--host").arg(&host)
-        .arg("--port").arg(port.to_string())
+        .arg("--host")
+        .arg(&host)
+        .arg("--port")
+        .arg(port.to_string())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -203,7 +205,10 @@ fn install_uteke() -> bool {
     eprintln!("CorIn: installing uteke via official script...");
 
     let curl = std::process::Command::new("curl")
-        .args(["-fsSL", "https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh"])
+        .args([
+            "-fsSL",
+            "https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh",
+        ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
         .spawn();
@@ -250,7 +255,9 @@ fn install_uteke() -> bool {
                 paths.insert(0, local_bin);
                 let new_path = std::env::join_paths(paths).unwrap_or(path);
                 // SAFETY: setting PATH is safe in single-threaded setup context.
-                unsafe { std::env::set_var("PATH", new_path); }
+                unsafe {
+                    std::env::set_var("PATH", new_path);
+                }
             }
         }
     }
@@ -266,7 +273,9 @@ fn install_uteke() -> bool {
 
 /// Extract (host, port) from a URL like `http://127.0.0.1:8767`.
 fn parse_host_port(url: &str) -> Option<(String, u16)> {
-    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))?;
     let (host, port_str) = rest.rsplit_once(':')?;
     let port: u16 = port_str.parse().ok()?;
     Some((host.to_string(), port))

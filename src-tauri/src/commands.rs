@@ -223,25 +223,23 @@ pub async fn list(
         };
         if let Some(client) = client
             && client.is_available().await
-        {
-            if let Ok(memories) = client
+            && let Ok(memories) = client
                 .list(namespace.as_deref(), tag.as_deref(), limit, offset)
                 .await
-            {
-                return Ok(memories
-                    .into_iter()
-                    .map(|m| MemoryEntry {
-                        id: m.id,
-                        content: m.content,
-                        tags: m.tags,
-                        content_type: Some(m.content_type),
-                        importance: Some(m.importance),
-                        namespace: Some(m.namespace),
-                        created_at: Some(m.created_at),
-                        updated_at: Some(m.updated_at),
-                    })
-                    .collect());
-            }
+        {
+            return Ok(memories
+                .into_iter()
+                .map(|m| MemoryEntry {
+                    id: m.id,
+                    content: m.content,
+                    tags: m.tags,
+                    content_type: Some(m.content_type),
+                    importance: Some(m.importance),
+                    namespace: Some(m.namespace),
+                    created_at: Some(m.created_at),
+                    updated_at: Some(m.updated_at),
+                })
+                .collect());
         }
     }
 
@@ -1102,17 +1100,16 @@ pub async fn stats(
         };
         if let Some(client) = client
             && client.is_available().await
+            && let Ok(server_stats) = client.stats().await
         {
-            if let Ok(server_stats) = client.stats().await {
-                let total_namespaces = client.namespaces().await.unwrap_or_default().len();
-                return Ok(StatsResponse {
-                    total_memories: server_stats.total_memories,
-                    total_namespaces,
-                    total_tags: server_stats.unique_tags,
-                    total_edges: 0,
-                    db_size_bytes: server_stats.db_size_bytes,
-                });
-            }
+            let total_namespaces = client.namespaces().await.unwrap_or_default().len();
+            return Ok(StatsResponse {
+                total_memories: server_stats.total_memories,
+                total_namespaces,
+                total_tags: server_stats.unique_tags,
+                total_edges: 0,
+                db_size_bytes: server_stats.db_size_bytes,
+            });
         }
     }
 
@@ -1823,9 +1820,8 @@ pub async fn uteke_server_graph(
     }
 
     let mut edges: Vec<serde_json::Value> = Vec::new();
-    let mut seen: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
-    for (_tag, ids) in &tag_to_memories {
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for ids in tag_to_memories.values() {
         // Connect all pairs within the same tag (cap at 5 per tag to avoid clutter).
         let max_pairs = 5;
         let mut count = 0;
@@ -1834,10 +1830,7 @@ pub async fn uteke_server_graph(
                 if count >= max_pairs {
                     break;
                 }
-                let key = (
-                    ids[i].to_string(),
-                    ids[j].to_string(),
-                );
+                let key = (ids[i].to_string(), ids[j].to_string());
                 if seen.insert(key.clone()) {
                     edges.push(serde_json::json!({
                         "source": ids[i],

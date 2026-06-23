@@ -103,9 +103,11 @@ pub fn detect_uteke_serve_url() -> String {
             continue;
         };
 
-        let port = section
-            .get("port")
-            .and_then(|p| p.as_integer().map(|i| i.to_string()).or_else(|| p.as_str().map(String::from)));
+        let port = section.get("port").and_then(|p| {
+            p.as_integer()
+                .map(|i| i.to_string())
+                .or_else(|| p.as_str().map(String::from))
+        });
 
         // Port found — build the URL.
         if let Some(port) = port {
