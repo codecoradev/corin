@@ -10,7 +10,7 @@
   import MemoryEditor from './lib/components/MemoryEditor.svelte';
   import GraphView from './lib/components/GraphView.svelte';
   import RoomsView from './lib/components/RoomsView.svelte';
-  import SettingsView from './lib/components/SettingsView.svelte';
+  import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
 
   // App state
@@ -21,6 +21,7 @@
   let sidebarCollapsed = $state(false);
   let namespace = $state<string | null>(null);
   let showEditor = $state(false);
+  let showSettings = $state(false);
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
 
@@ -38,6 +39,12 @@
     activeView = view;
     selectedMemoryId = null;
     searchQuery = null;
+
+    // Settings is now a modal popup, not a full view.
+    if (view === 'settings') {
+      showSettings = true;
+      return;
+    }
   }
 
   function selectMemory(id: string) {
@@ -57,6 +64,10 @@
   function closeEditor() {
     showEditor = false;
     editorMemory = null;
+  }
+
+  function closeSettings() {
+    showSettings = false;
   }
 
   function handleSave() {
@@ -105,7 +116,7 @@
       <h1>CorIn</h1>
       <p>Cora Intelligence — desktop knowledge workstation</p>
       <button class="primary-btn" onclick={initDataDir}>Initialize Workspace</button>
-      <p class="hint">Data will be stored in <code>~/.codecora/hub/</code></p>
+      <p>Data will be stored in <code>~/.codecora/corin/</code></p>
     </div>
   </div>
 {:else}
@@ -145,11 +156,13 @@
         <GraphView onmemoryclick={selectMemory} />
       {:else if activeView === 'rooms'}
         <RoomsView {namespace} onmemoryclick={selectMemory} />
-      {:else if activeView === 'settings'}
-        <SettingsView />
       {/if}
     </main>
   </div>
+{/if}
+
+{#if showSettings}
+  <SettingsModal onclose={closeSettings} />
 {/if}
 
 {#if showEditor}
@@ -221,19 +234,5 @@
 
   .primary-btn:hover {
     opacity: 0.85;
-  }
-
-  .hint {
-    font-size: 0.8rem;
-    margin-top: 0.75rem;
-  }
-
-  .hint code {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    padding: 2px 6px;
-    background: var(--bg-tertiary);
-    border-radius: 3px;
-    color: var(--accent);
   }
 </style>
