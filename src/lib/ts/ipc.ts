@@ -67,7 +67,7 @@ export const system = {
   setSettings: (settings: Record<string, string>) => invoke<void>('set_settings', { settings }),
   exportData: (format: 'json' | 'markdown') => invoke<string>('export_data', { format }),
   importData: (data: string) => invoke<number>('import_data', { data }),
-  openDataDir: () => invoke<string>('init_data_dir'),
+  openDataDir: () => invoke<string>('init_data_dir'), // returns path, doesn't open file manager
 };
 
 // Tauri event listener

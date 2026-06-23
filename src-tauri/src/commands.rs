@@ -116,14 +116,6 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Check if store is initialized.
-    fn ensure_initialized(&self) -> Result<(), CommandError> {
-        if self.uteke.is_none() && self.conn.is_none() {
-            return Err(CommandError::NotInitialized);
-        }
-        Ok(())
-    }
-
     /// Check if the uteke-core native store is available.
     fn ensure_uteke(&self) -> Result<&uteke_core::Uteke, CommandError> {
         self.uteke.as_ref().ok_or(CommandError::NotInitialized)
@@ -918,31 +910,27 @@ pub async fn uteke_room_recall(
     limit: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
     let limit = limit.unwrap_or(20);
-    let client = {
-        let s = state.lock().await;
-        s.uteke_client.clone()
-    };
-    let Some(client) = client else {
-        return Ok(vec![]);
-    };
-    if !client.is_available().await {
-        return Ok(vec![]);
-    }
-    let results = client
-        .room_recall(&room_id, limit)
-        .await
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
+
+    // Use native store — the HTTP /room/recall endpoint has a namespace
+    // scoping bug and returns 0 results. Native recall_room works correctly.
+    let results = uteke
+        .store()
+        .recall_room(&room_id, None, limit)
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
     Ok(results
         .into_iter()
-        .map(|r| MemoryEntry {
-            id: r.memory.id,
-            content: r.memory.content,
-            tags: r.memory.tags,
-            content_type: Some(r.memory.content_type),
-            importance: Some(r.memory.importance),
-            namespace: Some(r.memory.namespace),
-            created_at: Some(r.memory.created_at),
-            updated_at: Some(r.memory.updated_at),
+        .map(|m| MemoryEntry {
+            id: m.id,
+            content: m.content,
+            tags: m.tags,
+            content_type: Some(m.content_type),
+            importance: Some(m.importance as f32),
+            namespace: Some(m.namespace),
+            created_at: Some(m.created_at.to_rfc3339()),
+            updated_at: Some(m.updated_at.to_rfc3339()),
         })
         .collect())
 }
@@ -1075,10 +1063,8 @@ pub async fn list_tags(
 pub async fn get_settings(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<HashMap<String, String>, CommandError> {
-    let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
+    let s = state.lock().await;
+    let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
     let mut stmt = conn
         .prepare("SELECT key, value FROM settings")
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
@@ -1098,9 +1084,7 @@ pub async fn set_settings(
     settings: HashMap<String, String>,
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
-    s.ensure_initialized()?;
-
-    let conn = s.conn.as_mut().unwrap();
+    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
     let now = chrono::Utc::now().to_rfc3339();
     for (key, value) in settings {
         conn.execute(
@@ -1676,10 +1660,8 @@ pub async fn generate_agent_md(project_dir: Option<String>) -> Result<String, Co
 /// Run uteke dream cycle (maintenance pipeline).
 #[tauri::command]
 pub async fn run_dream_cycle(
-    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    _state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, CommandError> {
-    let _s = state.lock().await;
-
     // Find uteke binary
     let uteke_bin = find_in_path("uteke")
         .or_else(|| dirs::home_dir().map(|h| h.join(".local/bin/uteke")))
