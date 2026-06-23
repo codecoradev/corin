@@ -327,6 +327,10 @@ pub fn run() {
             commands::export_data,
             commands::import_data,
             commands::init_data_dir,
+            // AI Agent Integration (#55)
+            commands::detect_agents,
+            commands::generate_agent_md,
+            commands::run_dream_cycle,
             // Uteke Integration
             commands::uteke_available,
             commands::uteke_get,

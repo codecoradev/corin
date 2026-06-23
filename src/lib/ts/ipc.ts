@@ -158,3 +158,10 @@ export const utekeServer = {
     hint?: string;
   }>('uteke_server_stats'),
 };
+
+// AI Agent Integration (#55)
+export const agents = {
+  detect: () => invoke<Array<{ name: string; config_path: string; found: boolean }>>('detect_agents'),
+  generateAgentMd: (projectDir?: string) => invoke<string>('generate_agent_md', { projectDir: projectDir ?? null }),
+  runDream: () => invoke<{ success: boolean; result: unknown; hint?: string }>('run_dream_cycle'),
+};
