@@ -71,7 +71,6 @@ fn get_total_memory_gb() -> f64 {
         for line in contents.lines() {
             if let Some(rest) = line.strip_prefix("MemTotal:") {
                 let kb: u64 = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .unwrap_or("0")
