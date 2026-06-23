@@ -212,12 +212,44 @@ pub async fn list(
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
+    let limit = limit.unwrap_or(50);
+    let offset = offset.unwrap_or(0);
+
+    // ── API-first: try uteke-serve ──
+    {
+        let client = {
+            let s = state.lock().await;
+            s.uteke_client.clone()
+        };
+        if let Some(client) = client
+            && client.is_available().await
+        {
+            if let Ok(memories) = client
+                .list(namespace.as_deref(), tag.as_deref(), limit, offset)
+                .await
+            {
+                return Ok(memories
+                    .into_iter()
+                    .map(|m| MemoryEntry {
+                        id: m.id,
+                        content: m.content,
+                        tags: m.tags,
+                        content_type: Some(m.content_type),
+                        importance: Some(m.importance),
+                        namespace: Some(m.namespace),
+                        created_at: Some(m.created_at),
+                        updated_at: Some(m.updated_at),
+                    })
+                    .collect());
+            }
+        }
+    }
+
+    // ── Fallback: read from CorIn SQLite DB ──
     let mut s = state.lock().await;
     s.ensure_initialized()?;
 
     let conn = s.conn.as_mut().unwrap();
-    let limit = limit.unwrap_or(50);
-    let offset = offset.unwrap_or(0);
 
     let mut sql = String::from(
         "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories WHERE 1=1",
@@ -1037,16 +1069,20 @@ pub async fn uteke_stats(
     if !client.is_available().await {
         return Ok(StatsResponse::default());
     }
-    let stats = client
+    let client_stats = client
         .stats()
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Fetch namespace count separately (not included in /stats response)
+    let total_namespaces = client.namespaces().await.unwrap_or_default().len();
+
     Ok(StatsResponse {
-        total_memories: stats.total_memories,
-        total_namespaces: 0,
-        total_tags: stats.unique_tags,
+        total_memories: client_stats.total_memories,
+        total_namespaces,
+        total_tags: client_stats.unique_tags,
         total_edges: 0,
-        db_size_bytes: stats.db_size_bytes,
+        db_size_bytes: client_stats.db_size_bytes,
     })
 }
 
@@ -1058,6 +1094,29 @@ pub async fn uteke_stats(
 pub async fn stats(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<StatsResponse, CommandError> {
+    // ── API-first: try uteke-serve before touching local DB ──
+    {
+        let client = {
+            let s = state.lock().await;
+            s.uteke_client.clone()
+        };
+        if let Some(client) = client
+            && client.is_available().await
+        {
+            if let Ok(server_stats) = client.stats().await {
+                let total_namespaces = client.namespaces().await.unwrap_or_default().len();
+                return Ok(StatsResponse {
+                    total_memories: server_stats.total_memories,
+                    total_namespaces,
+                    total_tags: server_stats.unique_tags,
+                    total_edges: 0,
+                    db_size_bytes: server_stats.db_size_bytes,
+                });
+            }
+        }
+    }
+
+    // ── Fallback: read from CorIn SQLite DB ──
     let mut s = state.lock().await;
     s.ensure_initialized()?;
 
@@ -1110,7 +1169,7 @@ pub async fn stats(
         .collect();
     let unique_tags: std::collections::HashSet<String> = all_tags.into_iter().collect();
 
-    let db_path = s.data_dir.as_ref().unwrap().join("uteke.db");
+    let db_path = s.data_dir.as_ref().unwrap().join("corin.db");
     let db_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
     Ok(StatsResponse {

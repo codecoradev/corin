@@ -16,12 +16,87 @@ fn is_port_open(host: &str, port: u16) -> bool {
     std::net::TcpStream::connect((host, port)).is_ok()
 }
 
-/// Ensure uteke-serve is running.
+/// Check if the device has enough resources to run uteke-serve.
+///
+/// uteke-serve loads an ONNX embedding model into memory (~200-400MB)
+/// and keeps the SQLite + vector index warm. On low-spec machines
+/// (e.g. <4GB RAM or <2 cores), we skip auto-start and let the user
+/// decide when to run it manually.
+///
+/// Returns `true` if the device can comfortably run the server.
+fn device_can_run_server() -> bool {
+    // Check CPU cores.
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    if cores < 2 {
+        eprintln!(
+            "CorIn: device has {cores} CPU core(s) — skipping uteke-serve auto-start (need ≥2)"
+        );
+        return false;
+    }
+
+    // Check available memory (macOS: sysctl hw.memsize; Linux: /proc/meminfo).
+    let total_mem_gb = get_total_memory_gb();
+    if total_mem_gb > 0.0 && total_mem_gb < 4.0 {
+        eprintln!(
+            "CorIn: device has {total_mem_gb:.1}GB RAM — skipping uteke-serve auto-start (need ≥4GB)"
+        );
+        return false;
+    }
+
+    true
+}
+
+/// Get total system memory in GB. Returns 0 if unknown.
+fn get_total_memory_gb() -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output();
+        if let Ok(o) = out
+            && let Ok(s) = String::from_utf8(o.stdout)
+            && let Ok(bytes) = s.trim().parse::<u64>()
+        {
+            return bytes as f64 / 1_073_741_824.0;
+        }
+        0.0
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(contents) = std::fs::read_to_string("/proc/meminfo") else {
+            return 0.0;
+        };
+        for line in contents.lines() {
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                let kb: u64 = rest
+                    .trim()
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("0")
+                    .parse()
+                    .unwrap_or(0);
+                return kb as f64 / 1_048_576.0;
+            }
+        }
+        0.0
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        0.0
+    }
+}
+
+/// Ensure uteke is installed and the server is running.
 ///
 /// Flow:
 /// 1. If server already reachable at detected URL → done.
-/// 2. If `uteke-serve` binary in PATH → start it.
-/// 3. If neither → run official install script, then try start again.
+/// 2. Check if uteke-serve binary exists (PATH or ~/.local/bin).
+///    If not → run install script.
+/// 3. Check device specs (≥2 cores, ≥4GB RAM).
+///    If too weak → skip server start (user runs manually).
+/// 4. Start uteke-serve as detached process.
 ///
 /// Returns the server URL.
 fn ensure_uteke_server() -> String {
@@ -34,23 +109,26 @@ fn ensure_uteke_server() -> String {
 
     // 1. Already running?
     if is_port_open(&host, port) {
+        eprintln!("CorIn: uteke-serve already running at {server_url}");
         return server_url;
     }
 
-    // 2. Try to start from PATH, or install first if missing.
-    let uteke_serve = match find_in_path("uteke-serve") {
-        Some(path) => path,
+    // 2. Check if uteke-serve is installed.
+    let uteke_serve = match find_uteke_serve() {
+        Some(path) => {
+            eprintln!("CorIn: uteke-serve found at {}", path.display());
+            path
+        }
         None => {
-            eprintln!("CorIn: uteke-serve not found — running installer...");
+            eprintln!("CorIn: uteke-serve not found — installing...");
             if !install_uteke() {
                 eprintln!(
-                    "CorIn: uteke installation failed — semantic search will be unavailable. \
+                    "CorIn: install failed — semantic search unavailable. \
                      Install manually: curl -fsSL https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh | sh"
                 );
                 return server_url;
             }
-            // After install, find it again.
-            match find_in_path("uteke-serve") {
+            match find_uteke_serve() {
                 Some(path) => path,
                 None => {
                     eprintln!("CorIn: uteke-serve still not found after install");
@@ -60,8 +138,17 @@ fn ensure_uteke_server() -> String {
         }
     };
 
-    // Start the server.
-    eprintln!("CorIn: starting uteke-serve ({})...", uteke_serve.display());
+    // 3. Check device specs before starting server.
+    if !device_can_run_server() {
+        eprintln!(
+            "CorIn: skipping uteke-serve auto-start (device too low-spec). \
+             Start manually: uteke-serve"
+        );
+        return server_url;
+    }
+
+    // 4. Start the server.
+    eprintln!("CorIn: starting uteke-serve...");
     let result = std::process::Command::new(&uteke_serve)
         .arg("--host").arg(&host)
         .arg("--port").arg(port.to_string())
@@ -88,6 +175,22 @@ fn ensure_uteke_server() -> String {
     }
 
     server_url
+}
+
+/// Find uteke-serve binary in PATH or ~/.local/bin.
+fn find_uteke_serve() -> Option<std::path::PathBuf> {
+    // Try PATH first.
+    if let Some(p) = find_in_path("uteke-serve") {
+        return Some(p);
+    }
+    // Try ~/.local/bin/uteke-serve (install script default).
+    if let Some(home) = dirs::home_dir() {
+        let candidate = home.join(".local/bin/uteke-serve");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 /// Run the official uteke install script.

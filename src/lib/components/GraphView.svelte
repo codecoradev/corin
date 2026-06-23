@@ -210,8 +210,8 @@
       if (ai === undefined || bi === undefined) continue;
       const a = nodes[ai], b = nodes[bi];
       const hi = hoveredNode === a.id || hoveredNode === b.id;
-      ctx.strokeStyle = hi ? 'rgba(137,180,250,0.9)' : 'rgba(108,112,134,0.6)';
-      ctx.lineWidth = hi ? 2.5 : 1.5;
+      ctx.strokeStyle = hi ? 'rgba(137,180,250,1)' : 'rgba(137,180,250,0.45)';
+      ctx.lineWidth = hi ? 3 : 1.5;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);

@@ -262,7 +262,7 @@
   .no-neighbors { text-align: center; padding: 24px; color: var(--text-muted); }
   .no-neighbors .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
 
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .confirm-dialog { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 360px; }
   .confirm-dialog h3 { margin-bottom: 8px; }
   .confirm-dialog p { color: var(--text-muted); margin-bottom: 16px; }
