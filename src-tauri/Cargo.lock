@@ -5233,6 +5233,7 @@ dependencies = [
 [[package]]
 name = "uteke-core"
 version = "0.4.2"
+source = "git+https://github.com/codecoradev/uteke.git?branch=develop#5a6f33320e2c92d7f70603f90d3614c0820ebd10"
 dependencies = [
  "chrono",
  "dirs",
