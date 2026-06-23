@@ -84,13 +84,15 @@ pub fn run() {
                             let state = state.clone();
                             // Use blocking lock since this runs before the event loop
                             let mut s = state.blocking_lock();
-                            s.data_dir = config::hub_dir().ok();
+                            s.data_dir = config::corin_dir().ok();
                             s.db_path = Some(db_path);
                             s.conn = Some(conn);
 
                             // All Uteke access via HTTP API (no direct SQLite).
-                            // Server URL configurable — localhost or remote domain.
-                            let client = UtekeClient::default();
+                            // Server URL resolved dynamically from ~/.uteke/config.toml
+                            // when available, falling back to localhost:8767.
+                            let server_url = config::detect_uteke_serve_url();
+                            let client = UtekeClient::new(&server_url);
                             s.uteke_client = Some(client);
                         }
                         Err(e) => {
@@ -109,7 +111,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// Initialize the SQLite schema for Hub database.
+/// Initialize the SQLite schema for CorIn database.
 fn init_schema(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS memories (

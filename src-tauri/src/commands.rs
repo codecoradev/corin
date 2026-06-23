@@ -102,9 +102,9 @@ pub struct StatsResponse {
 /// Phase 2: uteke-core library dep for full embedding + graph.
 #[derive(Default)]
 pub struct AppState {
-    /// Path to the Hub SQLite database (~/.codecora/hub/hub.db).
+    /// Path to the CorIn SQLite database (~/.codecora/corin/corin.db).
     pub db_path: Option<PathBuf>,
-    /// Hub SQLite connection for Hub-native operations.
+    /// CorIn SQLite connection for CorIn-native operations.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
     /// HTTP client for uteke-serve.
@@ -1493,13 +1493,13 @@ pub async fn init_data_dir(
     )
     .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    let hub_dir = crate::config::hub_dir().map_err(|e| CommandError::Io(e.to_string()))?;
+    let corin_dir = crate::config::corin_dir().map_err(|e| CommandError::Io(e.to_string()))?;
 
-    s.data_dir = Some(hub_dir.clone());
+    s.data_dir = Some(corin_dir.clone());
     s.db_path = Some(db_path);
     s.conn = Some(conn);
 
-    Ok(hub_dir.to_string_lossy().to_string())
+    Ok(corin_dir.to_string_lossy().to_string())
 }
 
 // ─── Uteke Server Integration (HTTP API) ───────────────────────────────
@@ -1543,7 +1543,7 @@ pub async fn uteke_server_status(
 
     Ok(serde_json::json!({
         "available": true,
-        "url": "http://127.0.0.1:8767",
+        "url": crate::config::detect_uteke_serve_url(),
         "stats": stats,
     }))
 }

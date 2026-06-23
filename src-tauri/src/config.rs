@@ -4,10 +4,13 @@
 //! defaults → config file → runtime overrides.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Default Uteke serve URL when config is missing or unreadable.
+const DEFAULT_SERVE_URL: &str = "http://127.0.0.1:8767";
 
 /// Root config structure — maps to `~/.codecora/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,14 +62,57 @@ pub fn codecora_root() -> Result<PathBuf, ConfigError> {
     Ok(home.join(".codecora"))
 }
 
-/// Resolve the Hub data directory: `~/.codecora/hub/`.
-pub fn hub_dir() -> Result<PathBuf, ConfigError> {
-    Ok(codecora_root()?.join("hub"))
+/// Resolve the CorIn data directory: `~/.codecora/corin/`.
+pub fn corin_dir() -> Result<PathBuf, ConfigError> {
+    Ok(codecora_root()?.join("corin"))
 }
 
-/// Resolve the Hub database path: `~/.codecora/hub/hub.db`.
-pub fn hub_db_path() -> Result<PathBuf, ConfigError> {
-    Ok(hub_dir()?.join("hub.db"))
+/// Resolve the CorIn database path: `~/.codecora/corin/corin.db`.
+pub fn corin_db_path() -> Result<PathBuf, ConfigError> {
+    Ok(corin_dir()?.join("corin.db"))
+}
+
+/// Detect the Uteke serve URL by reading `~/.uteke/config.toml` → `[serve].port`.
+///
+/// Falls back to `DEFAULT_SERVE_URL` (`http://127.0.0.1:8767`) when the
+/// config file is missing, unreadable, or does not contain a `[serve]`
+/// section.
+pub fn detect_uteke_serve_url() -> String {
+    let Some(home) = dirs::home_dir() else {
+        return DEFAULT_SERVE_URL.to_string();
+    };
+
+    let config = home.join(".uteke/config.toml");
+    let Ok(contents) = fs::read_to_string(&config) else {
+        return DEFAULT_SERVE_URL.to_string();
+    };
+    let Ok(parsed) = contents.parse::<toml::Value>() else {
+        return DEFAULT_SERVE_URL.to_string();
+    };
+
+    // Try [serve].port first (preferred), then [serve].bind as fallback.
+    let port = parsed
+        .get("serve")
+        .and_then(|s| s.get("port"))
+        .and_then(|p| {
+            p.as_str()
+                .map(|s| s.to_string())
+                .or_else(|| p.as_integer().map(|i| i.to_string()))
+        });
+
+    let port = match port {
+        Some(p) => p,
+        None => return DEFAULT_SERVE_URL.to_string(),
+    };
+
+    // Read optional bind host (default: 127.0.0.1).
+    let host = parsed
+        .get("serve")
+        .and_then(|s| s.get("bind"))
+        .and_then(|b| b.as_str())
+        .unwrap_or("127.0.0.1");
+
+    format!("http://{host}:{port}")
 }
 
 /// Resolve the Uteke symlink directory: `~/.codecora/uteke/`.
@@ -204,20 +250,57 @@ pub fn config_path() -> Result<PathBuf, ConfigError> {
 ///
 /// Creates:
 /// - `~/.codecora/`
-/// - `~/.codecora/hub/`
+/// - `~/.codecora/corin/`
 /// - `~/.codecora/cache/`
 /// - `~/.codecora/logs/`
+///
+/// Also runs legacy migration: if `~/.codecora/hub/hub.db` exists, it is
+/// moved to `~/.codecora/corin/corin.db` and the old `hub/` directory is
+/// removed.
 pub fn ensure_directory_structure() -> Result<PathBuf, ConfigError> {
     let root = codecora_root()?;
-    let hub = hub_dir()?;
+    let corin = corin_dir()?;
 
-    for dir in &[&root, &hub, &root.join("cache"), &root.join("logs")] {
+    for dir in &[&root, &corin, &root.join("cache"), &root.join("logs")] {
         if !dir.exists() {
             fs::create_dir_all(dir).map_err(|e| ConfigError::Io(e.to_string()))?;
         }
     }
 
-    Ok(hub)
+    // Legacy migration: ~/.codecora/hub/hub.db → ~/.codecora/corin/corin.db
+    migrate_legacy_hub_db(&root, &corin)?;
+
+    Ok(corin)
+}
+
+/// Migrate the old Hub database to the new CorIn path.
+///
+/// - Source: `~/.codecora/hub/hub.db`
+/// - Target: `~/.codecora/corin/corin.db`
+///
+/// If the source exists and the target does not, the file is moved.
+/// If both exist, the legacy file is left in place (user must decide).
+/// After a successful move, the now-empty `hub/` directory is removed.
+fn migrate_legacy_hub_db(root: &Path, corin_dir: &Path) -> Result<(), ConfigError> {
+    let legacy_hub_dir = root.join("hub");
+    let legacy_db = legacy_hub_dir.join("hub.db");
+    let new_db = corin_dir.join("corin.db");
+
+    if legacy_db.exists() && !new_db.exists() {
+        fs::rename(&legacy_db, &new_db).map_err(|e| ConfigError::Io(e.to_string()))?;
+
+        // Remove the old hub/ directory if it is now empty.
+        if legacy_hub_dir.exists()
+            && fs::read_dir(&legacy_hub_dir)
+                .map_err(|e| ConfigError::Io(e.to_string()))?
+                .next()
+                .is_none()
+        {
+            let _ = fs::remove_dir(&legacy_hub_dir);
+        }
+    }
+
+    Ok(())
 }
 
 /// Load config from `~/.codecora/config.toml`.
@@ -275,7 +358,7 @@ pub fn init_environment() -> Result<(PathBuf, CodecoraConfig), ConfigError> {
         config
     };
 
-    let db_path = hub_db_path()?;
+    let db_path = corin_db_path()?;
     Ok((db_path, config))
 }
 
@@ -358,9 +441,9 @@ max_results = 100
     }
 
     #[test]
-    fn test_hub_db_path_ends_with_hub_db() {
-        let path = hub_db_path().unwrap();
-        assert!(path.ends_with("hub.db"));
+    fn test_corin_db_path_ends_with_corin_db() {
+        let path = corin_db_path().unwrap();
+        assert!(path.ends_with("corin.db"));
     }
 
     #[test]
