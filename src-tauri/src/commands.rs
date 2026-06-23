@@ -1662,7 +1662,6 @@ pub async fn generate_agent_md(project_dir: Option<String>) -> Result<String, Co
 pub async fn run_dream_cycle(
     _state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, CommandError> {
-
     // Find uteke binary
     let uteke_bin = find_in_path("uteke")
         .or_else(|| dirs::home_dir().map(|h| h.join(".local/bin/uteke")))
