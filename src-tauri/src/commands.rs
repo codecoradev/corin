@@ -1641,9 +1641,7 @@ pub async fn detect_agents() -> Result<Vec<DetectedAgent>, CommandError> {
 
 /// Generate .agent.md for the current project.
 #[tauri::command]
-pub async fn generate_agent_md(
-    project_dir: Option<String>,
-) -> Result<String, CommandError> {
+pub async fn generate_agent_md(project_dir: Option<String>) -> Result<String, CommandError> {
     let dir = project_dir
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::current_dir().ok())
@@ -1670,8 +1668,7 @@ pub async fn generate_agent_md(
 "#;
 
     let path = dir.join(".agent.md");
-    std::fs::write(&path, agent_md)
-        .map_err(|e| CommandError::Io(e.to_string()))?;
+    std::fs::write(&path, agent_md).map_err(|e| CommandError::Io(e.to_string()))?;
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -1685,9 +1682,7 @@ pub async fn run_dream_cycle(
 
     // Find uteke binary
     let uteke_bin = find_in_path("uteke")
-        .or_else(|| {
-            dirs::home_dir().map(|h| h.join(".local/bin/uteke"))
-        })
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local/bin/uteke")))
         .filter(|p| p.is_file());
 
     let Some(bin) = uteke_bin else {
