@@ -70,18 +70,47 @@
       }
 
       let seedMemories: { id: string; content: string; tags: string[] }[] = [];
+      let seedEdges: { source: string; target: string; weight: number }[] = [];
 
       if (serverOnline) {
-        // Fetch recent memories via server /list
+        // Fetch the server graph (nodes + edges) once.
+        // The backend returns real cosine edges when available, or a
+        // tag-based fallback graph so connections are always present.
         try {
-          const serverList = await utekeServer.recall('knowledge memory code project idea', { limit: INITIAL_SEED });
-          seedMemories = serverList.map(m => ({
-            id: m.id,
-            content: m.content,
-            tags: m.tags ?? [],
+          const sg = await utekeServer.graph();
+          // Build the node pool from the server graph nodes. We only
+          // seed INITIAL_SEED of them, but keep ALL edges that connect
+          // the seeded nodes so lines appear on first paint.
+          const serverNodeMap = new Map<string, { id: string; content: string; tags: string[] }>();
+          for (const n of sg.nodes) {
+            serverNodeMap.set(n.id, {
+              id: n.id,
+              content: n.label ?? n.id,
+              tags: n.entity_type ? [n.entity_type] : [],
+            });
+          }
+          seedMemories = [...serverNodeMap.values()];
+          seedEdges = sg.edges.map(e => ({
+            source: e.source,
+            target: e.target,
+            weight: e.weight ?? 0.5,
           }));
         } catch {
           // Fallback below
+        }
+
+        // Secondary fallback: recall() if graph endpoint returned nothing
+        if (seedMemories.length === 0) {
+          try {
+            const serverList = await utekeServer.recall('knowledge memory code project idea', { limit: INITIAL_SEED });
+            seedMemories = serverList.map(m => ({
+              id: m.id,
+              content: m.content,
+              tags: m.tags ?? [],
+            }));
+          } catch {
+            // Fallback below
+          }
         }
       }
 
@@ -97,18 +126,41 @@
             content: n.content,
             tags: n.tags ?? [],
           }));
-          // Also seed edges from the graph data
-          for (const e of g.edges) {
-            addEdge(e.source, e.target, 0.5);
-          }
+          seedEdges = g.edges.map(e => ({
+            source: e.source,
+            target: e.target,
+            weight: 0.5,
+          }));
         } catch {
           // No data at all
         }
       }
 
-      // Add seed nodes
-      for (const m of seedMemories.slice(0, INITIAL_SEED)) {
-        addNode(m.id, m.content, m.tags);
+      // Prioritise nodes that appear in edges so the seed graph is densely
+      // connected on first paint. Nodes with no edges are still included (as
+      // a tail) so isolated memories remain discoverable.
+      const edgeDegree = new Map<string, number>();
+      for (const e of seedEdges) {
+        edgeDegree.set(e.source, (edgeDegree.get(e.source) ?? 0) + 1);
+        edgeDegree.set(e.target, (edgeDegree.get(e.target) ?? 0) + 1);
+      }
+      const seedPool = [...seedMemories].sort((a, b) =>
+        (edgeDegree.get(b.id) ?? 0) - (edgeDegree.get(a.id) ?? 0),
+      );
+
+      // Add seed nodes (only INITIAL_SEED become visible)
+      const seededIds = new Set<string>();
+      for (const m of seedPool.slice(0, INITIAL_SEED)) {
+        if (addNode(m.id, m.content, m.tags)) seededIds.add(m.id);
+      }
+
+      // Add edges that connect the seeded nodes so lines appear on first paint.
+      // Edges referencing not-yet-seeded nodes are skipped here (the count
+      // stays accurate and they'll be discovered via expandNode later).
+      for (const e of seedEdges) {
+        if (seededIds.has(e.source) && seededIds.has(e.target)) {
+          addEdge(e.source, e.target, e.weight);
+        }
       }
     } catch {
       // ignore
