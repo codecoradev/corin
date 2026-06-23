@@ -714,52 +714,93 @@ pub async fn uteke_graph(
     namespace: Option<String>,
     _limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    let client = {
-        let s = state.lock().await;
-        s.uteke_client.clone()
-    };
-    let Some(client) = client else {
-        return Ok(GraphData {
-            nodes: vec![],
-            edges: vec![],
-        });
-    };
-    if !client.is_available().await {
-        return Ok(GraphData {
-            nodes: vec![],
-            edges: vec![],
-        });
+    // ── API-first: try uteke-serve HTTP ──
+    {
+        let client = {
+            let s = state.lock().await;
+            s.uteke_client.clone()
+        };
+        if let Some(client) = client
+            && client.is_available().await
+        {
+            let graph = client
+                .graph(namespace.as_deref())
+                .await
+                .map_err(|e| CommandError::Uteke(e.to_string()))?;
+            return Ok(GraphData {
+                nodes: graph
+                    .nodes
+                    .into_iter()
+                    .map(|n| MemoryEntry {
+                        id: n.id,
+                        content: n.label,
+                        tags: vec![],
+                        content_type: n.entity_type,
+                        importance: None,
+                        namespace: None,
+                        created_at: None,
+                        updated_at: None,
+                    })
+                    .collect(),
+                edges: graph
+                    .edges
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| GraphEdge {
+                        id: Some(i as i64),
+                        source: e.source,
+                        target: e.target,
+                        weight: Some(e.weight),
+                    })
+                    .collect(),
+            });
+        }
     }
-    let graph = client
-        .graph(namespace.as_deref())
-        .await
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    Ok(GraphData {
-        nodes: graph
+
+    // ── Fallback: uteke-core native graph (cosine auto-linked edges) ──
+    let s = state.lock().await;
+    if let Some(uteke) = s.uteke.as_ref() {
+        let gd = uteke
+            .graph_data(namespace.as_deref())
+            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+        let nodes: Vec<MemoryEntry> = gd
             .nodes
-            .into_iter()
-            .map(|n| MemoryEntry {
-                id: n.id,
-                content: n.label,
-                tags: vec![],
-                content_type: n.entity_type,
-                importance: None,
-                namespace: None,
-                created_at: None,
-                updated_at: None,
+            .iter()
+            .filter_map(|n| {
+                let mid = n.memory_id.as_deref()?;
+                let m = uteke.get_by_id(mid).ok().flatten()?;
+                Some(MemoryEntry {
+                    id: m.id,
+                    content: m.content,
+                    tags: m.tags,
+                    content_type: Some(m.content_type),
+                    importance: Some(m.importance as f32),
+                    namespace: Some(m.namespace),
+                    created_at: Some(m.created_at.to_rfc3339()),
+                    updated_at: Some(m.updated_at.to_rfc3339()),
+                })
             })
-            .collect(),
-        edges: graph
+            .collect();
+
+        let edges: Vec<GraphEdge> = gd
             .edges
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(i, e)| GraphEdge {
                 id: Some(i as i64),
-                source: e.source,
-                target: e.target,
-                weight: Some(e.weight),
+                source: e.source_id.clone(),
+                target: e.target_id.clone(),
+                weight: Some(e.weight as f32),
             })
-            .collect(),
+            .collect();
+
+        return Ok(GraphData { nodes, edges });
+    }
+
+    Ok(GraphData {
+        nodes: vec![],
+        edges: vec![],
     })
 }
 
