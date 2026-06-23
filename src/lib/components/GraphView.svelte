@@ -95,8 +95,22 @@
             target: e.target,
             weight: e.weight ?? 0.5,
           }));
-        } catch {
-          // Fallback below
+
+          // Enrich: the /graph endpoint only exposes entity_type (first tag).
+          // Fetch full tags via /list so colors and labels are accurate.
+          try {
+            const list = await uteke.list({ limit: sg.nodes.length || 150 });
+            const tagMap = new Map<string, string[]>();
+            for (const m of list) tagMap.set(m.id, m.tags ?? []);
+            for (const m of seedMemories) {
+              const full = tagMap.get(m.id);
+              if (full && full.length) m.tags = full;
+            }
+          } catch {
+            // Tags enrichment is best-effort; entity_type is enough to draw.
+          }
+        } catch (err) {
+          console.warn('[GraphView] utekeServer.graph() failed, trying recall()', err);
         }
 
         // Secondary fallback: recall() if graph endpoint returned nothing
@@ -108,8 +122,8 @@
               content: m.content,
               tags: m.tags ?? [],
             }));
-          } catch {
-            // Fallback below
+          } catch (err) {
+            console.warn('[GraphView] recall() fallback failed', err);
           }
         }
       }
@@ -131,8 +145,8 @@
             target: e.target,
             weight: 0.5,
           }));
-        } catch {
-          // No data at all
+        } catch (err) {
+          console.warn('[GraphView] local graph fallback failed', err);
         }
       }
 
@@ -162,8 +176,8 @@
           addEdge(e.source, e.target, e.weight);
         }
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[GraphView] loadSeed() failed', err);
     }
     loading = false;
     physicsActive = true;
