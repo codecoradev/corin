@@ -72,47 +72,58 @@ pub fn corin_db_path() -> Result<PathBuf, ConfigError> {
     Ok(corin_dir()?.join("corin.db"))
 }
 
-/// Detect the Uteke serve URL by reading `~/.uteke/config.toml` → `[serve].port`.
+/// Detect the Uteke serve URL by reading Uteke config files.
 ///
-/// Falls back to `DEFAULT_SERVE_URL` (`http://127.0.0.1:8767`) when the
-/// config file is missing, unreadable, or does not contain a `[serve]`
-/// section.
+/// Tries both config files in order:
+/// 1. `~/.uteke/uteke.toml` (main config, section `[server]`)
+/// 2. `~/.uteke/config.toml` (legacy/fallback)
+///
+/// Reads `[server].host` and `[server].port`, falling back to
+/// `DEFAULT_SERVE_URL` (`http://127.0.0.1:8767`) when config is missing
+/// or the `[server]` section is absent (all keys commented out).
 pub fn detect_uteke_serve_url() -> String {
     let Some(home) = dirs::home_dir() else {
         return DEFAULT_SERVE_URL.to_string();
     };
 
-    let config = home.join(".uteke/config.toml");
-    let Ok(contents) = fs::read_to_string(&config) else {
-        return DEFAULT_SERVE_URL.to_string();
-    };
-    let Ok(parsed) = contents.parse::<toml::Value>() else {
-        return DEFAULT_SERVE_URL.to_string();
-    };
+    // Try both config files: uteke.toml first, then config.toml.
+    for name in &["uteke.toml", "config.toml"] {
+        let path = home.join(format!(".uteke/{name}"));
+        let Ok(contents) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(parsed) = contents.parse::<toml::Value>() else {
+            continue;
+        };
 
-    // Try [serve].port first (preferred), then [serve].bind as fallback.
-    let port = parsed
-        .get("serve")
-        .and_then(|s| s.get("port"))
-        .and_then(|p| {
-            p.as_str()
-                .map(|s| s.to_string())
-                .or_else(|| p.as_integer().map(|i| i.to_string()))
+        // Uteke uses [server] section with `host` and `port` keys.
+        // Also check [serve] as a fallback for alternative spellings.
+        let section = parsed.get("server").or_else(|| parsed.get("serve"));
+        let Some(section) = section else {
+            continue;
+        };
+
+        let port = section.get("port").and_then(|p| {
+            p.as_integer()
+                .map(|i| i.to_string())
+                .or_else(|| p.as_str().map(String::from))
         });
 
-    let port = match port {
-        Some(p) => p,
-        None => return DEFAULT_SERVE_URL.to_string(),
-    };
+        // Port found — build the URL.
+        if let Some(port) = port {
+            let host = section
+                .get("host")
+                .or_else(|| section.get("bind"))
+                .and_then(|h| h.as_str())
+                .unwrap_or("127.0.0.1");
+            return format!("http://{host}:{port}");
+        }
 
-    // Read optional bind host (default: 127.0.0.1).
-    let host = parsed
-        .get("serve")
-        .and_then(|s| s.get("bind"))
-        .and_then(|b| b.as_str())
-        .unwrap_or("127.0.0.1");
+        // Section exists but port not set — section is commented out.
+        // Continue to next config file or fall through to default.
+    }
 
-    format!("http://{host}:{port}")
+    DEFAULT_SERVE_URL.to_string()
 }
 
 /// Resolve the Uteke symlink directory: `~/.codecora/uteke/`.

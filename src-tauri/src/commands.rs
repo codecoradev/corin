@@ -212,12 +212,42 @@ pub async fn list(
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
+    let limit = limit.unwrap_or(50);
+    let offset = offset.unwrap_or(0);
+
+    // ── API-first: try uteke-serve ──
+    {
+        let client = {
+            let s = state.lock().await;
+            s.uteke_client.clone()
+        };
+        if let Some(client) = client
+            && client.is_available().await
+            && let Ok(memories) = client
+                .list(namespace.as_deref(), tag.as_deref(), limit, offset)
+                .await
+        {
+            return Ok(memories
+                .into_iter()
+                .map(|m| MemoryEntry {
+                    id: m.id,
+                    content: m.content,
+                    tags: m.tags,
+                    content_type: Some(m.content_type),
+                    importance: Some(m.importance),
+                    namespace: Some(m.namespace),
+                    created_at: Some(m.created_at),
+                    updated_at: Some(m.updated_at),
+                })
+                .collect());
+        }
+    }
+
+    // ── Fallback: read from CorIn SQLite DB ──
     let mut s = state.lock().await;
     s.ensure_initialized()?;
 
     let conn = s.conn.as_mut().unwrap();
-    let limit = limit.unwrap_or(50);
-    let offset = offset.unwrap_or(0);
 
     let mut sql = String::from(
         "SELECT id, content, tags, content_type, importance, namespace, created_at, updated_at FROM memories WHERE 1=1",
@@ -1037,16 +1067,20 @@ pub async fn uteke_stats(
     if !client.is_available().await {
         return Ok(StatsResponse::default());
     }
-    let stats = client
+    let client_stats = client
         .stats()
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Fetch namespace count separately (not included in /stats response)
+    let total_namespaces = client.namespaces().await.unwrap_or_default().len();
+
     Ok(StatsResponse {
-        total_memories: stats.total_memories,
-        total_namespaces: 0,
-        total_tags: stats.unique_tags,
+        total_memories: client_stats.total_memories,
+        total_namespaces,
+        total_tags: client_stats.unique_tags,
         total_edges: 0,
-        db_size_bytes: stats.db_size_bytes,
+        db_size_bytes: client_stats.db_size_bytes,
     })
 }
 
@@ -1058,6 +1092,28 @@ pub async fn uteke_stats(
 pub async fn stats(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<StatsResponse, CommandError> {
+    // ── API-first: try uteke-serve before touching local DB ──
+    {
+        let client = {
+            let s = state.lock().await;
+            s.uteke_client.clone()
+        };
+        if let Some(client) = client
+            && client.is_available().await
+            && let Ok(server_stats) = client.stats().await
+        {
+            let total_namespaces = client.namespaces().await.unwrap_or_default().len();
+            return Ok(StatsResponse {
+                total_memories: server_stats.total_memories,
+                total_namespaces,
+                total_tags: server_stats.unique_tags,
+                total_edges: 0,
+                db_size_bytes: server_stats.db_size_bytes,
+            });
+        }
+    }
+
+    // ── Fallback: read from CorIn SQLite DB ──
     let mut s = state.lock().await;
     s.ensure_initialized()?;
 
@@ -1110,7 +1166,7 @@ pub async fn stats(
         .collect();
     let unique_tags: std::collections::HashSet<String> = all_tags.into_iter().collect();
 
-    let db_path = s.data_dir.as_ref().unwrap().join("uteke.db");
+    let db_path = s.data_dir.as_ref().unwrap().join("corin.db");
     let db_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
     Ok(StatsResponse {
@@ -1677,6 +1733,11 @@ pub async fn uteke_forget(
 }
 
 /// Get graph data from uteke-serve (real cosine edges, not tag-based).
+///
+/// If the server returns 0 edges (cosine auto-link not yet generated),
+/// falls back to a tag-based graph: memories sharing at least one tag
+/// are connected. This ensures the graph view is never empty when the
+/// server has memories but no cosine edges yet.
 #[tauri::command]
 pub async fn uteke_server_graph(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -1710,10 +1771,99 @@ pub async fn uteke_server_graph(
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
+    // If server already has cosine edges, return them as-is.
+    if !graph.edges.is_empty() {
+        return Ok(serde_json::json!({
+            "nodes": graph.nodes,
+            "edges": graph.edges,
+            "stats": graph.stats,
+        }));
+    }
+
+    // Fallback: build a tag-based graph from memories fetched via /list.
+    // Cosine auto-linking may not be active on the installed uteke version,
+    // so we generate edges from shared tags to keep the graph useful.
+    let memories = client
+        .list(namespace.as_deref(), None, 150, 0)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    if memories.is_empty() {
+        return Ok(serde_json::json!({
+            "nodes": [],
+            "edges": [],
+            "stats": {"node_count": 0, "edge_count": 0, "relation_types": []},
+            "hint": "No memories yet — create some to see the graph",
+        }));
+    }
+
+    // Build nodes from memories.
+    let nodes: Vec<serde_json::Value> = memories
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "label": m.content.chars().take(60).collect::<String>(),
+                "entity_type": m.tags.first().cloned(),
+            })
+        })
+        .collect();
+
+    // Build edges from shared tags.
+    // For each tag, collect all memory IDs that have it, then connect them.
+    let mut tag_to_memories: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for m in &memories {
+        for tag in &m.tags {
+            tag_to_memories.entry(tag.as_str()).or_default().push(&m.id);
+        }
+    }
+
+    let mut edges: Vec<serde_json::Value> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for ids in tag_to_memories.values() {
+        // Connect all pairs within the same tag (cap at 5 per tag to avoid clutter).
+        let max_pairs = 5;
+        let mut count = 0;
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                if count >= max_pairs {
+                    break;
+                }
+                let key = (ids[i].to_string(), ids[j].to_string());
+                if seen.insert(key.clone()) {
+                    edges.push(serde_json::json!({
+                        "source": ids[i],
+                        "target": ids[j],
+                        "relation": "shared_tag",
+                        "weight": 0.5,
+                    }));
+                    count += 1;
+                }
+            }
+            if count >= max_pairs {
+                break;
+            }
+        }
+    }
+
+    let node_count = nodes.len();
+    let edge_count = edges.len();
+    let relation_types: Vec<&str> = if edges.is_empty() {
+        vec![]
+    } else {
+        vec!["shared_tag"]
+    };
+
     Ok(serde_json::json!({
-        "nodes": graph.nodes,
-        "edges": graph.edges,
-        "stats": graph.stats,
+        "nodes": nodes,
+        "edges": edges,
+        "stats": {
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "relation_types": relation_types,
+        },
+        "hint": "Tag-based fallback graph (cosine auto-link not active on uteke v0.3.2)",
     }))
 }
 

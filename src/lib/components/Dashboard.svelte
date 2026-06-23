@@ -15,34 +15,27 @@
   let searchQuery = $state('');
   let loading = $state(true);
   let utekeReady = $state(false);
-  let utekeStats = $state<StatsResponse | null>(null);
   let serverOnline = $state(false);
 
   async function loadData() {
     loading = true;
     try {
-      // Check if Uteke is available and merge data
       utekeReady = await uteke.available();
 
       // Check if uteke-serve is running (semantic search)
-      const status = await utekeServer.status();
-      serverOnline = status.available;
-
-      if (utekeReady) {
-        // Read from Uteke DB (has actual data)
-        utekeStats = await uteke.stats();
-        recent = await uteke.list({ namespace: namespace ?? undefined, limit: 10 });
-        // Also get Hub stats for local data
-        try {
-          stats = await system.stats();
-        } catch {
-          stats = utekeStats;
-        }
-      } else {
-        // Fallback to Hub DB only
-        stats = await system.stats();
-        recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 });
+      try {
+        const status = await utekeServer.status();
+        serverOnline = status.available;
+      } catch {
+        serverOnline = false;
       }
+
+      // stats() is now API-first — returns Uteke data via HTTP if server is up,
+      // falls back to local CorIn DB otherwise.
+      stats = await system.stats().catch(() => null);
+
+      // Recent memories — also API-first via system.list
+      recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 }).catch(() => []);
     } catch {
       // store not initialized yet
     } finally {
@@ -81,45 +74,22 @@
     <div class="loading">Loading...</div>
   {:else}
     <div class="stats-grid">
-      {#if utekeReady && utekeStats}
-        <div class="stat-card uteke-badge">
-          <div class="stat-value">{utekeStats.total_memories}</div>
-          <div class="stat-label">Uteke Memories</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_memories ?? 0}</div>
-          <div class="stat-label">Hub Memories</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{Math.max(utekeStats?.total_namespaces ?? 0, stats?.total_namespaces ?? 0)}</div>
-          <div class="stat-label">Namespaces</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{Math.max(utekeStats?.total_tags ?? 0, stats?.total_tags ?? 0)}</div>
-          <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{formatBytes((utekeStats?.db_size_bytes ?? 0) + (stats?.db_size_bytes ?? 0))}</div>
-          <div class="stat-label">Total DB Size</div>
-        </div>
-      {:else}
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_memories ?? 0}</div>
-          <div class="stat-label">Memories</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
-          <div class="stat-label">Namespaces</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_tags ?? 0}</div>
-          <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
-          <div class="stat-label">DB Size</div>
-        </div>
-      {/if}
+      <div class="stat-card">
+        <div class="stat-value">{stats?.total_memories ?? 0}</div>
+        <div class="stat-label">Memories</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
+        <div class="stat-label">Namespaces</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{stats?.total_tags ?? 0}</div>
+        <div class="stat-label">Tags</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
+        <div class="stat-label">DB Size</div>
+      </div>
     </div>
 
     <div class="recent-section">
