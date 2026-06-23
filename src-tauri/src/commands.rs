@@ -1601,3 +1601,129 @@ pub async fn uteke_server_stats(
         "cold": stats.cold,
     }))
 }
+
+// ─── AI Agent Integration (#55) ───────────────────────────────────────
+
+/// Detected AI agent installation.
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectedAgent {
+    pub name: String,
+    pub config_path: String,
+    pub found: bool,
+}
+
+/// Detect installed AI coding agents on this machine.
+#[tauri::command]
+pub async fn detect_agents() -> Result<Vec<DetectedAgent>, CommandError> {
+    let home = dirs::home_dir().ok_or_else(|| CommandError::Io("no home dir".into()))?;
+
+    let agents = vec![
+        ("Claude Code", home.join(".claude")),
+        ("Pi Dev", home.join(".pi")),
+        ("OpenCode", home.join(".opencode")),
+        ("Cursor", home.join(".cursor")),
+    ];
+
+    let detected: Vec<DetectedAgent> = agents
+        .into_iter()
+        .map(|(name, path)| {
+            let found = path.is_dir();
+            DetectedAgent {
+                name: name.to_string(),
+                config_path: path.to_string_lossy().to_string(),
+                found,
+            }
+        })
+        .collect();
+
+    Ok(detected)
+}
+
+/// Generate .agent.md for the current project.
+#[tauri::command]
+pub async fn generate_agent_md(project_dir: Option<String>) -> Result<String, CommandError> {
+    let dir = project_dir
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .ok_or_else(|| CommandError::Io("no working dir".into()))?;
+
+    let agent_md = r#"# Agent Instructions
+
+## Memory Protocol
+- **Before starting any task**: call `uteke_recall` with a query about the project context, conventions, and past decisions.
+- **After learning something new**: call `uteke_remember` with appropriate tags and namespace.
+- Use namespaces to isolate: "corin", "uteke", "trapfall", etc.
+
+## Stack
+- Desktop shell: Tauri 2
+- Frontend: Svelte 5 (runes: `$state`, `$derived`, `$effect`, `$props`)
+- Backend: Rust (edition 2024)
+- Storage: uteke-core (native embedding + cosine auto-link + graph)
+- Graph: Canvas 2D force-directed
+
+## Key Paths
+- Rust commands: `src-tauri/src/commands.rs`
+- Frontend components: `src/lib/components/`
+- IPC layer: `src/lib/ts/ipc.ts`
+"#;
+
+    let path = dir.join(".agent.md");
+    std::fs::write(&path, agent_md).map_err(|e| CommandError::Io(e.to_string()))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Run uteke dream cycle (maintenance pipeline).
+#[tauri::command]
+pub async fn run_dream_cycle(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<serde_json::Value, CommandError> {
+    let _s = state.lock().await;
+
+    // Find uteke binary
+    let uteke_bin = find_in_path("uteke")
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local/bin/uteke")))
+        .filter(|p| p.is_file());
+
+    let Some(bin) = uteke_bin else {
+        return Ok(serde_json::json!({
+            "success": false,
+            "hint": "uteke binary not found. Install: curl -fsSL https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh | sh"
+        }));
+    };
+
+    let output = std::process::Command::new(&bin)
+        .arg("dream")
+        .arg("--json")
+        .arg("--quiet")
+        .output()
+        .map_err(|e| CommandError::Io(e.to_string()))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // Try to parse JSON output
+    let result = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| {
+        serde_json::json!({
+            "raw_stdout": stdout,
+            "raw_stderr": stderr,
+        })
+    });
+
+    Ok(serde_json::json!({
+        "success": output.status.success(),
+        "result": result,
+    }))
+}
+
+/// Find a binary in PATH.
+fn find_in_path(name: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}

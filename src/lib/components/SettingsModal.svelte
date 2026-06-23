@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { system, updater } from '../ts/ipc';
+  import { system, updater, agents as agentApi } from '../ts/ipc';
   import type { Update } from '@tauri-apps/plugin-updater';
 
   interface Props {
@@ -10,7 +10,7 @@
   let { onclose }: Props = $props();
 
   // ─── Active tab ───
-  type Tab = 'corin' | 'general' | 'data';
+  type Tab = 'corin' | 'general' | 'data' | 'agents';
   let activeTab = $state<Tab>('corin');
 
   // ─── Settings state ───
@@ -32,6 +32,31 @@
 
   // ─── Data dir info ───
   let dataDir = $state<string | null>(null);
+
+  // ─── AI Agents (#55) ───
+  let detectedAgents = $state<Array<{ name: string; config_path: string; found: boolean }>>([]);
+  let generatingMd = $state(false);
+  let agentMdPath = $state<string | null>(null);
+  let runningDream = $state(false);
+  let dreamResult = $state<{ success: boolean; result: unknown } | null>(null);
+
+  async function loadAgents() {
+    try {
+      detectedAgents = await agentApi.detect();
+    } catch { /* ignore */ }
+  }
+
+  async function genAgentMd() {
+    generatingMd = true;
+    try { agentMdPath = await agentApi.generateAgentMd(); } catch { /* ignore */ }
+    generatingMd = false;
+  }
+
+  async function runDream() {
+    runningDream = true;
+    try { dreamResult = await agentApi.runDream(); } catch { /* ignore */ }
+    runningDream = false;
+  }
 
   async function loadSettings() {
     loading = true;
@@ -58,6 +83,7 @@
   onMount(() => {
     loadSettings();
     loadDataDir();
+    loadAgents();
   });
 
   async function handleSave() {
@@ -138,6 +164,7 @@
     { id: 'corin', label: 'CorIn', icon: '◧' },
     { id: 'general', label: 'General', icon: '⚙' },
     { id: 'data', label: 'Data', icon: '▤' },
+    { id: 'agents', label: 'AI Agents', icon: '◈' },
   ];
 </script>
 
@@ -279,6 +306,54 @@
               ↓ Export Markdown
             </button>
           </div>
+        </section>
+
+      {:else if activeTab === 'agents'}
+        <!-- AI Agent Integration (#55) -->
+        <section class="content-section">
+          <h3>Detected Agents</h3>
+          <p class="setting-hint">AI coding agents that can use uteke memory.</p>
+          <div class="agent-list">
+            {#each detectedAgents as agent}
+              <div class="agent-item" class:found={agent.found}>
+                <span class="agent-status">{agent.found ? '✓' : '○'}</span>
+                <div class="agent-info">
+                  <span class="agent-name">{agent.name}</span>
+                  <code class="agent-path">{agent.config_path}</code>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </section>
+
+        <section class="content-section">
+          <h3>Agent Instructions (.agent.md)</h3>
+          <p class="setting-hint">Generate a <code>.agent.md</code> file with memory protocol instructions for AI agents.</p>
+          <button class="data-btn" onclick={genAgentMd} disabled={generatingMd}>
+            {generatingMd ? 'Generating...' : '✦ Generate .agent.md'}
+          </button>
+          {#if agentMdPath}
+            <p class="setting-hint" style="margin-top:8px;">
+              ✓ Written to <code>{agentMdPath}</code>
+            </p>
+          {/if}
+        </section>
+
+        <section class="content-section">
+          <h3>Dream Cycle (Maintenance)</h3>
+          <p class="setting-hint">Run uteke's maintenance pipeline: lint → backlinks → dedup → orphans → compact.</p>
+          <button class="data-btn" onclick={runDream} disabled={runningDream}>
+            {runningDream ? 'Running...' : '☾ Run Dream Cycle'}
+          </button>
+          {#if dreamResult}
+            <div class="dream-result">
+              {#if dreamResult.success}
+                <span style="color: var(--green);">✓ Dream cycle completed</span>
+              {:else}
+                <span style="color: var(--red);">✗ Failed or partial</span>
+              {/if}
+            </div>
+          {/if}
         </section>
       {/if}
     </div>
@@ -604,4 +679,14 @@
     padding: 40px;
     color: var(--text-muted);
   }
+
+  .agent-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .agent-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-radius: 6px; background: var(--bg-secondary, rgba(255,255,255,0.03)); }
+  .agent-item.found { background: rgba(166,227,161,0.08); }
+  .agent-status { font-size: 1.1rem; font-weight: 700; min-width: 20px; }
+  .agent-item.found .agent-status { color: var(--green); }
+  .agent-info { display: flex; flex-direction: column; gap: 2px; }
+  .agent-name { font-weight: 600; font-size: 0.9rem; }
+  .agent-path { font-size: 0.75rem; color: var(--text-muted); }
+  .dream-result { margin-top: 8px; font-size: 0.85rem; }
 </style>
