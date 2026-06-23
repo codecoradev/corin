@@ -102,13 +102,38 @@
           }));
         }
       } else {
+        // No search query — list recent memories
         if (utekeReady) {
-          memories = await uteke.list({
-            namespace: namespace ?? undefined,
-            tag: activeTag ?? undefined,
-            limit,
-            offset,
-          });
+          if (namespace) {
+            // Specific namespace selected
+            memories = await uteke.list({
+              namespace,
+              tag: activeTag ?? undefined,
+              limit,
+              offset,
+            });
+          } else {
+            // No namespace selected — fetch from ALL namespaces
+            // since uteke defaults to "default" which is often empty.
+            try {
+              const namespaces = await uteke.namespaces();
+              const allMemories = await Promise.all(
+                namespaces.map((ns) =>
+                  uteke.list({ namespace: ns, tag: activeTag ?? undefined, limit: Math.ceil(limit / namespaces.length) + 5 })
+                )
+              );
+              memories = allMemories
+                .flat()
+                .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+                .slice(offset, offset + limit);
+            } catch {
+              memories = await uteke.list({
+                tag: activeTag ?? undefined,
+                limit,
+                offset,
+              });
+            }
+          }
         } else {
           memories = await memoryApi.list({
             namespace: namespace ?? undefined,

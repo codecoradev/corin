@@ -34,8 +34,26 @@
       // falls back to local CorIn DB otherwise.
       stats = await system.stats().catch(() => null);
 
-      // Recent memories — also API-first via system.list
-      recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 }).catch(() => []);
+      // Recent memories — fetch from all namespaces since the server
+      // defaults to "default" which is often empty.
+      if (namespace) {
+        recent = await memoryApi.list({ namespace, limit: 10 }).catch(() => []);
+      } else {
+        try {
+          const namespaces = await uteke.namespaces();
+          const allRecent = await Promise.all(
+            namespaces.map((ns) =>
+              uteke.list({ namespace: ns, limit: 5 })
+            )
+          );
+          recent = allRecent
+            .flat()
+            .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+            .slice(0, 10);
+        } catch {
+          recent = await memoryApi.list({ limit: 10 }).catch(() => []);
+        }
+      }
     } catch {
       // store not initialized yet
     } finally {

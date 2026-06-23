@@ -59,7 +59,8 @@
     border-left: 1px solid var(--border);
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
     z-index: 90;
-    overflow-y: auto;
+    /* No overflow on the panel itself — prevents clipping the
+       delete confirmation dialog. MemoryDetail scrolls internally. */
     animation: slideIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -68,8 +69,10 @@
     to   { opacity: 1; }
   }
 
+  /* Animate via right offset, NOT transform — transform creates a
+     stacking context that traps child dialogs below the panel. */
   @keyframes slideIn {
-    from { transform: translateX(100%); }
-    to   { transform: translateX(0); }
+    from { right: -500px; }
+    to   { right: 0; }
   }
 </style>

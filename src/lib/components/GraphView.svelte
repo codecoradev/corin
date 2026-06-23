@@ -57,9 +57,77 @@
     return COLORS[(tags[0].charCodeAt(0) || 0) % COLORS.length];
   }
 
+  // ── Client-side edge generation from shared tags ───────────────
+  // Groups memories by tag and links every pair that shares a tag.
+  // Caps per-tag connections to avoid clutter.
+  function buildTagEdges(
+    mems: { id: string; content: string; tags: string[] }[],
+    maxPerTag: number,
+  ): { source: string; target: string; weight: number }[] {
+    const result: { source: string; target: string; weight: number }[] = [];
+    const seen = new Set<string>();
+
+    // Index: tag → list of memory ids that have it
+    const tagMap = new Map<string, string[]>();
+    for (const m of mems) {
+      for (const t of m.tags ?? []) {
+        const key = t.toLowerCase();
+        if (!tagMap.has(key)) tagMap.set(key, []);
+        tagMap.get(key)!.push(m.id);
+      }
+    }
+
+    // For each tag with 2+ memories, connect pairs
+    for (const [, ids] of tagMap) {
+      if (ids.length < 2) continue;
+      let count = 0;
+      // Shuffle-ish: connect adjacent in array for determinism
+      for (let i = 0; i < ids.length - 1 && count < maxPerTag; i++) {
+        const a = ids[i];
+        const b = ids[i + 1];
+        const ek = a < b ? `${a}|${b}` : `${b}|${a}`;
+        if (seen.has(ek)) continue;
+        seen.add(ek);
+        result.push({ source: a, target: b, weight: 0.6 });
+        count++;
+      }
+    }
+
+    // Fallback: if tags didn't produce enough edges (e.g. some memories
+    // have no tags), link unconnected nodes to the nearest connected one
+    // or into a chain so the graph is never fully disconnected.
+    if (result.length < mems.length / 3 && mems.length > 1) {
+      const connected = new Set<string>();
+      for (const e of result) { connected.add(e.source); connected.add(e.target); }
+      const unconnected = mems.filter(m => !connected.has(m.id));
+      for (const m of unconnected) {
+        // Link to a random connected node, or chain to previous unconnected
+        const target = connected.size > 0
+          ? [...connected][Math.floor(Math.random() * connected.size)]
+          : mems[mems.indexOf(m) - 1]?.id;
+        if (target && target !== m.id) {
+          const ek = m.id < target ? `${m.id}|${target}` : `${target}|${m.id}`;
+          if (!seen.has(ek)) {
+            seen.add(ek);
+            result.push({ source: m.id, target, weight: 0.3 });
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
   // ─── Initial seed: fetch recent memories ───────────────────────────
   async function loadSeed() {
     loading = true;
+    // Reset graph state before repopulating (cora scan #30)
+    nodes = [];
+    edges = [];
+    nodeId.clear();
+    knownSet.clear();
+    edgeSet.clear();
+    expandedSet.clear();
     try {
       // Check server status
       try {
@@ -98,10 +166,18 @@
 
           // Enrich: the /graph endpoint only exposes entity_type (first tag).
           // Fetch full tags via /list so colors and labels are accurate.
+          // Try all namespaces in parallel since memories may be spread.
           try {
-            const list = await uteke.list({ limit: sg.nodes.length || 150 });
+            const namespaces = await uteke.namespaces();
             const tagMap = new Map<string, string[]>();
-            for (const m of list) tagMap.set(m.id, m.tags ?? []);
+            const nsResults = await Promise.all(
+              namespaces.slice(0, 12).map(ns =>
+                uteke.list({ namespace: ns, limit: 50 }).catch(() => [])
+              )
+            );
+            for (const list of nsResults) {
+              for (const m of list) tagMap.set(m.id, m.tags ?? []);
+            }
             for (const m of seedMemories) {
               const full = tagMap.get(m.id);
               if (full && full.length) m.tags = full;
@@ -115,15 +191,39 @@
 
         // Secondary fallback: recall() if graph endpoint returned nothing
         if (seedMemories.length === 0) {
+          // The server may have memories in named namespaces (cto, hermes, etc.)
+          // but /graph with no namespace returns 0. Try recalling across
+          // all known namespaces.
           try {
-            const serverList = await utekeServer.recall('knowledge memory code project idea', { limit: INITIAL_SEED });
-            seedMemories = serverList.map(m => ({
-              id: m.id,
-              content: m.content,
-              tags: m.tags ?? [],
-            }));
+            const namespaces = await uteke.namespaces();
+            const nsResults = await Promise.all(
+              namespaces.slice(0, 10).map(ns =>
+                utekeServer.recall('knowledge memory code project idea', { namespace: ns, limit: 10 }).catch(() => [])
+              )
+            );
+            for (const results of nsResults) {
+              for (const m of results) {
+                if (!seedMemories.some(s => s.id === m.id)) {
+                  seedMemories.push({ id: m.id, content: m.content, tags: m.tags ?? [] });
+                }
+              }
+            }
           } catch (err) {
-            console.warn('[GraphView] recall() fallback failed', err);
+            console.warn('[GraphView] namespace recall fallback failed', err);
+          }
+
+          // Last resort: recall without namespace
+          if (seedMemories.length === 0) {
+            try {
+              const serverList = await utekeServer.recall('knowledge memory code project idea', { limit: INITIAL_SEED });
+              seedMemories = serverList.map(m => ({
+                id: m.id,
+                content: m.content,
+                tags: m.tags ?? [],
+              }));
+            } catch (err) {
+              console.warn('[GraphView] recall() fallback failed', err);
+            }
           }
         }
       }
@@ -148,6 +248,14 @@
         } catch (err) {
           console.warn('[GraphView] local graph fallback failed', err);
         }
+      }
+
+      // ── Synthetic edge generation (client-side fallback) ──────────
+      // If the backend returned no edges (cosine not yet computed,
+      // server offline, etc.), derive edges from shared tags so the
+      // graph is always visually connected on first paint.
+      if (seedEdges.length === 0 && seedMemories.length > 1) {
+        seedEdges = buildTagEdges(seedMemories, 3);
       }
 
       // Prioritise nodes that appear in edges so the seed graph is densely
