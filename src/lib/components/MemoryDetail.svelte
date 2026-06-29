@@ -79,7 +79,7 @@
 
 <div class="memory-detail">
   <div class="detail-header">
-    <button class="back-btn" onclick={onback}>← Back</button>
+    <button class="back-btn" onclick={onback}>✕ Close <kbd>Esc</kbd></button>
     {#if memory}
       <div class="header-actions">
         <button class="edit-btn" onclick={() => onedit(memory!)}>Edit</button>
@@ -199,11 +199,12 @@
 </div>
 
 <style>
-  .memory-detail { padding: 16px 24px; max-width: 700px; margin: 0 auto; }
+  .memory-detail { height: 100vh; display: flex; flex-direction: column; }
 
-  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 16px 24px 0; flex-shrink: 0; }
+  .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
   .back-btn:hover { background: var(--bg-hover); }
+  .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: 3px; opacity: 0.7; }
   .header-actions { display: flex; gap: 8px; }
   .edit-btn, .delete-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
   .edit-btn { background: var(--bg-tertiary); color: var(--text-primary); }
@@ -224,6 +225,8 @@
 
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
   .tag { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
+
+  .detail-body { overflow-y: auto; flex: 1; min-height: 0; padding: 0 24px 24px; }
 
   .neighbors-section { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
   .neighbors-header { margin-bottom: 12px; }
@@ -261,7 +264,7 @@
   .no-neighbors { text-align: center; padding: 24px; color: var(--text-muted); }
   .no-neighbors .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
 
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .confirm-dialog { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 360px; }
   .confirm-dialog h3 { margin-bottom: 8px; }
   .confirm-dialog p { color: var(--text-muted); margin-bottom: 16px; }

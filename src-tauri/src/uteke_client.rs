@@ -1,4 +1,8 @@
-//! Uteke HTTP client — talks to uteke-serve (localhost:8767).
+//! Uteke HTTP client — talks to uteke-serve (default: localhost:8767).
+//!
+//! The actual server URL is resolved dynamically by
+//! [`crate::config::detect_uteke_serve_url`] from `~/.uteke/config.toml`,
+//! falling back to [`DEFAULT_URL`] when the config is missing.
 //!
 //! Falls back to direct DB access (rusqlite) when server is not running.
 //! This gives CorIn semantic search, cosine auto-linking, and graph API
@@ -7,7 +11,8 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const DEFAULT_URL: &str = "http://127.0.0.1:8767";
+/// Default Uteke serve URL (used when `~/.uteke/config.toml` is unreadable).
+pub const DEFAULT_URL: &str = "http://127.0.0.1:8767";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UtekeMemory {
