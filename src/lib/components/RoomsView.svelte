@@ -86,8 +86,9 @@
       } else {
         rooms = [];
       }
-    } catch {
+    } catch (e) {
       rooms = [];
+      reportError('Load rooms', e);
     }
     loading = false;
   }
@@ -113,8 +114,9 @@
     documentLoading = true;
     try {
       roomDocument = await room.getDocument(roomId);
-    } catch {
+    } catch (e) {
       roomDocument = '';
+      reportError('Load document', e);
     }
     documentLoading = false;
     documentLoaded = true;
@@ -132,6 +134,16 @@
     newNamespace = '';
   }
 
+  // ─── Error helper: every CRUD op surfaces failures clearly ───
+  let lastError = $state<string | null>(null);
+  function reportError(op: string, e: unknown) {
+    const msg = typeof e === 'string' ? e : (e instanceof Error ? e.message : JSON.stringify(e));
+    lastError = `${op} failed: ${msg}`;
+    console.error(lastError, e);
+    // Auto-clear after 5s
+    setTimeout(() => { lastError = null; }, 5000);
+  }
+
   async function createRoom() {
     if (!newName.trim()) return;
     creating = true;
@@ -143,8 +155,8 @@
       newName = '';
       newNamespace = '';
       await loadRooms();
-    } catch {
-      // Room creation failed silently — Tauri will log
+    } catch (e) {
+      reportError('Create room', e);
     }
     creating = false;
   }
@@ -157,8 +169,9 @@
       selectedRoom = null;
       roomMemories = [];
       await loadRooms();
-    } catch {
-      // Delete failed — Tauri will log
+    } catch (e) {
+      reportError('Delete room', e);
+      showDeleteConfirm = false;
     }
   }
 
@@ -188,6 +201,12 @@
 </script>
 
 <div class="rooms-view">
+  {#if lastError}
+    <div class="error-banner">
+      <span>⚠ {lastError}</span>
+      <button class="error-dismiss" onclick={() => lastError = null}>×</button>
+    </div>
+  {/if}
   <div class="rooms-header">
     <div class="header-left">
       <h2>Rooms</h2>
@@ -378,6 +397,8 @@
 
 <style>
   .rooms-view { height: 100%; display: flex; flex-direction: column; }
+  .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: rgba(230,69,83,0.12); color: #e64553; font-size: 0.8rem; border-bottom: 1px solid rgba(230,69,83,0.3); }
+  .error-dismiss { background: none; border: none; color: inherit; font-size: 1.1rem; cursor: pointer; padding: 0 4px; line-height: 1; }
   .rooms-header { padding: 16px 24px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }
   .header-left { display: flex; align-items: baseline; gap: 12px; }
   h2 { font-size: 1.1rem; }

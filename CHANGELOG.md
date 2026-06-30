@@ -3,12 +3,12 @@
 ### Added
 
 **Room Management UI (#74)**
-- Create room form (name + namespace) inline in room list
+- Create room form (name + namespace) with Enter/Escape shortcuts
 - 3-tab detail panel: Timeline, Summary, Participants
 - Chronological timeline with relative timestamps and namespace badges
 - Room document viewer via uteke-serve room/document endpoint
 - Participant grouping by namespace with memory counts
-- Delete room button (disabled, CLI-only for now)
+- Delete room with confirmation dialog (DELETE /room/delete endpoint)
 
 # Changelog
 
