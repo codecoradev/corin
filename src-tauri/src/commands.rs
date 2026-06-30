@@ -507,39 +507,39 @@ pub async fn get_room_summary(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<String, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    }
+    .ok_or(CommandError::NotInitialized)?;
 
-    let memories = uteke
-        .store()
-        .recall_room(&room_id, None, 100)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let summary = client
+        .room_summary(&room_id)
+        .await
+        .map_err(CommandError::Uteke)?;
 
-    let summary = memories
-        .iter()
-        .map(|m| format!("- {}", m.content.chars().take(80).collect::<String>()))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    Ok(summary)
+    Ok(serde_json::to_string_pretty(&summary).unwrap_or_default())
 }
 
 #[tauri::command]
 pub async fn create_room(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     name: String,
-    _namespace: Option<String>,
+    namespace: Option<String>,
     _tags: Option<Vec<String>>,
 ) -> Result<String, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    }
+    .ok_or(CommandError::NotInitialized)?;
 
     let room_id = nanoid::nanoid!(12);
-    let ns = _namespace.as_deref().unwrap_or("default");
-    uteke
-        .store()
-        .create_room(&room_id, Some(&name), ns)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let ns = namespace.as_deref();
+    client
+        .room_create(&room_id, Some(&name), ns)
+        .await
+        .map_err(CommandError::Uteke)?;
 
     Ok(room_id)
 }
@@ -549,32 +549,91 @@ pub async fn get_room_document(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<String, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    }
+    .ok_or(CommandError::NotInitialized)?;
 
-    let room = uteke
-        .store()
-        .get_room(&room_id)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .ok_or_else(|| CommandError::NotFound(room_id.clone()))?;
+    let doc = client
+        .room_document(&room_id)
+        .await
+        .map_err(CommandError::Uteke)?;
 
-    let room_name = room.title.as_deref().unwrap_or("unnamed");
-    let memories = uteke
-        .store()
-        .recall_room(&room_id, None, 100)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(format_room_document(&doc))
+}
 
-    let mut doc = format!("# Room: {}\n\n", room_name);
-    if memories.is_empty() {
-        doc.push_str("_No memories in this room yet._\n");
+/// Build a human-readable markdown document from the JSON returned by
+/// `/room/document`. Defensive: tolerates variant field names
+/// (`heading`/`title`/`label`, `items`/`memories`/`entries`).
+fn format_room_document(doc: &serde_json::Value) -> String {
+    let title = doc
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unnamed");
+    let mut out = format!("# Room: {}\n\n", title);
+
+    let sections = doc.get("sections").and_then(|v| v.as_array());
+    let is_empty = sections.map(|a| a.is_empty()).unwrap_or(true);
+    if is_empty {
+        out.push_str("_No memories in this room yet._\n");
     } else {
-        for m in &memories {
-            doc.push_str(&m.content);
-            doc.push_str("\n\n---\n\n");
+        for section in sections.unwrap() {
+            // Heading: try common keys.
+            let heading = section
+                .get("heading")
+                .or_else(|| section.get("title"))
+                .or_else(|| section.get("label"))
+                .and_then(|v| v.as_str());
+            if let Some(h) = heading {
+                out.push_str(&format!("## {}\n\n", h));
+            }
+
+            // Items: try common array keys.
+            let items = section
+                .get("items")
+                .or_else(|| section.get("memories"))
+                .or_else(|| section.get("entries"))
+                .and_then(|v| v.as_array());
+            if let Some(items) = items {
+                for item in items {
+                    let text = item.as_str().map(String::from).unwrap_or_else(|| {
+                        // Object item: extract its main text field.
+                        item.get("content")
+                            .or_else(|| item.get("text"))
+                            .or_else(|| item.get("body"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string()
+                    });
+                    if !text.is_empty() {
+                        out.push_str(&format!("- {}\n", text));
+                    }
+                }
+                out.push('\n');
+            }
         }
     }
 
-    Ok(doc)
+    out
+}
+
+/// Delete a room by ID.
+#[tauri::command]
+pub async fn delete_room(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    }
+    .ok_or(CommandError::NotInitialized)?;
+
+    client
+        .room_delete(&room_id)
+        .await
+        .map_err(CommandError::Uteke)
 }
 
 // ---------------------------------------------------------------------------

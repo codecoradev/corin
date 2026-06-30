@@ -49,14 +49,15 @@ export const graph = {
 
 export const room = {
   list: () => invoke<RoomEntry[]>('list_rooms'),
-  getSummary: (id: string) => invoke<string>('get_room_summary', { room_id: id }),
-  getDocument: (id: string) => invoke<string>('get_room_document', { room_id: id }),
+  getSummary: (id: string) => invoke<string>('get_room_summary', { roomId: id }),
+  getDocument: (id: string) => invoke<string>('get_room_document', { roomId: id }),
   create: (name: string, opts?: { namespace?: string; tags?: string[] }) =>
     invoke<string>('create_room', {
       name,
       namespace: opts?.namespace ?? null,
       tags: opts?.tags ?? null,
     }),
+  delete: (id: string) => invoke<void>('delete_room', { roomId: id }),
 };
 
 export const system = {

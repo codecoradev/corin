@@ -318,6 +318,7 @@ pub fn run() {
             commands::get_room_summary,
             commands::create_room,
             commands::get_room_document,
+            commands::delete_room,
             // System
             commands::stats,
             commands::list_namespaces,

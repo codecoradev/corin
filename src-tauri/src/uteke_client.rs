@@ -380,4 +380,49 @@ impl UtekeClient {
             .await
             .map_err(|e| e.to_string())
     }
+
+    /// Delete a room by ID.
+    pub async fn room_delete(&self, room_id: &str) -> Result<(), String> {
+        let resp = self
+            .client
+            .delete(format!("{}/room/delete", self.base_url))
+            .query(&[("room_id", room_id)])
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        Ok(())
+    }
+
+    /// Create a new room.
+    pub async fn room_create(
+        &self,
+        room_id: &str,
+        title: Option<&str>,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({
+            "room_id": room_id,
+        });
+        if let Some(t) = title {
+            body["title"] = serde_json::Value::String(t.to_string());
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        self.client
+            .post(format!("{}/room/create", self.base_url))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
 }

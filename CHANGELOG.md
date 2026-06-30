@@ -1,3 +1,15 @@
+## [0.2.0] — Unreleased
+
+### Added
+
+**Room Management UI (#74)**
+- Create room form (name + namespace) with Enter/Escape shortcuts
+- 3-tab detail panel: Timeline, Summary, Participants
+- Chronological timeline with relative timestamps and namespace badges
+- Room document viewer via uteke-serve room/document endpoint
+- Participant grouping by namespace with memory counts
+- Delete room with confirmation dialog (DELETE /room/delete endpoint)
+
 # Changelog
 
 All notable changes to CorIn will be documented in this file.
