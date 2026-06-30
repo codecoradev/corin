@@ -577,6 +577,21 @@ pub async fn get_room_document(
     Ok(doc)
 }
 
+/// Delete a room by ID.
+#[tauri::command]
+pub async fn delete_room(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<(), CommandError> {
+    let s = state.lock().await;
+    let uteke = s.ensure_uteke()?;
+
+    uteke
+        .store()
+        .delete_room(&room_id)
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // Commands: Uteke Integration (read-only)
 // ---------------------------------------------------------------------------

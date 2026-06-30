@@ -380,4 +380,21 @@ impl UtekeClient {
             .await
             .map_err(|e| e.to_string())
     }
+
+    /// Delete a room by ID.
+    pub async fn room_delete(&self, room_id: &str) -> Result<(), String> {
+        let resp = self
+            .client
+            .delete(format!("{}/room/delete", self.base_url))
+            .query(&[("room_id", room_id)])
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        Ok(())
+    }
 }

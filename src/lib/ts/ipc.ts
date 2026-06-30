@@ -57,6 +57,7 @@ export const room = {
       namespace: opts?.namespace ?? null,
       tags: opts?.tags ?? null,
     }),
+  delete: (id: string) => invoke<void>('delete_room', { room_id: id }),
 };
 
 export const system = {

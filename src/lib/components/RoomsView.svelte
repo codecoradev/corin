@@ -149,6 +149,19 @@
     creating = false;
   }
 
+  async function deleteRoom() {
+    if (!selectedRoom) return;
+    try {
+      await room.delete(selectedRoom);
+      showDeleteConfirm = false;
+      selectedRoom = null;
+      roomMemories = [];
+      await loadRooms();
+    } catch {
+      // Delete failed — Tauri will log
+    }
+  }
+
   function handleCreateKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -264,15 +277,15 @@
               {#if !showDeleteConfirm}
                 <button
                   class="btn-delete"
-                  disabled
-                  title="Delete rooms via CLI: uteke room delete --id {selectedRoom}"
+                  onclick={() => showDeleteConfirm = true}
+                  title="Delete this room"
                 >
                   🗑 Delete
                 </button>
               {:else}
                 <div class="delete-confirm">
                   <span class="delete-label">Delete "{currentRoom?.title ?? selectedRoom}"?</span>
-                  <button class="btn-confirm-delete" disabled title="Not yet implemented — use CLI">Confirm</button>
+                  <button class="btn-confirm-delete" onclick={deleteRoom}>Confirm</button>
                   <button class="btn-cancel-del" onclick={() => showDeleteConfirm = false}>Cancel</button>
                 </div>
               {/if}
@@ -404,12 +417,13 @@
   .badge { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 10px; }
   .header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 
-  .btn-delete { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: not-allowed; opacity: 0.5; }
-  .btn-delete:disabled:hover { opacity: 0.5; }
+  .btn-delete { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .btn-delete:hover { color: #e64553; border-color: #e64553; }
 
   .delete-confirm { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
   .delete-label { color: var(--text-secondary); }
-  .btn-confirm-delete { font-size: 0.75rem; padding: 3px 10px; background: #e64553; color: #fff; border: none; border-radius: 4px; cursor: not-allowed; opacity: 0.5; }
+  .btn-confirm-delete { font-size: 0.75rem; padding: 3px 10px; background: #e64553; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .btn-confirm-delete:hover { background: #c7374a; }
   .btn-cancel-del { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
 
   /* Tabs */
