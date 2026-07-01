@@ -378,25 +378,41 @@ pub fn run() {
                             s.conn = Some(conn);
 
                             // All Uteke access via HTTP API (no direct SQLite).
-                            // Ensure uteke-serve is running — auto-start from
-                            // PATH if needed, then create the HTTP client.
-                            let server_url = ensure_uteke_server();
-                            let client = UtekeClient::new(&server_url);
-                            s.uteke_client = Some(client);
+                            // Resolve server URL: DB primary → env UTEKE_SERVER_URL → TOML → default.
+                            let db_conn = s.conn.as_ref();
+                            let (server_url, auth_token) =
+                                config::resolve_uteke_server(db_conn);
 
-                            // Seed default local uteke connection on first boot.
-                            if let Ok(true) = connections::store::is_empty(&s.conn.as_ref().unwrap()) {
-                                match connections::store::seed_default(
-                                    s.conn.as_mut().unwrap(),
-                                    &server_url,
-                                ) {
-                                    Ok(id) => eprintln!(
-                                        "CorIn: seeded default connection {id} at {server_url}"
-                                    ),
-                                    Err(e) => eprintln!(
-                                        "CorIn: failed to seed default connection: {e}"
-                                    ),
+                            // Only auto-start local uteke-serve if URL is local.
+                            if !config::is_remote_url(&server_url) {
+                                let resolved = ensure_uteke_server();
+                                // Use resolved URL (may differ if auto-start changed port).
+                                let client = UtekeClient::with_auth(&resolved, auth_token);
+                                s.uteke_client = Some(client);
+
+                                // Seed default local uteke connection on first boot.
+                                if let Ok(true) =
+                                    connections::store::is_empty(&s.conn.as_ref().unwrap())
+                                {
+                                    match connections::store::seed_default(
+                                        s.conn.as_mut().unwrap(),
+                                        &resolved,
+                                    ) {
+                                        Ok(id) => eprintln!(
+                                            "CorIn: seeded default connection {id} at {resolved}"
+                                        ),
+                                        Err(e) => eprintln!(
+                                            "CorIn: failed to seed default connection: {e}"
+                                        ),
+                                    }
                                 }
+                            } else {
+                                // Remote URL — no local auto-start.
+                                eprintln!(
+                                    "CorIn: using remote uteke-serve at {server_url}"
+                                );
+                                let client = UtekeClient::with_auth(&server_url, auth_token);
+                                s.uteke_client = Some(client);
                             }
                         }
                         Err(e) => {

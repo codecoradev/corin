@@ -126,6 +126,51 @@ pub fn detect_uteke_serve_url() -> String {
     DEFAULT_SERVE_URL.to_string()
 }
 
+/// Resolve the uteke server configuration with full priority chain.
+///
+/// Priority:
+/// 1. Primary connection in DB (connections table, is_primary=1)
+/// 2. `UTEKE_SERVER_URL` environment variable
+/// 3. `~/.uteke/uteke.toml` / `config.toml` [server] section
+/// 4. `DEFAULT_SERVE_URL` fallback
+///
+/// Returns (url, auth_token).
+pub fn resolve_uteke_server(conn: Option<&rusqlite::Connection>) -> (String, Option<String>) {
+    // 1. DB primary connection (highest priority).
+    if let Some(conn) = conn {
+        if let Ok(Some(row)) = crate::connections::store::get_primary(
+            conn,
+            crate::connections::ProductType::Uteke,
+        ) {
+            return (row.url, row.auth_token);
+        }
+    }
+
+    // 2. Environment variable.
+    if let Ok(url) = std::env::var("UTEKE_SERVER_URL") {
+        let token = std::env::var("UTEKE_AUTH_TOKEN").ok();
+        return (url, token);
+    }
+
+    // 3. TOML config (legacy).
+    let url = detect_uteke_serve_url();
+    (url, None)
+}
+
+/// Whether a URL points to a remote (non-local) server.
+pub fn is_remote_url(url: &str) -> bool {
+    let host = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .and_then(|rest| rest.split_once(':').or_else(|| rest.split_once('/')))
+        .map(|(h, _)| h.to_string());
+
+    match host {
+        Some(h) => h != "127.0.0.1" && h != "localhost" && h != "0.0.0.0",
+        None => false,
+    }
+}
+
 /// Resolve the Uteke symlink directory: `~/.codecora/uteke/`.
 ///
 /// This is a symlink to the actual Uteke data directory (`~/.uteke/` by default).
