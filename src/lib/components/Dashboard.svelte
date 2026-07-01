@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { system, memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
+  import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
+  import { getStats } from '../stores/cache.svelte';
   import type { StatsResponse, MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -14,45 +15,41 @@
   let recent = $state<MemoryEntry[]>([]);
   let searchQuery = $state('');
   let loading = $state(true);
-  let utekeReady = $state(false);
   let serverOnline = $state(false);
 
   async function loadData() {
     loading = true;
     try {
-      utekeReady = await uteke.available();
+      // Cached stats + online check run concurrently (no view-switch refetch).
+      const [s, status] = await Promise.all([
+        getStats(),
+        utekeServer.status().catch(() => ({ available: false })),
+      ]);
+      stats = s;
+      serverOnline = status.available;
 
-      // Check if uteke-serve is running (semantic search)
-      try {
-        const status = await utekeServer.status();
-        serverOnline = status.available;
-      } catch {
-        serverOnline = false;
-      }
-
-      // stats() is now API-first — returns Uteke data via HTTP if server is up,
-      // falls back to local CorIn DB otherwise.
-      stats = await system.stats().catch(() => null);
-
-      // Recent memories — fetch from all namespaces since the server
-      // defaults to "default" which is often empty.
+      // Recent memories.
+      // /recall is cross-namespace now (uteke #448 fixed) so a single
+      // call returns a diverse recent-ish seed across ALL namespaces —
+      // no more 21-way fan-out.
       if (namespace) {
         recent = await memoryApi.list({ namespace, limit: 10 }).catch(() => []);
+      } else if (serverOnline) {
+        const results = await utekeServer
+          .recall('knowledge memory note idea project', { limit: 10 })
+          .catch(() => []);
+        recent = results.map((r) => ({
+          id: r.id,
+          content: r.content,
+          tags: r.tags,
+          content_type: 'text',
+          importance: r.importance ?? null,
+          namespace: r.namespace ?? null,
+          created_at: null,
+          updated_at: null,
+        }));
       } else {
-        try {
-          const namespaces = await uteke.namespaces();
-          const allRecent = await Promise.all(
-            namespaces.map((ns) =>
-              uteke.list({ namespace: ns, limit: 5 })
-            )
-          );
-          recent = allRecent
-            .flat()
-            .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-            .slice(0, 10);
-        } catch {
-          recent = await memoryApi.list({ limit: 10 }).catch(() => []);
-        }
+        recent = await memoryApi.list({ limit: 10 }).catch(() => []);
       }
     } catch {
       // store not initialized yet
