@@ -351,6 +351,13 @@ pub fn run() {
             commands::uteke_forget,
             commands::uteke_server_graph,
             commands::uteke_server_stats,
+            // Connection manager (#37)
+            commands::list_connections,
+            commands::add_connection,
+            commands::update_connection,
+            commands::delete_connection,
+            commands::test_connection,
+            commands::set_primary_connection,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
