@@ -1836,6 +1836,9 @@ pub async fn delete_connection(
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+    // Security: clear (overwrite) the auth token before deleting the row,
+    // so it cannot be recovered from freed sqlite pages.
+    crate::connections::store::clear_token(conn, &id).map_err(CommandError::Uteke)?;
     crate::connections::store::delete(conn, &id).map_err(CommandError::Uteke)
 }
 
@@ -1871,9 +1874,93 @@ pub async fn set_primary_connection(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<(), CommandError> {
-    let mut s = state.lock().await;
-    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
-    crate::connections::store::set_primary(conn, &id).map_err(CommandError::Uteke)
+    {
+        let mut s = state.lock().await;
+        let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+        crate::connections::store::set_primary(conn, &id).map_err(CommandError::Uteke)?;
+    }
+    // Rebuild the live client so the new primary takes effect immediately
+    // (no app restart required).
+    rebuild_active_client(&state, &id).await
+}
+
+/// Reconnect to a connection at runtime — rebuilds the live memory backend
+/// from the connection's config without restarting the app.
+#[tauri::command]
+pub async fn reconnect_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<crate::connections::HealthInfo, CommandError> {
+    rebuild_active_client(&state, &id).await?;
+    // Run a health check so the caller gets immediate feedback.
+    let cfg = {
+        let s = state.lock().await;
+        let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
+        let row = crate::connections::store::get(conn, &id).map_err(CommandError::Uteke)?;
+        crate::connections::ConnectionConfig::from(&row)
+    };
+    use crate::connections::traits::ProductAdapter;
+    let adapter = crate::connections::adapters::uteke::UtekeAdapter::new(&cfg);
+    let health = adapter
+        .health_check(cfg)
+        .await
+        .map_err(CommandError::Uteke)?;
+    let status = if health.success { "connected" } else { "error" };
+    {
+        let mut s = state.lock().await;
+        if let Some(conn) = s.conn.as_mut() {
+            let _ = crate::connections::store::update_status(conn, &id, status, &health);
+        }
+    }
+    Ok(health)
+}
+
+/// Rebuild the live `uteke_client` from a connection's config.
+///
+/// Reads the connection row by id, resolves local-vs-remote, and swaps
+/// `AppState.uteke_client` in place — no app restart required.
+/// For local URLs, ensures the uteke-serve process is running first.
+async fn rebuild_active_client(
+    state: &tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: &str,
+) -> Result<(), CommandError> {
+    // 1. Read the connection row (hold lock briefly, then release).
+    let row = {
+        let s = state.lock().await;
+        let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
+        crate::connections::store::get(conn, id).map_err(CommandError::Uteke)?
+    };
+
+    // 2. For local URLs, ensure server is running (may install/spawn).
+    //    Remote URLs skip auto-start.
+    let url = if crate::config::is_remote_url(&row.url) {
+        row.url.clone()
+    } else {
+        crate::ensure_uteke_server()
+    };
+
+    // 3. Build the new client and swap it in.
+    let client = crate::uteke_client::UtekeClient::with_auth(&url, row.auth_token.clone());
+    let masked = mask_token_log(row.auth_token.as_deref());
+    {
+        let mut s = state.lock().await;
+        s.uteke_client = Some(client);
+    }
+    eprintln!(
+        "CorIn: reconnected active client to '{}' ({}) token={}",
+        row.name, url, masked
+    );
+    Ok(())
+}
+
+/// Mask an auth token for safe logging.
+/// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
+fn mask_token_log(token: Option<&str>) -> String {
+    match token {
+        None => "none".to_string(),
+        Some(t) if t.len() <= 6 => "<redacted>".to_string(),
+        Some(t) => format!("<redacted:{}…>", &t[..6]),
+    }
 }
 
 /// Find a binary in PATH.

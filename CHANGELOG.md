@@ -2,6 +2,23 @@
 
 ### Added
 
+**Runtime Reconnect + Status Polling (#83)**
+- `reconnect_connection(id)` — rebuilds the live `uteke_client` from a connection
+  without restarting the app; also health-checks and updates status
+- `set_primary_connection` now live-swaps the active backend immediately
+- `stores/connections.svelte.ts` — reactive store with periodic health polling
+  (primary every 15s, all every 60s) so status badges stay fresh
+- Reconnect button per connection card
+- Security: db file perms set to `0600` on startup; auth token wiped to NULL
+  before row deletion (`clear_token`); tokens masked in logs (`mask_token_log`)
+
+**Remote Connection Manager (#37, #77–#82)**
+- `connections` table + trait-based `ProductAdapter` / `MemoryBackend` adapters
+- `UtekeAdapter` wraps the HTTP client with bearer auth on every request
+- Config resolution priority: DB primary → `UTEKE_SERVER_URL` env → TOML → default
+- Local-vs-remote detection skips local auto-start for remote URLs
+- Connection Manager UI in Settings: cards, add form, test, set primary, delete
+
 **Room Management UI (#74)**
 - Create room form (name + namespace) with Enter/Escape shortcuts
 - 3-tab detail panel: Timeline, Summary, Participants
