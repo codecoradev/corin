@@ -8,7 +8,11 @@
   // Local UI state (test results, add form) stays component-scoped.
   let testing = $state<string | null>(null);
   let reconnecting = $state<string | null>(null);
+  let disconnecting = $state(false);
   let healthResults: Record<string, HealthInfo> = $state({});
+
+  // Delete confirmation dialog (native confirm() is blocked in Tauri webview).
+  let pendingDelete = $state<{ id: string; name: string } | null>(null);
 
   // Add form state
   let showAdd = $state(false);
@@ -57,8 +61,29 @@
     }
   }
 
-  async function deleteConn(id: string) {
-    if (!confirm('Delete this connection? The auth token will be wiped and the row removed.')) return;
+  async function disconnectConn() {
+    disconnecting = true;
+    try {
+      await store.disconnect();
+    } catch (e) {
+      console.error('Failed to disconnect:', e);
+    } finally {
+      disconnecting = false;
+    }
+  }
+
+  function requestDelete(id: string, name: string) {
+    pendingDelete = { id, name };
+  }
+
+  function cancelDelete() {
+    pendingDelete = null;
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const id = pendingDelete.id;
+    pendingDelete = null;
     try {
       await store.remove(id);
     } catch (e) {
@@ -91,6 +116,7 @@
   function statusColor(status: string): string {
     switch (status) {
       case 'connected': return '#4caf50';
+      case 'disconnected': return '#9e9e9e';
       case 'error': return '#f44336';
       default: return '#ff9800';
     }
@@ -99,6 +125,7 @@
   function statusLabel(status: string): string {
     switch (status) {
       case 'connected': return 'Connected';
+      case 'disconnected': return 'Disconnected';
       case 'error': return 'Error';
       case 'unknown': return 'Unknown';
       default: return status;
@@ -205,12 +232,22 @@
             >
               {reconnecting === conn.id ? 'Reconnecting…' : 'Reconnect'}
             </button>
-            {#if !conn.is_primary}
+            {#if conn.is_primary && conn.status === 'connected'}
+              <button
+                class="btn-sm"
+                onclick={disconnectConn}
+                disabled={disconnecting}
+                title="Disconnect the active memory backend (recall/search will fail until reconnect)"
+              >
+                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </button>
+            {/if}
+            {#if !conn.is_primary && conn.status === 'connected'}
               <button class="btn-sm" onclick={() => setPrimary(conn.id)}>
                 Set Primary
               </button>
             {/if}
-            <button class="btn-sm btn-danger" onclick={() => deleteConn(conn.id)}>
+            <button class="btn-sm btn-danger" onclick={() => requestDelete(conn.id, conn.name)}>
               Delete
             </button>
           </div>
@@ -219,6 +256,25 @@
     </div>
   {/if}
 </div>
+
+{#if pendingDelete}
+  <div
+    class="confirm-overlay"
+    role="button"
+    tabindex="0"
+    onclick={cancelDelete}
+    onkeydown={(e) => e.key === 'Escape' && cancelDelete()}
+  >
+    <div class="confirm-dialog" onclick={(e) => e.stopPropagation()} role="presentation">
+      <h3>Delete “{pendingDelete.name}”?</h3>
+      <p>The auth token will be wiped and the connection row removed. This cannot be undone.</p>
+      <div class="confirm-actions">
+        <button class="btn-sm" onclick={cancelDelete}>Cancel</button>
+        <button class="btn-sm btn-danger" onclick={confirmDelete}>Delete</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .connection-manager {
@@ -374,5 +430,37 @@
     font-size: 0.9rem;
     text-align: center;
     padding: 24px;
+  }
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .confirm-dialog {
+    background: var(--card-bg, #1a1a2e);
+    border: 1px solid var(--border, #2d2d44);
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 360px;
+    width: 90%;
+  }
+  .confirm-dialog h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+  }
+  .confirm-dialog p {
+    color: var(--muted, #888);
+    font-size: 0.85rem;
+    margin: 0 0 16px;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
 </style>

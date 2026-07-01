@@ -84,6 +84,12 @@ async function reconnect(id: string): Promise<HealthInfo> {
   return result;
 }
 
+/** Disconnect the active memory backend (drops the live client). */
+async function disconnect(): Promise<void> {
+  await connection.disconnect();
+  await refresh();
+}
+
 /** Set primary + live-rebuild the active backend. */
 async function setPrimary(id: string) {
   await connection.setPrimary(id);
@@ -108,6 +114,7 @@ export function getConnectionsStore() {
     get allPolling() { return allPolling; },
     refresh,
     reconnect,
+    disconnect,
     setPrimary,
     remove,
     startPolling,
