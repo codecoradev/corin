@@ -1,6 +1,7 @@
 // Memory data store — loaded memories, search results, filters
 import type { MemoryEntry, SearchResult } from '../ts/types';
 import { memory as memoryApi } from '../ts/ipc';
+import { invalidateAll } from './cache.svelte';
 
 export function getMemoryStore() {
   let memories: MemoryEntry[] = $state([]);
@@ -45,6 +46,7 @@ export function getMemoryStore() {
 
   async function createMemory(content: string, opts?: { tags?: string[]; namespace?: string }) {
     const id = await memoryApi.remember(content, opts);
+    invalidateAll();
     await loadMemories({ namespace: currentNamespace ?? undefined, tag: currentTag ?? undefined });
     return id;
   }
@@ -52,6 +54,7 @@ export function getMemoryStore() {
   async function deleteMemory(id: string) {
     await memoryApi.forget(id);
     if (activeMemory?.id === id) activeMemory = null;
+    invalidateAll();
     await loadMemories({ namespace: currentNamespace ?? undefined, tag: currentTag ?? undefined });
   }
 

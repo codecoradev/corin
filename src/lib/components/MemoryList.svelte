@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
+  import { createPager } from '../stores/pagination.svelte';
+  import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -11,159 +12,101 @@
 
   let { namespace, onmemoryclick, onnewmemory }: Props = $props();
 
-  let memories = $state<(MemoryEntry & { score?: number })[]>([]);
-  let loading = $state(true);
+  // Search result state (separate from paged list).
+  let searchResults = $state<(MemoryEntry & { score?: number })[] | null>(null);
   let searchQuery = $state('');
-  let activeTag = $state<string | null>(null);
-  let offset = $state(0);
+  let searching = $state(false);
+
+  // Paged list (no search query).
   let utekeReady = $state(false);
-  let useSemantic = $state(false);
-  const limit = 20;
+  let pager = $state(createPager({ namespace, pageSize: 20 }));
 
-  async function loadMemories() {
-    loading = true;
+  async function checkReady() {
+    utekeReady = await uteke.available().catch(() => false);
+  }
+
+  async function loadList() {
+    await checkReady();
+    pager = createPager({ namespace, pageSize: 20, useUteke: utekeReady });
+    await pager.loadInitial();
+  }
+
+  async function runSearch() {
+    if (!searchQuery.trim()) {
+      searchResults = null;
+      return;
+    }
+    searching = true;
     try {
-      utekeReady = await uteke.available();
-
-      // Check if semantic search is available
-      try {
-        const status = await utekeServer.status();
-        useSemantic = status.available;
-      } catch {
-        useSemantic = false;
-      }
-
-      if (searchQuery.trim()) {
-        if (useSemantic) {
-          // Semantic search (default) — vector + FTS5 hybrid, top 5 only
-          // Workaround for uteke #448: recall without namespace only
-          // searches 'default'. Query each namespace and merge results.
-          let results;
-          if (namespace) {
-            results = await utekeServer.recall(searchQuery, {
-              namespace,
-              limit: 5,
-            });
-          } else {
-            // Fetch all namespaces and query each
-            try {
-              const namespaces = await uteke.namespaces();
-              const allResults = await Promise.all(
-                namespaces.map((ns) =>
-                  utekeServer.recall(searchQuery, { namespace: ns, limit: 5 })
-                )
-              );
-              // Flatten, sort by score, take top 5
-              results = allResults
-                .flat()
-                .sort((a, b) => b.score - a.score)
-                .slice(0, 5);
-            } catch {
-              results = await utekeServer.recall(searchQuery, { limit: 5 });
-            }
-          }
-          memories = results.map((r) => ({
-            id: r.id,
-            content: r.content,
-            tags: r.tags,
-            content_type: 'text',
-            importance: r.importance ?? null,
-            namespace: namespace,
-            created_at: null,
-            updated_at: null,
-            score: r.score,
-          }));
-        } else if (utekeReady) {
-          const results = await uteke.search(searchQuery, {
-            namespace: namespace ?? undefined,
-            limit,
-          });
-          memories = results.map((r) => ({
-            id: r.id,
-            content: r.content,
-            tags: r.tags,
-            content_type: 'text',
-            importance: null,
-            namespace: namespace,
-            created_at: null,
-            updated_at: null,
-          }));
-        } else {
-          const results = await memoryApi.search(searchQuery, { namespace: namespace ?? undefined, limit });
-          memories = results.map((r) => ({
-            id: r.id,
-            content: r.content,
-            tags: r.tags,
-            content_type: 'text',
-            importance: null,
-            namespace,
-            created_at: null,
-            updated_at: null,
-          }));
-        }
+      await checkReady();
+      // /recall is cross-namespace (uteke #448 fixed) — ONE call, no fan-out.
+      const ok = await utekeServer.status().then((s) => s.available).catch(() => false);
+      if (ok) {
+        const results = await utekeServer.recall(searchQuery, {
+          namespace: namespace ?? undefined,
+          limit: 20,
+        });
+        searchResults = results.map((r) => ({
+          id: r.id,
+          content: r.content,
+          tags: r.tags,
+          content_type: 'text',
+          importance: r.importance ?? null,
+          namespace: r.namespace ?? namespace,
+          created_at: null,
+          updated_at: null,
+          score: r.score,
+        }));
+      } else if (utekeReady) {
+        const results = await uteke.search(searchQuery, {
+          namespace: namespace ?? undefined,
+          limit: 20,
+        });
+        searchResults = results.map((r) => ({
+          id: r.id,
+          content: r.content,
+          tags: r.tags,
+          content_type: 'text',
+          importance: null,
+          namespace,
+          created_at: null,
+          updated_at: null,
+        }));
       } else {
-        // No search query — list recent memories
-        if (utekeReady) {
-          if (namespace) {
-            // Specific namespace selected
-            memories = await uteke.list({
-              namespace,
-              tag: activeTag ?? undefined,
-              limit,
-              offset,
-            });
-          } else {
-            // No namespace selected — fetch from ALL namespaces
-            // since uteke defaults to "default" which is often empty.
-            try {
-              const namespaces = await uteke.namespaces();
-              const allMemories = await Promise.all(
-                namespaces.map((ns) =>
-                  uteke.list({ namespace: ns, tag: activeTag ?? undefined, limit: Math.ceil(limit / namespaces.length) + 5 })
-                )
-              );
-              memories = allMemories
-                .flat()
-                .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-                .slice(offset, offset + limit);
-            } catch {
-              memories = await uteke.list({
-                tag: activeTag ?? undefined,
-                limit,
-                offset,
-              });
-            }
-          }
-        } else {
-          memories = await memoryApi.list({
-            namespace: namespace ?? undefined,
-            tag: activeTag ?? undefined,
-            limit,
-            offset,
-          });
-        }
+        const results = await memoryApi.search(searchQuery, {
+          namespace: namespace ?? undefined,
+          limit: 20,
+        });
+        searchResults = results.map((r) => ({
+          id: r.id,
+          content: r.content,
+          tags: r.tags,
+          content_type: 'text',
+          importance: null,
+          namespace,
+          created_at: null,
+          updated_at: null,
+        }));
       }
     } catch {
-      memories = [];
+      searchResults = [];
     } finally {
-      loading = false;
+      searching = false;
     }
   }
 
-  onMount(loadMemories);
-
+  // Reload list when namespace changes; clear any active search.
   $effect(() => {
-    // Reload when namespace or filters change
     namespace;
-    activeTag;
-    offset = 0;
-    loadMemories();
+    searchResults = null;
+    searchQuery = '';
+    loadList();
   });
 
-  function handleSearch() {
-    offset = 0;
-    loadMemories();
-  }
+  const list = $derived<(MemoryEntry & { score?: number })[]>(
+    (searchResults ?? pager.items) as (MemoryEntry & { score?: number })[]
+  );
+  const isLoading = $derived(searching || pager.loading);
 </script>
 
 <div class="memory-list-view">
@@ -171,17 +114,17 @@
     <div class="search-bar">
       <input
         type="text"
-        placeholder={useSemantic ? 'Semantic search...' : 'Search memories...'}
+        placeholder="Search memories... (Enter)"
         value={searchQuery}
         oninput={(e) => (searchQuery = e.currentTarget.value)}
-        onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+        onkeydown={(e) => e.key === 'Enter' && runSearch()}
       />
       {#if searchQuery}
         <button
           class="clear-btn"
           onclick={() => {
             searchQuery = '';
-            loadMemories();
+            searchResults = null;
           }}>✕</button
         >
       {/if}
@@ -189,19 +132,19 @@
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
   </div>
 
-  {#if loading}
+  {#if isLoading && list.length === 0}
     <div class="loading">Loading...</div>
-  {:else if memories.length === 0}
+  {:else if list.length === 0}
     <div class="empty-state">
-      <p>No memories found.</p>
+      <p>{searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}</p>
       <button class="new-btn" onclick={onnewmemory}>Create your first memory</button>
     </div>
   {:else}
-    {#if searchQuery.trim() && useSemantic}
-      <div class="search-info">Semantic search — top {memories.length} match{memories.length > 1 ? 'es' : ''}</div>
+    {#if searchResults}
+      <div class="search-info">Semantic search — top {searchResults.length} match{searchResults.length > 1 ? 'es' : ''}</div>
     {/if}
     <div class="list">
-      {#each memories as m}
+      {#each list as m (m.id)}
         <div
           class="memory-card"
           role="button"
@@ -234,16 +177,13 @@
       {/each}
     </div>
 
-    <div class="pagination">
-      <button disabled={offset === 0} onclick={() => { offset = Math.max(0, offset - limit); loadMemories(); }}>
-        ← Prev
-      </button>
-      <span class="page-info">Showing {offset + 1}–{offset + memories.length}</span>
-      <button
-        disabled={memories.length < limit}
-        onclick={() => { offset += limit; loadMemories(); }}>Next →</button
-      >
-    </div>
+    {#if !searchResults && pager.hasMore}
+      <div class="load-more">
+        <button onclick={() => pager.loadMore()} disabled={pager.loading}>
+          {pager.loading ? 'Loading…' : 'Load more'}
+        </button>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -389,35 +329,30 @@
     color: var(--yellow);
   }
 
-  .pagination {
+  .load-more {
     display: flex;
-    align-items: center;
     justify-content: center;
-    gap: 12px;
     margin-top: 16px;
   }
 
-  .pagination button {
-    padding: 6px 12px;
+  .load-more button {
+    padding: 8px 20px;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
+    font-size: 0.85rem;
   }
 
-  .pagination button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .pagination button:not(:disabled):hover {
+  .load-more button:not(:disabled):hover {
     border-color: var(--accent);
+    color: var(--accent);
   }
 
-  .page-info {
-    font-size: 0.8rem;
-    color: var(--text-muted);
+  .load-more button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .loading,

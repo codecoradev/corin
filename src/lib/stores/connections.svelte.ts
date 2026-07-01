@@ -6,6 +6,7 @@
 // (every 15s) and others every 60s to keep load light.
 
 import { connection, type ConnectionInfo, type HealthInfo } from '../ts/ipc';
+import { invalidateAll } from './cache.svelte';
 
 const PRIMARY_POLL_MS = 15_000;
 const ALL_POLL_MS = 60_000;
@@ -80,6 +81,7 @@ function stopPolling() {
 /** Reconnect to a connection (rebuilds live backend, no app restart). */
 async function reconnect(id: string): Promise<HealthInfo> {
   const result = await connection.reconnect(id);
+  invalidateAll(); // backend changed — stats/namespaces cache is stale
   await refresh();
   return result;
 }
@@ -87,12 +89,14 @@ async function reconnect(id: string): Promise<HealthInfo> {
 /** Disconnect the active memory backend (drops the live client). */
 async function disconnect(): Promise<void> {
   await connection.disconnect();
+  invalidateAll();
   await refresh();
 }
 
 /** Set primary + live-rebuild the active backend. */
 async function setPrimary(id: string) {
   await connection.setPrimary(id);
+  invalidateAll();
   await refresh();
 }
 

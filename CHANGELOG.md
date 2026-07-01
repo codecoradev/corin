@@ -2,6 +2,18 @@
 
 ### Added
 
+**Fast Load + Pagination + In-Process Cache (perf)**
+- Killed 21-way namespace fan-out: Dashboard recent now uses a single
+  cross-namespace `/recall` seed (uteke #448 is fixed for recall); search is
+  one call instead of N.
+- `stores/cache.svelte.ts` — short-TTL in-process cache (namespaces 30s,
+  stats 60s). Invalidated on remember/forget/reconnect/disconnect/set-primary.
+  No external infra (Redis) — desktop app stays local-first.
+- `stores/pagination.svelte.ts` — generic offset pager; MemoryList +
+  NamespacesView use "Load more" instead of fixed-page prev/next.
+- NamespacesView: counts are optional ("Load counts" button, limit:1 per ns
+  concurrently) instead of sequential limit:500 fetches; detail is paginated.
+
 **Runtime Reconnect + Status Polling (#83)**
 - `reconnect_connection(id)` — rebuilds the live `uteke_client` from a connection
   without restarting the app; also health-checks and updates status
