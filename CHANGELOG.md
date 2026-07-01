@@ -2,6 +2,13 @@
 
 ### Added
 
+**Connection Edit Form (perf follow-up)**
+- Pencil (✎) edit button per connection card → inline form pre-filled with
+  name + url. Token field intentionally blank (backend never returns the
+  stored token; leaving blank keeps the existing token, typing replaces it).
+- Editing the primary connection live-rebuilds the client so URL/token
+  changes take effect immediately (no restart).
+
 **Fast Load + Pagination + In-Process Cache (perf)**
 - Killed 21-way namespace fan-out: Dashboard recent now uses a single
   cross-namespace `/recall` seed (uteke #448 is fixed for recall); search is

@@ -21,6 +21,16 @@
   let addToken = $state('');
   let addError = $state('');
 
+  // Edit form state.  The token field is always blank on edit (the backend
+  // never returns the stored token — only a `has_token` boolean).  Leaving it
+  // blank sends no update for that field, so the existing token is kept.
+  let editId = $state<string | null>(null);
+  let editName = $state('');
+  let editUrl = $state('');
+  let editToken = $state('');
+  let editError = $state('');
+  let saving = $state(false);
+
   const connections = $derived(store.connections);
   const loading = $derived(store.loading);
 
@@ -110,6 +120,57 @@
       await loadConnections();
     } catch (e) {
       addError = String(e);
+    }
+  }
+
+  /** Open the edit form, pre-filled with the connection's name + url.
+   *  The token field is intentionally left blank (security: the backend
+   *  never returns the stored token). Leaving it blank keeps the existing
+   *  token; typing a new value replaces it. */
+  function startEdit(id: string, name: string, url: string) {
+    editId = id;
+    editName = name;
+    editUrl = url;
+    editToken = '';
+    editError = '';
+  }
+
+  function cancelEdit() {
+    editId = null;
+    editName = '';
+    editUrl = '';
+    editToken = '';
+    editError = '';
+  }
+
+  async function saveEdit() {
+    if (!editId) return;
+    editError = '';
+    if (!editName.trim()) { editError = 'Name is required'; return; }
+    if (!editUrl.trim()) { editError = 'URL is required'; return; }
+    saving = true;
+    const id = editId;
+    try {
+      await connection.update({
+        id,
+        name: editName.trim(),
+        url: editUrl.trim(),
+        // blank token = don't send the field → backend keeps existing token
+        authToken: editToken.trim() || undefined,
+        authType: editToken.trim() ? 'bearer' : undefined,
+      });
+      cancelEdit();
+      await loadConnections();
+      // If we just edited the primary connection, live-rebuild the client
+      // so URL/token changes take effect immediately (no app restart).
+      const updated = connections.find((c) => c.id === id);
+      if (updated?.is_primary) {
+        try { await store.reconnect(id); } catch { /* user can retry */ }
+      }
+    } catch (e) {
+      editError = String(e);
+    } finally {
+      saving = false;
     }
   }
 
@@ -218,6 +279,12 @@
 
           <div class="card-actions">
             <button
+              class="btn-sm btn-icon"
+              onclick={() => startEdit(conn.id, conn.name, conn.url)}
+              disabled={!!editId}
+              title="Edit connection"
+            >✎</button>
+            <button
               class="btn-sm"
               onclick={() => testConn(conn.id)}
               disabled={testing === conn.id}
@@ -251,6 +318,33 @@
               Delete
             </button>
           </div>
+
+          {#if editId === conn.id}
+            <div class="edit-form">
+              <h4>Edit “{conn.name}”</h4>
+              {#if editError}
+                <div class="error-banner">{editError}</div>
+              {/if}
+              <label>
+                Name
+                <input type="text" bind:value={editName} placeholder="My Uteke VPS" />
+              </label>
+              <label>
+                Server URL
+                <input type="text" bind:value={editUrl} placeholder="https://uteke.myvps.com:8767" />
+              </label>
+              <label>
+                Auth Token <span class="optional">(leave blank to keep current{conn.has_token ? ' 🔒' : ''})</span>
+                <input type="password" bind:value={editToken} placeholder={conn.has_token ? '•••••••• (set new to replace)' : 'Bearer token (optional)'} />
+              </label>
+              <div class="form-actions">
+                <button class="btn-sm" onclick={cancelEdit} disabled={saving}>Cancel</button>
+                <button class="btn-primary" onclick={saveEdit} disabled={saving}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>
@@ -342,6 +436,37 @@
   .form-actions {
     margin-top: 8px;
     text-align: right;
+  }
+  .edit-form {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border, #2d2d44);
+  }
+  .edit-form h4 {
+    margin: 0 0 10px;
+    font-size: 0.9rem;
+  }
+  .edit-form label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+    color: var(--muted, #888);
+  }
+  .edit-form input {
+    width: 100%;
+    margin-top: 4px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border, #2d2d44);
+    background: var(--input-bg, #0f0f23);
+    color: var(--fg, #e0e0e0);
+    font-size: 0.85rem;
+    box-sizing: border-box;
+  }
+  .btn-icon {
+    width: 28px;
+    text-align: center;
+    padding: 4px 0;
   }
   .connection-list {
     display: flex;
