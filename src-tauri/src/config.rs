@@ -156,16 +156,20 @@ pub fn resolve_uteke_server(conn: Option<&rusqlite::Connection>) -> (String, Opt
 
 /// Whether a URL points to a remote (non-local) server.
 pub fn is_remote_url(url: &str) -> bool {
-    let host = url
+    let Some(rest) = url
         .strip_prefix("http://")
         .or_else(|| url.strip_prefix("https://"))
-        .and_then(|rest| rest.split_once(':').or_else(|| rest.split_once('/')))
-        .map(|(h, _)| h.to_string());
-
-    match host {
-        Some(h) => h != "127.0.0.1" && h != "localhost" && h != "0.0.0.0",
-        None => false,
-    }
+    else {
+        return false;
+    };
+    // Strip the port (":8767") and/or path ("/api") to get the bare host.
+    // A URL with no port and no path (e.g. "https://uteke.example.dev")
+    // is itself the host — don't treat it as local.
+    let host = match rest.split_once(':').or_else(|| rest.split_once('/')) {
+        Some((h, _)) => h,
+        None => rest,
+    };
+    host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0"
 }
 
 /// Resolve the Uteke symlink directory: `~/.codecora/uteke/`.
@@ -468,6 +472,27 @@ mod tests {
         assert_eq!(config.general.theme, "catppuccin-mocha");
         assert_eq!(config.general.default_namespace, "default");
         assert_eq!(config.general.max_results, 50);
+    }
+
+    #[test]
+    fn test_is_remote_url() {
+        // No port, no path (regression: previously parsed as local).
+        assert!(is_remote_url("https://uteke.ajianaz.dev"));
+        assert!(is_remote_url("http://uteke.example.com"));
+        // With port.
+        assert!(is_remote_url("https://uteke.ajianaz.dev:8767"));
+        assert!(is_remote_url("http://10.0.0.5:8767"));
+        // With path.
+        assert!(is_remote_url("https://api.example.com/memories"));
+        assert!(is_remote_url("https://example.com/uteke"));
+        // Local addresses stay local.
+        assert!(!is_remote_url("http://127.0.0.1:8767"));
+        assert!(!is_remote_url("http://localhost:8767"));
+        assert!(!is_remote_url("http://0.0.0.0:8767"));
+        assert!(!is_remote_url("http://127.0.0.1"));
+        // No scheme.
+        assert!(!is_remote_url("uteke.ajianaz.dev"));
+        assert!(!is_remote_url(""));
     }
 
     #[test]
