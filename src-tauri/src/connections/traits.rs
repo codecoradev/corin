@@ -24,6 +24,7 @@ pub trait ProductAdapter: Send + Sync {
 ///
 /// Every method mirrors an existing `UtekeClient` method so the
 /// migration from direct `UtekeClient` usage is drop-in.
+#[async_trait::async_trait]
 pub trait MemoryBackend: ProductAdapter {
     async fn recall(
         &self,
