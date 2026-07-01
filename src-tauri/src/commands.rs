@@ -1953,6 +1953,27 @@ async fn rebuild_active_client(
     Ok(())
 }
 
+/// Disconnect the active memory backend.
+///
+/// Drops `AppState.uteke_client` (sets it to `None`) and marks the primary
+/// connection as `disconnected`. Recall/search will fail until a reconnect.
+/// The connection row and primary flag are preserved.
+#[tauri::command]
+pub async fn disconnect_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), CommandError> {
+    let mut s = state.lock().await;
+    s.uteke_client = None;
+    if let Some(conn) = s.conn.as_mut()
+        && let Ok(Some(primary)) =
+            crate::connections::store::get_primary(conn, crate::connections::ProductType::Uteke)
+    {
+        let _ = crate::connections::store::set_status(conn, &primary.id, "disconnected");
+    }
+    eprintln!("CorIn: disconnected active memory backend");
+    Ok(())
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {

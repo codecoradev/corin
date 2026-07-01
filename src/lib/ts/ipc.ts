@@ -208,4 +208,5 @@ export const connection = {
   test: (id: string) => invoke<HealthInfo>('test_connection', { id }),
   setPrimary: (id: string) => invoke<void>('set_primary_connection', { id }),
   reconnect: (id: string) => invoke<HealthInfo>('reconnect_connection', { id }),
+  disconnect: () => invoke<void>('disconnect_connection'),
 };

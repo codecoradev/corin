@@ -359,6 +359,7 @@ pub fn run() {
             commands::test_connection,
             commands::set_primary_connection,
             commands::reconnect_connection,
+            commands::disconnect_connection,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

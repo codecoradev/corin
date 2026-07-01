@@ -5,10 +5,15 @@
 **Runtime Reconnect + Status Polling (#83)**
 - `reconnect_connection(id)` — rebuilds the live `uteke_client` from a connection
   without restarting the app; also health-checks and updates status
+- `disconnect_connection` — drops the live client (recall/search fail until
+  reconnect); marks primary connection `disconnected`, preserves the row + flag
 - `set_primary_connection` now live-swaps the active backend immediately
+- "Set Primary" only offered on `connected` connections; "Disconnect" only on
+  the connected primary
 - `stores/connections.svelte.ts` — reactive store with periodic health polling
   (primary every 15s, all every 60s) so status badges stay fresh
-- Reconnect button per connection card
+- Reconnect / Disconnect buttons per connection card
+- In-app delete confirmation dialog (Tauri webview blocks native `confirm()`)
 - Security: db file perms set to `0600` on startup; auth token wiped to NULL
   before row deletion (`clear_token`); tokens masked in logs (`mask_token_log`)
 

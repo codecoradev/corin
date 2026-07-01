@@ -246,6 +246,17 @@ pub fn update_status(
     Ok(())
 }
 
+/// Set only the status of a connection (does not touch last_tested_at).
+/// Used for state changes that are not a health check (e.g. disconnect).
+pub fn set_status(conn: &mut Connection, id: &str, status: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE connections SET status = ?1 WHERE id = ?2",
+        rusqlite::params![status, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Check if the connections table has any rows.
 pub fn is_empty(conn: &Connection) -> Result<bool, String> {
     let count: i64 = conn
