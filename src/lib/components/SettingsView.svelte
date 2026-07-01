@@ -148,6 +148,14 @@
     </div>
 
     <div class="settings-section">
+      <h3>Connections</h3>
+      <p class="section-hint">Manage remote product connections (uteke-serve, etc).</p>
+      {#await import('./ConnectionManager.svelte') then module}
+        <module.default />
+      {/await}
+    </div>
+
+    <div class="settings-section">
       <h3>About</h3>
       <div class="about-info">
         <p><strong>CorIn</strong> v0.1.0</p>
@@ -198,6 +206,11 @@
     font-size: 0.95rem;
     color: var(--text-secondary);
     margin-bottom: 16px;
+  }
+  .section-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: -8px 0 12px 0;
   }
 
   .setting-row {

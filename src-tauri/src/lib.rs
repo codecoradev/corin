@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod config;
+pub mod connections;
 pub mod uteke_client;
 
 use std::sync::Arc;
@@ -350,6 +351,13 @@ pub fn run() {
             commands::uteke_forget,
             commands::uteke_server_graph,
             commands::uteke_server_stats,
+            // Connection manager (#37)
+            commands::list_connections,
+            commands::add_connection,
+            commands::update_connection,
+            commands::delete_connection,
+            commands::test_connection,
+            commands::set_primary_connection,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -377,11 +385,39 @@ pub fn run() {
                             s.conn = Some(conn);
 
                             // All Uteke access via HTTP API (no direct SQLite).
-                            // Ensure uteke-serve is running — auto-start from
-                            // PATH if needed, then create the HTTP client.
-                            let server_url = ensure_uteke_server();
-                            let client = UtekeClient::new(&server_url);
-                            s.uteke_client = Some(client);
+                            // Resolve server URL: DB primary → env UTEKE_SERVER_URL → TOML → default.
+                            let db_conn = s.conn.as_ref();
+                            let (server_url, auth_token) = config::resolve_uteke_server(db_conn);
+
+                            // Only auto-start local uteke-serve if URL is local.
+                            if !config::is_remote_url(&server_url) {
+                                let resolved = ensure_uteke_server();
+                                // Use resolved URL (may differ if auto-start changed port).
+                                let client = UtekeClient::with_auth(&resolved, auth_token);
+                                s.uteke_client = Some(client);
+
+                                // Seed default local uteke connection on first boot.
+                                if let Ok(true) =
+                                    connections::store::is_empty(s.conn.as_ref().unwrap())
+                                {
+                                    match connections::store::seed_default(
+                                        s.conn.as_mut().unwrap(),
+                                        &resolved,
+                                    ) {
+                                        Ok(id) => eprintln!(
+                                            "CorIn: seeded default connection {id} at {resolved}"
+                                        ),
+                                        Err(e) => eprintln!(
+                                            "CorIn: failed to seed default connection: {e}"
+                                        ),
+                                    }
+                                }
+                            } else {
+                                // Remote URL — no local auto-start.
+                                eprintln!("CorIn: using remote uteke-serve at {server_url}");
+                                let client = UtekeClient::with_auth(&server_url, auth_token);
+                                s.uteke_client = Some(client);
+                            }
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");
@@ -429,6 +465,21 @@ fn init_schema(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
         CREATE INDEX IF NOT EXISTS idx_edges_source ON graph_edges(source);
         CREATE INDEX IF NOT EXISTS idx_edges_target ON graph_edges(target);
+        CREATE TABLE IF NOT EXISTS connections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            product_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            auth_type TEXT,
+            auth_token TEXT,
+            metadata TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'unknown',
+            is_primary INTEGER DEFAULT 0,
+            created_at TEXT,
+            last_tested_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_connections_type ON connections(product_type);
+        CREATE INDEX IF NOT EXISTS idx_connections_primary ON connections(is_primary);
         ",
     )?;
     Ok(())

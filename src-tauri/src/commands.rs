@@ -1757,6 +1757,125 @@ pub async fn run_dream_cycle(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// Connection commands (Phase 4)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn list_connections(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<Vec<crate::connections::ConnectionInfo>, CommandError> {
+    let s = state.lock().await;
+    let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
+    crate::connections::store::list(conn).map_err(CommandError::Uteke)
+}
+
+#[tauri::command]
+pub async fn add_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    name: String,
+    product_type: String,
+    url: String,
+    auth_token: Option<String>,
+    auth_type: Option<String>,
+    metadata: Option<serde_json::Value>,
+) -> Result<String, CommandError> {
+    let pt = match product_type.as_str() {
+        "uteke" => crate::connections::ProductType::Uteke,
+        other => {
+            return Err(CommandError::Uteke(format!(
+                "unknown product type: {other}"
+            )));
+        }
+    };
+    let id = nanoid::nanoid!(12);
+    let mut s = state.lock().await;
+    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+    crate::connections::store::insert(
+        conn,
+        &id,
+        &name,
+        pt,
+        &url,
+        auth_type.as_deref(),
+        auth_token.as_deref(),
+        metadata.as_ref(),
+    )
+    .map_err(CommandError::Uteke)?;
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn update_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    name: Option<String>,
+    url: Option<String>,
+    auth_token: Option<String>,
+    auth_type: Option<String>,
+    metadata: Option<serde_json::Value>,
+) -> Result<(), CommandError> {
+    let mut s = state.lock().await;
+    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+    crate::connections::store::update(
+        conn,
+        &id,
+        name.as_deref(),
+        url.as_deref(),
+        auth_type.as_deref(),
+        auth_token.as_deref(),
+        metadata.as_ref(),
+    )
+    .map_err(CommandError::Uteke)
+}
+
+#[tauri::command]
+pub async fn delete_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<(), CommandError> {
+    let mut s = state.lock().await;
+    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+    crate::connections::store::delete(conn, &id).map_err(CommandError::Uteke)
+}
+
+#[tauri::command]
+pub async fn test_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<crate::connections::HealthInfo, CommandError> {
+    let s = state.lock().await;
+    let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
+    let row = crate::connections::store::get(conn, &id).map_err(CommandError::Uteke)?;
+    let cfg = crate::connections::ConnectionConfig::from(&row);
+
+    use crate::connections::traits::ProductAdapter;
+    let adapter = crate::connections::adapters::uteke::UtekeAdapter::new(&cfg);
+    let health = adapter
+        .health_check(cfg.clone())
+        .await
+        .map_err(CommandError::Uteke)?;
+
+    // Update status in DB.
+    let status = if health.success { "connected" } else { "error" };
+    drop(s); // release lock before mutable DB write
+    let mut s = state.lock().await;
+    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+    let _ = crate::connections::store::update_status(conn, &id, status, &health);
+
+    Ok(health)
+}
+
+#[tauri::command]
+pub async fn set_primary_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<(), CommandError> {
+    let mut s = state.lock().await;
+    let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
+    crate::connections::store::set_primary(conn, &id).map_err(CommandError::Uteke)
+}
+
 /// Find a binary in PATH.
 fn find_in_path(name: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
