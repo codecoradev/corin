@@ -99,7 +99,7 @@ fn get_total_memory_gb() -> f64 {
 /// 4. Start uteke-serve as detached process.
 ///
 /// Returns the server URL.
-fn ensure_uteke_server() -> String {
+pub(crate) fn ensure_uteke_server() -> String {
     let server_url = config::detect_uteke_serve_url();
 
     let (host, port) = match parse_host_port(&server_url) {
@@ -358,6 +358,7 @@ pub fn run() {
             commands::delete_connection,
             commands::test_connection,
             commands::set_primary_connection,
+            commands::reconnect_connection,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -381,6 +382,17 @@ pub fn run() {
                             // Use blocking lock since this runs before the event loop
                             let mut s = state.blocking_lock();
                             s.data_dir = config::corin_dir().ok();
+
+                            // Security: restrict db file perms to owner-only (0600).
+                            // The db holds auth tokens for remote connections.
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                let _ = std::fs::set_permissions(
+                                    &db_path,
+                                    std::fs::Permissions::from_mode(0o600),
+                                );
+                            }
                             s.db_path = Some(db_path);
                             s.conn = Some(conn);
 

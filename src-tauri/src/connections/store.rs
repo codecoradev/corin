@@ -156,6 +156,19 @@ pub fn delete(conn: &mut Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Security: overwrite a connection's auth token to NULL before deletion.
+///
+/// This prevents the token from being recovered from freed sqlite pages
+/// after the row is deleted. Call this immediately before [`delete`].
+pub fn clear_token(conn: &mut Connection, id: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE connections SET auth_token = NULL WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Set a connection as the primary.  Unsets all others of the same product type.
 pub fn set_primary(conn: &mut Connection, id: &str) -> Result<(), String> {
     let row = conn

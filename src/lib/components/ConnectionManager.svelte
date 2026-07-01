@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { connection, type ConnectionInfo, type HealthInfo } from '../ts/ipc';
+  import { onMount, onDestroy } from 'svelte';
+  import { connection, type HealthInfo } from '../ts/ipc';
+  import { getConnectionsStore } from '../stores/connections.svelte';
 
-  let connections: ConnectionInfo[] = $state([]);
-  let loading = $state(true);
+  const store = getConnectionsStore();
+
+  // Local UI state (test results, add form) stays component-scoped.
   let testing = $state<string | null>(null);
+  let reconnecting = $state<string | null>(null);
   let healthResults: Record<string, HealthInfo> = $state({});
 
   // Add form state
@@ -14,15 +17,11 @@
   let addToken = $state('');
   let addError = $state('');
 
+  const connections = $derived(store.connections);
+  const loading = $derived(store.loading);
+
   async function loadConnections() {
-    loading = true;
-    try {
-      connections = await connection.list();
-    } catch (e) {
-      console.error('Failed to load connections:', e);
-    } finally {
-      loading = false;
-    }
+    await store.refresh();
   }
 
   async function testConn(id: string) {
@@ -30,7 +29,7 @@
     try {
       const result = await connection.test(id);
       healthResults = { ...healthResults, [id]: result };
-      await loadConnections(); // refresh status
+      await loadConnections();
     } catch (e) {
       healthResults = { ...healthResults, [id]: { success: false, latency_ms: 0, version: null, error: String(e) } };
     } finally {
@@ -38,20 +37,30 @@
     }
   }
 
+  async function reconnectConn(id: string) {
+    reconnecting = id;
+    try {
+      const result = await store.reconnect(id);
+      healthResults = { ...healthResults, [id]: result };
+    } catch (e) {
+      healthResults = { ...healthResults, [id]: { success: false, latency_ms: 0, version: null, error: String(e) } };
+    } finally {
+      reconnecting = null;
+    }
+  }
+
   async function setPrimary(id: string) {
     try {
-      await connection.setPrimary(id);
-      await loadConnections();
+      await store.setPrimary(id);
     } catch (e) {
       console.error('Failed to set primary:', e);
     }
   }
 
   async function deleteConn(id: string) {
-    if (!confirm('Delete this connection? This cannot be undone.')) return;
+    if (!confirm('Delete this connection? The auth token will be wiped and the row removed.')) return;
     try {
-      await connection.delete(id);
-      await loadConnections();
+      await store.remove(id);
     } catch (e) {
       console.error('Failed to delete connection:', e);
     }
@@ -103,7 +112,12 @@
     }
   }
 
-  onMount(loadConnections);
+  onMount(() => {
+    void loadConnections();
+    store.startPolling();
+  });
+
+  onDestroy(() => store.stopPolling());
 </script>
 
 <div class="connection-manager">
@@ -182,6 +196,14 @@
               disabled={testing === conn.id}
             >
               {testing === conn.id ? 'Testing…' : 'Test'}
+            </button>
+            <button
+              class="btn-sm"
+              onclick={() => reconnectConn(conn.id)}
+              disabled={reconnecting === conn.id}
+              title="Rebuild the live backend from this connection (no restart)"
+            >
+              {reconnecting === conn.id ? 'Reconnecting…' : 'Reconnect'}
             </button>
             {#if !conn.is_primary}
               <button class="btn-sm" onclick={() => setPrimary(conn.id)}>
