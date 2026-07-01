@@ -166,3 +166,45 @@ export const agents = {
   generateAgentMd: (projectDir?: string) => invoke<string>('generate_agent_md', { projectDir: projectDir ?? null }),
   runDream: () => invoke<{ success: boolean; result: unknown; hint?: string }>('run_dream_cycle'),
 };
+
+// Connection Manager (#37)
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  product_type: 'uteke';
+  url: string;
+  has_token: boolean;
+  capabilities: { read: boolean; write: boolean; search: boolean; realtime: boolean };
+  status: string;
+  is_primary: boolean;
+  created_at: string;
+  last_tested_at: string | null;
+}
+
+export interface HealthInfo {
+  success: boolean;
+  latency_ms: number;
+  version: string | null;
+  error: string | null;
+}
+
+export const connection = {
+  list: () => invoke<ConnectionInfo[]>('list_connections'),
+  add: (opts: {
+    name: string;
+    product_type: string;
+    url: string;
+    auth_token?: string;
+    auth_type?: string;
+  }) => invoke<string>('add_connection', opts),
+  update: (opts: {
+    id: string;
+    name?: string;
+    url?: string;
+    auth_token?: string;
+    auth_type?: string;
+  }) => invoke<void>('update_connection', opts),
+  delete: (id: string) => invoke<void>('delete_connection', { id }),
+  test: (id: string) => invoke<HealthInfo>('test_connection', { id }),
+  setPrimary: (id: string) => invoke<void>('set_primary_connection', { id }),
+};
