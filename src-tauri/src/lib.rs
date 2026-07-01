@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod config;
+pub mod connections;
 pub mod uteke_client;
 
 use std::sync::Arc;
@@ -382,6 +383,21 @@ pub fn run() {
                             let server_url = ensure_uteke_server();
                             let client = UtekeClient::new(&server_url);
                             s.uteke_client = Some(client);
+
+                            // Seed default local uteke connection on first boot.
+                            if let Ok(true) = connections::store::is_empty(&s.conn.as_ref().unwrap()) {
+                                match connections::store::seed_default(
+                                    s.conn.as_mut().unwrap(),
+                                    &server_url,
+                                ) {
+                                    Ok(id) => eprintln!(
+                                        "CorIn: seeded default connection {id} at {server_url}"
+                                    ),
+                                    Err(e) => eprintln!(
+                                        "CorIn: failed to seed default connection: {e}"
+                                    ),
+                                }
+                            }
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");
@@ -429,6 +445,21 @@ fn init_schema(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
         CREATE INDEX IF NOT EXISTS idx_edges_source ON graph_edges(source);
         CREATE INDEX IF NOT EXISTS idx_edges_target ON graph_edges(target);
+        CREATE TABLE IF NOT EXISTS connections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            product_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            auth_type TEXT,
+            auth_token TEXT,
+            metadata TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'unknown',
+            is_primary INTEGER DEFAULT 0,
+            created_at TEXT,
+            last_tested_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_connections_type ON connections(product_type);
+        CREATE INDEX IF NOT EXISTS idx_connections_primary ON connections(is_primary);
         ",
     )?;
     Ok(())
