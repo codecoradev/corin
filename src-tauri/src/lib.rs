@@ -398,7 +398,7 @@ pub fn run() {
 
                                 // Seed default local uteke connection on first boot.
                                 if let Ok(true) =
-                                    connections::store::is_empty(&s.conn.as_ref().unwrap())
+                                    connections::store::is_empty(s.conn.as_ref().unwrap())
                                 {
                                     match connections::store::seed_default(
                                         s.conn.as_mut().unwrap(),

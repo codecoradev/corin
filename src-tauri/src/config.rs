@@ -137,12 +137,10 @@ pub fn detect_uteke_serve_url() -> String {
 /// Returns (url, auth_token).
 pub fn resolve_uteke_server(conn: Option<&rusqlite::Connection>) -> (String, Option<String>) {
     // 1. DB primary connection (highest priority).
-    if let Some(conn) = conn {
-        if let Ok(Some(row)) =
-            crate::connections::store::get_primary(conn, crate::connections::ProductType::Uteke)
-        {
-            return (row.url, row.auth_token);
-        }
+    if let Some(Some(row)) = conn.and_then(|c| {
+        crate::connections::store::get_primary(c, crate::connections::ProductType::Uteke).ok()
+    }) {
+        return (row.url, row.auth_token);
     }
 
     // 2. Environment variable.

@@ -50,179 +50,231 @@ impl crate::connections::traits::ProductAdapter for UtekeAdapter {
         crate::connections::ProductType::Uteke.capabilities()
     }
 
-    async fn health_check(&self, cfg: &ConnectionConfig) -> Result<HealthInfo, String> {
-        let start = std::time::Instant::now();
-        let url = cfg.url.clone();
-        let client = UtekeClient::with_auth(&url, cfg.auth_token.clone());
+    fn health_check(
+        &self,
+        cfg: ConnectionConfig,
+    ) -> impl std::future::Future<Output = Result<HealthInfo, String>> + Send {
+        let client = UtekeClient::with_auth(&cfg.url, cfg.auth_token.clone());
+        async move {
+            let start = std::time::Instant::now();
+            let available = client.is_available().await;
+            let latency_ms = start.elapsed().as_millis() as u64;
 
-        // Use the /health endpoint for a simple ping.
-        let available = client.is_available().await;
-        let latency_ms = start.elapsed().as_millis() as u64;
-
-        if available {
-            Ok(HealthInfo {
-                success: true,
-                latency_ms,
-                version: None,
-                error: None,
-            })
-        } else {
-            Ok(HealthInfo {
-                success: false,
-                latency_ms,
-                version: None,
-                error: Some("Server not reachable".to_string()),
-            })
+            if available {
+                Ok(HealthInfo {
+                    success: true,
+                    latency_ms,
+                    version: None,
+                    error: None,
+                })
+            } else {
+                Ok(HealthInfo {
+                    success: false,
+                    latency_ms,
+                    version: None,
+                    error: Some("Server not reachable".to_string()),
+                })
+            }
         }
     }
 }
 
-#[async_trait::async_trait]
 impl MemoryBackend for UtekeAdapter {
-    async fn recall(
+    fn recall(
         &self,
-        query: &str,
-        namespace: Option<&str>,
+        query: String,
+        namespace: Option<String>,
         limit: Option<usize>,
-    ) -> Result<Vec<Memory>, String> {
+    ) -> impl std::future::Future<Output = Result<Vec<Memory>, String>> + Send {
         let limit = limit.unwrap_or(50);
-        let results = self.client.recall(query, namespace, limit).await?;
-        Ok(results.into_iter().map(Into::into).collect())
+        let client = self.client.clone();
+        async move {
+            let results = client.recall(&query, namespace.as_deref(), limit).await?;
+            Ok(results.into_iter().map(Into::into).collect())
+        }
     }
 
-    async fn search(
+    fn search(
         &self,
-        query: &str,
-        namespace: Option<&str>,
+        query: String,
+        namespace: Option<String>,
         limit: Option<usize>,
-    ) -> Result<Vec<Memory>, String> {
+    ) -> impl std::future::Future<Output = Result<Vec<Memory>, String>> + Send {
         let limit = limit.unwrap_or(50);
-        let results = self.client.search(query, namespace, limit).await?;
-        Ok(results.into_iter().map(Into::into).collect())
+        let client = self.client.clone();
+        async move {
+            let results = client.search(&query, namespace.as_deref(), limit).await?;
+            Ok(results.into_iter().map(Into::into).collect())
+        }
     }
 
-    async fn remember(
+    fn remember(
         &self,
-        content: &str,
-        namespace: Option<&str>,
-        _content_type: Option<&str>,
+        content: String,
+        namespace: Option<String>,
+        _content_type: Option<String>,
         _importance: Option<f64>,
-        tags: Option<&str>,
-    ) -> Result<String, String> {
+        tags: Option<String>,
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
         let parsed_tags: Vec<String> = tags
             .map(|t| {
                 if t.starts_with('[') {
-                    serde_json::from_str(t)
+                    serde_json::from_str(&t)
                         .unwrap_or_else(|_| t.split(',').map(|s| s.trim().to_string()).collect())
                 } else {
                     t.split(',').map(|s| s.trim().to_string()).collect()
                 }
             })
             .unwrap_or_default();
-
-        self.client.remember(content, &parsed_tags, namespace).await
+        let client = self.client.clone();
+        async move {
+            client
+                .remember(&content, &parsed_tags, namespace.as_deref())
+                .await
+        }
     }
 
-    async fn forget(&self, id: &str) -> Result<(), String> {
-        self.client.forget(id).await
+    fn forget(&self, id: String) -> impl std::future::Future<Output = Result<(), String>> + Send {
+        let client = self.client.clone();
+        async move { client.forget(&id).await }
     }
 
-    async fn list(
+    fn list(
         &self,
-        namespace: Option<&str>,
+        namespace: Option<String>,
         limit: Option<usize>,
-    ) -> Result<Vec<Memory>, String> {
-        let results = self
-            .client
-            .list(namespace, None, limit.unwrap_or(100), 0)
-            .await?;
-        Ok(results.into_iter().map(Into::into).collect())
+    ) -> impl std::future::Future<Output = Result<Vec<Memory>, String>> + Send {
+        let client = self.client.clone();
+        async move {
+            let results = client
+                .list(namespace.as_deref(), None, limit.unwrap_or(100), 0)
+                .await?;
+            Ok(results.into_iter().map(Into::into).collect())
+        }
     }
 
-    async fn get(&self, id: &str) -> Result<Memory, String> {
-        let mem = self.client.get(id).await?;
-        Ok(mem.into())
+    fn get(&self, id: String) -> impl std::future::Future<Output = Result<Memory, String>> + Send {
+        let client = self.client.clone();
+        async move {
+            let mem = client.get(&id).await?;
+            Ok(mem.into())
+        }
     }
 
-    async fn stats(&self) -> Result<Stats, String> {
-        let s = self.client.stats().await?;
-        Ok(Stats {
-            total_memories: s.total_memories,
-            namespaces: s.unique_tags, // approximate: use tag count as proxy
-            tags: s.unique_tags,
-            graph_edges: 0, // not in UtekeStats
-            rooms: None,
-            version: None,
-        })
-    }
-
-    async fn namespaces(&self) -> Result<Vec<String>, String> {
-        self.client.namespaces().await
-    }
-
-    async fn graph(&self, namespace: Option<&str>) -> Result<GraphResponse, String> {
-        let g = self.client.graph(namespace).await?;
-        Ok(GraphResponse {
-            nodes: g
-                .nodes
-                .into_iter()
-                .map(|n| GraphNode {
-                    id: n.id,
-                    label: Some(n.label),
-                    namespace: n.entity_type,
-                })
-                .collect(),
-            edges: g
-                .edges
-                .into_iter()
-                .map(|e| GraphEdge {
-                    source: e.source,
-                    target: e.target,
-                    edge_type: Some(e.relation),
-                    weight: Some(e.weight as f64),
-                })
-                .collect(),
-        })
-    }
-
-    async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<Room>, String> {
-        let rs = self.client.rooms(namespace).await?;
-        Ok(rs
-            .into_iter()
-            .map(|r| Room {
-                id: r.id.clone(),
-                name: r.title.unwrap_or(r.id.clone()),
-                namespace: Some(r.namespace),
-                memory_count: None,
-                created_at: Some(r.created_at),
+    fn stats(&self) -> impl std::future::Future<Output = Result<Stats, String>> + Send {
+        let client = self.client.clone();
+        async move {
+            let s = client.stats().await?;
+            Ok(Stats {
+                total_memories: s.total_memories,
+                namespaces: s.unique_tags,
+                tags: s.unique_tags,
+                graph_edges: 0,
+                rooms: None,
+                version: None,
             })
-            .collect())
+        }
     }
 
-    async fn room_recall(&self, room_id: &str, _query: &str) -> Result<Vec<Memory>, String> {
-        // UtekeClient room_recall doesn't support query — return all room memories.
-        let results = self.client.room_recall(room_id, 100).await?;
-        Ok(results.into_iter().map(Into::into).collect())
+    fn namespaces(&self) -> impl std::future::Future<Output = Result<Vec<String>, String>> + Send {
+        let client = self.client.clone();
+        async move { client.namespaces().await }
     }
 
-    async fn room_summary(&self, room_id: &str) -> Result<serde_json::Value, String> {
-        self.client.room_summary(room_id).await
-    }
-
-    async fn room_document(&self, room_id: &str) -> Result<serde_json::Value, String> {
-        self.client.room_document(room_id).await
-    }
-
-    async fn room_delete(&self, room_id: &str) -> Result<(), String> {
-        self.client.room_delete(room_id).await
-    }
-
-    async fn room_create(
+    fn graph(
         &self,
-        name: &str,
-        namespace: Option<&str>,
-    ) -> Result<serde_json::Value, String> {
-        self.client.room_create(name, None, namespace).await
+        namespace: Option<String>,
+    ) -> impl std::future::Future<Output = Result<GraphResponse, String>> + Send {
+        let client = self.client.clone();
+        async move {
+            let g = client.graph(namespace.as_deref()).await?;
+            Ok(GraphResponse {
+                nodes: g
+                    .nodes
+                    .into_iter()
+                    .map(|n| GraphNode {
+                        id: n.id,
+                        label: Some(n.label),
+                        namespace: n.entity_type,
+                    })
+                    .collect(),
+                edges: g
+                    .edges
+                    .into_iter()
+                    .map(|e| GraphEdge {
+                        source: e.source,
+                        target: e.target,
+                        edge_type: Some(e.relation),
+                        weight: Some(e.weight as f64),
+                    })
+                    .collect(),
+            })
+        }
+    }
+
+    fn rooms(
+        &self,
+        namespace: Option<String>,
+    ) -> impl std::future::Future<Output = Result<Vec<Room>, String>> + Send {
+        let client = self.client.clone();
+        async move {
+            let rs = client.rooms(namespace.as_deref()).await?;
+            Ok(rs
+                .into_iter()
+                .map(|r| Room {
+                    id: r.id.clone(),
+                    name: r.title.unwrap_or(r.id.clone()),
+                    namespace: Some(r.namespace),
+                    memory_count: None,
+                    created_at: Some(r.created_at),
+                })
+                .collect())
+        }
+    }
+
+    fn room_recall(
+        &self,
+        room_id: String,
+        _query: String,
+    ) -> impl std::future::Future<Output = Result<Vec<Memory>, String>> + Send {
+        let client = self.client.clone();
+        async move {
+            let results = client.room_recall(&room_id, 100).await?;
+            Ok(results.into_iter().map(Into::into).collect())
+        }
+    }
+
+    fn room_summary(
+        &self,
+        room_id: String,
+    ) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send {
+        let client = self.client.clone();
+        async move { client.room_summary(&room_id).await }
+    }
+
+    fn room_document(
+        &self,
+        room_id: String,
+    ) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send {
+        let client = self.client.clone();
+        async move { client.room_document(&room_id).await }
+    }
+
+    fn room_delete(
+        &self,
+        room_id: String,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send {
+        let client = self.client.clone();
+        async move { client.room_delete(&room_id).await }
+    }
+
+    fn room_create(
+        &self,
+        name: String,
+        namespace: Option<String>,
+    ) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send {
+        let client = self.client.clone();
+        async move { client.room_create(&name, None, namespace.as_deref()).await }
     }
 }
 

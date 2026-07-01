@@ -17,67 +17,91 @@ pub trait ProductAdapter: Send + Sync {
     fn capabilities(&self) -> super::Capabilities;
 
     /// Ping the remote endpoint and return latency + version.
-    async fn health_check(&self, cfg: &ConnectionConfig) -> Result<HealthInfo, String>;
+    fn health_check(
+        &self,
+        cfg: ConnectionConfig,
+    ) -> impl std::future::Future<Output = Result<HealthInfo, String>> + Send;
 }
 
 /// Category trait for memory / knowledge-base backends (uteke).
 ///
 /// Every method mirrors an existing `UtekeClient` method so the
 /// migration from direct `UtekeClient` usage is drop-in.
-#[async_trait::async_trait]
 pub trait MemoryBackend: ProductAdapter {
-    async fn recall(
+    fn recall(
         &self,
-        query: &str,
-        namespace: Option<&str>,
+        query: String,
+        namespace: Option<String>,
         limit: Option<usize>,
-    ) -> Result<Vec<super::Memory>, String>;
+    ) -> impl std::future::Future<Output = Result<Vec<super::Memory>, String>> + Send;
 
-    async fn search(
+    fn search(
         &self,
-        query: &str,
-        namespace: Option<&str>,
+        query: String,
+        namespace: Option<String>,
         limit: Option<usize>,
-    ) -> Result<Vec<super::Memory>, String>;
+    ) -> impl std::future::Future<Output = Result<Vec<super::Memory>, String>> + Send;
 
-    async fn remember(
+    fn remember(
         &self,
-        content: &str,
-        namespace: Option<&str>,
-        content_type: Option<&str>,
+        content: String,
+        namespace: Option<String>,
+        content_type: Option<String>,
         importance: Option<f64>,
-        tags: Option<&str>,
-    ) -> Result<String, String>;
+        tags: Option<String>,
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send;
 
-    async fn forget(&self, id: &str) -> Result<(), String>;
+    fn forget(&self, id: String) -> impl std::future::Future<Output = Result<(), String>> + Send;
 
-    async fn list(
+    fn list(
         &self,
-        namespace: Option<&str>,
+        namespace: Option<String>,
         limit: Option<usize>,
-    ) -> Result<Vec<super::Memory>, String>;
+    ) -> impl std::future::Future<Output = Result<Vec<super::Memory>, String>> + Send;
 
-    async fn get(&self, id: &str) -> Result<super::Memory, String>;
-
-    async fn stats(&self) -> Result<super::Stats, String>;
-
-    async fn namespaces(&self) -> Result<Vec<String>, String>;
-
-    async fn graph(&self, namespace: Option<&str>) -> Result<super::GraphResponse, String>;
-
-    async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<super::Room>, String>;
-
-    async fn room_recall(&self, room_id: &str, query: &str) -> Result<Vec<super::Memory>, String>;
-
-    async fn room_summary(&self, room_id: &str) -> Result<serde_json::Value, String>;
-
-    async fn room_document(&self, room_id: &str) -> Result<serde_json::Value, String>;
-
-    async fn room_delete(&self, room_id: &str) -> Result<(), String>;
-
-    async fn room_create(
+    fn get(
         &self,
-        name: &str,
-        namespace: Option<&str>,
-    ) -> Result<serde_json::Value, String>;
+        id: String,
+    ) -> impl std::future::Future<Output = Result<super::Memory, String>> + Send;
+
+    fn stats(&self) -> impl std::future::Future<Output = Result<super::Stats, String>> + Send;
+
+    fn namespaces(&self) -> impl std::future::Future<Output = Result<Vec<String>, String>> + Send;
+
+    fn graph(
+        &self,
+        namespace: Option<String>,
+    ) -> impl std::future::Future<Output = Result<super::GraphResponse, String>> + Send;
+
+    fn rooms(
+        &self,
+        namespace: Option<String>,
+    ) -> impl std::future::Future<Output = Result<Vec<super::Room>, String>> + Send;
+
+    fn room_recall(
+        &self,
+        room_id: String,
+        query: String,
+    ) -> impl std::future::Future<Output = Result<Vec<super::Memory>, String>> + Send;
+
+    fn room_summary(
+        &self,
+        room_id: String,
+    ) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send;
+
+    fn room_document(
+        &self,
+        room_id: String,
+    ) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send;
+
+    fn room_delete(
+        &self,
+        room_id: String,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
+
+    fn room_create(
+        &self,
+        name: String,
+        namespace: Option<String>,
+    ) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send;
 }

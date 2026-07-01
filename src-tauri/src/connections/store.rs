@@ -5,9 +5,8 @@
 //! health checks) belongs in [`crate::connections`].
 
 use rusqlite::Connection;
-use std::sync::Arc;
 
-use super::{ConnectionConfig, ConnectionInfo, ConnectionRow, HealthInfo, ProductType};
+use super::{ConnectionInfo, ConnectionRow, HealthInfo, ProductType};
 
 /// List all connections, returning lightweight info (token redacted).
 pub fn list(conn: &Connection) -> Result<Vec<ConnectionInfo>, String> {
@@ -77,6 +76,7 @@ pub fn get(conn: &Connection, id: &str) -> Result<ConnectionRow, String> {
 }
 
 /// Insert a new connection.  Returns the new id.
+#[allow(clippy::too_many_arguments)]
 pub fn insert(
     conn: &mut Connection,
     id: &str,

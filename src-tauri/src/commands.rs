@@ -1767,7 +1767,7 @@ pub async fn list_connections(
 ) -> Result<Vec<crate::connections::ConnectionInfo>, CommandError> {
     let s = state.lock().await;
     let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
-    crate::connections::store::list(conn).map_err(|e| CommandError::Uteke(e))
+    crate::connections::store::list(conn).map_err(CommandError::Uteke)
 }
 
 #[tauri::command]
@@ -1801,7 +1801,7 @@ pub async fn add_connection(
         auth_token.as_deref(),
         metadata.as_ref(),
     )
-    .map_err(|e| CommandError::Uteke(e))?;
+    .map_err(CommandError::Uteke)?;
     Ok(id)
 }
 
@@ -1826,7 +1826,7 @@ pub async fn update_connection(
         auth_token.as_deref(),
         metadata.as_ref(),
     )
-    .map_err(|e| CommandError::Uteke(e))
+    .map_err(CommandError::Uteke)
 }
 
 #[tauri::command]
@@ -1836,7 +1836,7 @@ pub async fn delete_connection(
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
-    crate::connections::store::delete(conn, &id).map_err(|e| CommandError::Uteke(e))
+    crate::connections::store::delete(conn, &id).map_err(CommandError::Uteke)
 }
 
 #[tauri::command]
@@ -1846,15 +1846,15 @@ pub async fn test_connection(
 ) -> Result<crate::connections::HealthInfo, CommandError> {
     let s = state.lock().await;
     let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
-    let row = crate::connections::store::get(conn, &id).map_err(|e| CommandError::Uteke(e))?;
+    let row = crate::connections::store::get(conn, &id).map_err(CommandError::Uteke)?;
     let cfg = crate::connections::ConnectionConfig::from(&row);
 
     use crate::connections::traits::ProductAdapter;
     let adapter = crate::connections::adapters::uteke::UtekeAdapter::new(&cfg);
     let health = adapter
-        .health_check(&cfg)
+        .health_check(cfg.clone())
         .await
-        .map_err(|e| CommandError::Uteke(e))?;
+        .map_err(CommandError::Uteke)?;
 
     // Update status in DB.
     let status = if health.success { "connected" } else { "error" };
@@ -1873,7 +1873,7 @@ pub async fn set_primary_connection(
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
-    crate::connections::store::set_primary(conn, &id).map_err(|e| CommandError::Uteke(e))
+    crate::connections::store::set_primary(conn, &id).map_err(CommandError::Uteke)
 }
 
 /// Find a binary in PATH.
