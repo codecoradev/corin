@@ -10,7 +10,7 @@
   let { onclose }: Props = $props();
 
   // ─── Active tab ───
-  type Tab = 'corin' | 'general' | 'data' | 'agents';
+  type Tab = 'corin' | 'general' | 'data' | 'agents' | 'connections';
   let activeTab = $state<Tab>('corin');
 
   // ─── Settings state ───
@@ -164,6 +164,7 @@
     { id: 'corin', label: 'CorIn', icon: '◧' },
     { id: 'general', label: 'General', icon: '⚙' },
     { id: 'data', label: 'Data', icon: '▤' },
+    { id: 'connections', label: 'Connections', icon: '☍' },
     { id: 'agents', label: 'AI Agents', icon: '◈' },
   ];
 </script>
@@ -307,6 +308,11 @@
             </button>
           </div>
         </section>
+
+      {:else if activeTab === 'connections'}
+        {#await import('./ConnectionManager.svelte') then module}
+          <module.default />
+        {/await}
 
       {:else if activeTab === 'agents'}
         <!-- AI Agent Integration (#55) -->
