@@ -1782,14 +1782,24 @@ pub async fn add_connection(
 ) -> Result<String, CommandError> {
     let pt = match product_type.as_str() {
         "uteke" => crate::connections::ProductType::Uteke,
-        other => return Err(CommandError::Uteke(format!("unknown product type: {other}"))),
+        other => {
+            return Err(CommandError::Uteke(format!(
+                "unknown product type: {other}"
+            )));
+        }
     };
     let id = nanoid::nanoid!(12);
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
     crate::connections::store::insert(
-        conn, &id, &name, pt, &url,
-        auth_type.as_deref(), auth_token.as_deref(), metadata.as_ref(),
+        conn,
+        &id,
+        &name,
+        pt,
+        &url,
+        auth_type.as_deref(),
+        auth_token.as_deref(),
+        metadata.as_ref(),
     )
     .map_err(|e| CommandError::Uteke(e))?;
     Ok(id)
@@ -1808,9 +1818,13 @@ pub async fn update_connection(
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
     crate::connections::store::update(
-        conn, &id,
-        name.as_deref(), url.as_deref(),
-        auth_type.as_deref(), auth_token.as_deref(), metadata.as_ref(),
+        conn,
+        &id,
+        name.as_deref(),
+        url.as_deref(),
+        auth_type.as_deref(),
+        auth_token.as_deref(),
+        metadata.as_ref(),
     )
     .map_err(|e| CommandError::Uteke(e))
 }
@@ -1822,8 +1836,7 @@ pub async fn delete_connection(
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
-    crate::connections::store::delete(conn, &id)
-        .map_err(|e| CommandError::Uteke(e))
+    crate::connections::store::delete(conn, &id).map_err(|e| CommandError::Uteke(e))
 }
 
 #[tauri::command]
@@ -1833,13 +1846,14 @@ pub async fn test_connection(
 ) -> Result<crate::connections::HealthInfo, CommandError> {
     let s = state.lock().await;
     let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
-    let row = crate::connections::store::get(conn, &id)
-        .map_err(|e| CommandError::Uteke(e))?;
+    let row = crate::connections::store::get(conn, &id).map_err(|e| CommandError::Uteke(e))?;
     let cfg = crate::connections::ConnectionConfig::from(&row);
 
     use crate::connections::traits::ProductAdapter;
     let adapter = crate::connections::adapters::uteke::UtekeAdapter::new(&cfg);
-    let health = adapter.health_check(&cfg).await
+    let health = adapter
+        .health_check(&cfg)
+        .await
         .map_err(|e| CommandError::Uteke(e))?;
 
     // Update status in DB.
@@ -1859,8 +1873,7 @@ pub async fn set_primary_connection(
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
     let conn = s.conn.as_mut().ok_or(CommandError::NotInitialized)?;
-    crate::connections::store::set_primary(conn, &id)
-        .map_err(|e| CommandError::Uteke(e))
+    crate::connections::store::set_primary(conn, &id).map_err(|e| CommandError::Uteke(e))
 }
 
 /// Find a binary in PATH.

@@ -2,8 +2,8 @@
 
 use crate::connections::traits::MemoryBackend;
 use crate::connections::{
-    ConnectionConfig, GraphEdge, GraphNode, GraphResponse, HealthInfo, Memory,
-    ProductType, Room, Stats,
+    ConnectionConfig, GraphEdge, GraphNode, GraphResponse, HealthInfo, Memory, ProductType, Room,
+    Stats,
 };
 use crate::uteke_client::UtekeClient;
 
@@ -112,9 +112,8 @@ impl MemoryBackend for UtekeAdapter {
         let parsed_tags: Vec<String> = tags
             .map(|t| {
                 if t.starts_with('[') {
-                    serde_json::from_str(t).unwrap_or_else(|_| {
-                        t.split(',').map(|s| s.trim().to_string()).collect()
-                    })
+                    serde_json::from_str(t)
+                        .unwrap_or_else(|_| t.split(',').map(|s| s.trim().to_string()).collect())
                 } else {
                     t.split(',').map(|s| s.trim().to_string()).collect()
                 }
@@ -151,7 +150,7 @@ impl MemoryBackend for UtekeAdapter {
             total_memories: s.total_memories,
             namespaces: s.unique_tags, // approximate: use tag count as proxy
             tags: s.unique_tags,
-            graph_edges: 0,            // not in UtekeStats
+            graph_edges: 0, // not in UtekeStats
             rooms: None,
             version: None,
         })
@@ -200,11 +199,7 @@ impl MemoryBackend for UtekeAdapter {
             .collect())
     }
 
-    async fn room_recall(
-        &self,
-        room_id: &str,
-        _query: &str,
-    ) -> Result<Vec<Memory>, String> {
+    async fn room_recall(&self, room_id: &str, _query: &str) -> Result<Vec<Memory>, String> {
         // UtekeClient room_recall doesn't support query — return all room memories.
         let results = self.client.room_recall(room_id, 100).await?;
         Ok(results.into_iter().map(Into::into).collect())

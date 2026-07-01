@@ -7,9 +7,7 @@
 use rusqlite::Connection;
 use std::sync::Arc;
 
-use super::{
-    ConnectionConfig, ConnectionInfo, ConnectionRow, HealthInfo, ProductType,
-};
+use super::{ConnectionConfig, ConnectionInfo, ConnectionRow, HealthInfo, ProductType};
 
 /// List all connections, returning lightweight info (token redacted).
 pub fn list(conn: &Connection) -> Result<Vec<ConnectionInfo>, String> {
@@ -31,7 +29,8 @@ pub fn list(conn: &Connection) -> Result<Vec<ConnectionInfo>, String> {
                 url: row.get(3)?,
                 auth_type: row.get(4)?,
                 auth_token: row.get(5)?,
-                metadata: row.get::<_, Option<String>>(6)?
+                metadata: row
+                    .get::<_, Option<String>>(6)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or(serde_json::json!({})),
                 status: row.get(7)?,
@@ -63,7 +62,8 @@ pub fn get(conn: &Connection, id: &str) -> Result<ConnectionRow, String> {
                 url: row.get(3)?,
                 auth_type: row.get(4)?,
                 auth_token: row.get(5)?,
-                metadata: row.get::<_, Option<String>>(6)?
+                metadata: row
+                    .get::<_, Option<String>>(6)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or(serde_json::json!({})),
                 status: row.get(7)?,
@@ -130,17 +130,16 @@ pub fn update(
     }
     if let Some(v) = metadata {
         sets.push("metadata = ?");
-        params.push(Box::new(serde_json::to_string(v).unwrap_or_else(|_| "{}".into())));
+        params.push(Box::new(
+            serde_json::to_string(v).unwrap_or_else(|_| "{}".into()),
+        ));
     }
     if sets.is_empty() {
         return Ok(());
     }
     params.push(Box::new(id.to_string()));
 
-    let sql = format!(
-        "UPDATE connections SET {} WHERE id = ?",
-        sets.join(", ")
-    );
+    let sql = format!("UPDATE connections SET {} WHERE id = ?", sets.join(", "));
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     conn.execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
@@ -149,8 +148,11 @@ pub fn update(
 
 /// Delete a connection by id.
 pub fn delete(conn: &mut Connection, id: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM connections WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM connections WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -197,7 +199,8 @@ pub fn get_primary(
                 url: row.get(3)?,
                 auth_type: row.get(4)?,
                 auth_token: row.get(5)?,
-                metadata: row.get::<_, Option<String>>(6)?
+                metadata: row
+                    .get::<_, Option<String>>(6)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or(serde_json::json!({})),
                 status: row.get(7)?,
@@ -233,21 +236,14 @@ pub fn update_status(
 /// Check if the connections table has any rows.
 pub fn is_empty(conn: &Connection) -> Result<bool, String> {
     let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM connections",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM connections", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;
     Ok(count == 0)
 }
 
 /// Seed a default local uteke connection.  Called once on first boot when
 /// the connections table is empty.
-pub fn seed_default(
-    conn: &mut Connection,
-    detected_url: &str,
-) -> Result<String, String> {
+pub fn seed_default(conn: &mut Connection, detected_url: &str) -> Result<String, String> {
     let id = nanoid::nanoid!(12);
     insert(
         conn,

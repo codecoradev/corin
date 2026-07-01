@@ -387,8 +387,7 @@ pub fn run() {
                             // All Uteke access via HTTP API (no direct SQLite).
                             // Resolve server URL: DB primary → env UTEKE_SERVER_URL → TOML → default.
                             let db_conn = s.conn.as_ref();
-                            let (server_url, auth_token) =
-                                config::resolve_uteke_server(db_conn);
+                            let (server_url, auth_token) = config::resolve_uteke_server(db_conn);
 
                             // Only auto-start local uteke-serve if URL is local.
                             if !config::is_remote_url(&server_url) {
@@ -415,9 +414,7 @@ pub fn run() {
                                 }
                             } else {
                                 // Remote URL — no local auto-start.
-                                eprintln!(
-                                    "CorIn: using remote uteke-serve at {server_url}"
-                                );
+                                eprintln!("CorIn: using remote uteke-serve at {server_url}");
                                 let client = UtekeClient::with_auth(&server_url, auth_token);
                                 s.uteke_client = Some(client);
                             }

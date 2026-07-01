@@ -127,10 +127,8 @@ impl UtekeClient {
 
     /// Check if uteke-serve is reachable.
     pub async fn is_available(&self) -> bool {
-        self.authed(
-            self.client.get(format!("{}/health", self.base_url))
-        )
-        .send()
+        self.authed(self.client.get(format!("{}/health", self.base_url)))
+            .send()
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false)
@@ -151,9 +149,7 @@ impl UtekeClient {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
-        self.authed(
-            self.client.post(format!("{}/recall", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/recall", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -178,9 +174,7 @@ impl UtekeClient {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
-        self.authed(
-            self.client.post(format!("{}/search", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/search", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -209,9 +203,7 @@ impl UtekeClient {
             body["tag"] = serde_json::Value::String(t.to_string());
         }
 
-        self.authed(
-            self.client.post(format!("{}/list", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/list", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -223,9 +215,8 @@ impl UtekeClient {
 
     /// Get a single memory by ID.
     pub async fn get(&self, id: &str) -> Result<UtekeMemory, String> {
-        let resp = self.authed(
-            self.client.get(format!("{}/memory", self.base_url))
-        )
+        let resp = self
+            .authed(self.client.get(format!("{}/memory", self.base_url)))
             .query(&[("id", id)])
             .send()
             .await
@@ -240,9 +231,7 @@ impl UtekeClient {
 
     /// Get stats.
     pub async fn stats(&self) -> Result<UtekeStats, String> {
-        self.authed(
-            self.client.get(format!("{}/stats", self.base_url))
-        )
+        self.authed(self.client.get(format!("{}/stats", self.base_url)))
             .send()
             .await
             .map_err(|e| e.to_string())?
@@ -253,9 +242,7 @@ impl UtekeClient {
 
     /// List namespaces.
     pub async fn namespaces(&self) -> Result<Vec<String>, String> {
-        self.authed(
-            self.client.get(format!("{}/namespaces", self.base_url))
-        )
+        self.authed(self.client.get(format!("{}/namespaces", self.base_url)))
             .send()
             .await
             .map_err(|e| e.to_string())?
@@ -316,9 +303,8 @@ impl UtekeClient {
             id: String,
         }
 
-        let resp: RememberResp = self.authed(
-            self.client.post(format!("{}/remember", self.base_url))
-        )
+        let resp: RememberResp = self
+            .authed(self.client.post(format!("{}/remember", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -332,9 +318,8 @@ impl UtekeClient {
 
     /// Delete a memory by ID.
     pub async fn forget(&self, id: &str) -> Result<(), String> {
-        let resp = self.authed(
-            self.client.delete(format!("{}/forget", self.base_url))
-        )
+        let resp = self
+            .authed(self.client.delete(format!("{}/forget", self.base_url)))
             .query(&[("id", id)])
             .send()
             .await
@@ -359,9 +344,7 @@ impl UtekeClient {
             "limit": limit,
         });
 
-        self.authed(
-            self.client.post(format!("{}/room/recall", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/room/recall", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -377,9 +360,7 @@ impl UtekeClient {
             "room_id": room_id,
         });
 
-        self.authed(
-            self.client.post(format!("{}/room/summary", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/room/summary", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -395,9 +376,7 @@ impl UtekeClient {
             "room_id": room_id,
         });
 
-        self.authed(
-            self.client.post(format!("{}/room/document", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/room/document", self.base_url)))
             .json(&body)
             .send()
             .await
@@ -409,9 +388,8 @@ impl UtekeClient {
 
     /// Delete a room by ID.
     pub async fn room_delete(&self, room_id: &str) -> Result<(), String> {
-        let resp = self.authed(
-            self.client.delete(format!("{}/room/delete", self.base_url))
-        )
+        let resp = self
+            .authed(self.client.delete(format!("{}/room/delete", self.base_url)))
             .query(&[("room_id", room_id)])
             .send()
             .await
@@ -441,9 +419,7 @@ impl UtekeClient {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
-        self.authed(
-            self.client.post(format!("{}/room/create", self.base_url))
-        )
+        self.authed(self.client.post(format!("{}/room/create", self.base_url)))
             .json(&body)
             .send()
             .await

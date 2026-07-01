@@ -138,10 +138,9 @@ pub fn detect_uteke_serve_url() -> String {
 pub fn resolve_uteke_server(conn: Option<&rusqlite::Connection>) -> (String, Option<String>) {
     // 1. DB primary connection (highest priority).
     if let Some(conn) = conn {
-        if let Ok(Some(row)) = crate::connections::store::get_primary(
-            conn,
-            crate::connections::ProductType::Uteke,
-        ) {
+        if let Ok(Some(row)) =
+            crate::connections::store::get_primary(conn, crate::connections::ProductType::Uteke)
+        {
             return (row.url, row.auth_token);
         }
     }

@@ -63,18 +63,11 @@ pub trait MemoryBackend: ProductAdapter {
 
     async fn namespaces(&self) -> Result<Vec<String>, String>;
 
-    async fn graph(
-        &self,
-        namespace: Option<&str>,
-    ) -> Result<super::GraphResponse, String>;
+    async fn graph(&self, namespace: Option<&str>) -> Result<super::GraphResponse, String>;
 
     async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<super::Room>, String>;
 
-    async fn room_recall(
-        &self,
-        room_id: &str,
-        query: &str,
-    ) -> Result<Vec<super::Memory>, String>;
+    async fn room_recall(&self, room_id: &str, query: &str) -> Result<Vec<super::Memory>, String>;
 
     async fn room_summary(&self, room_id: &str) -> Result<serde_json::Value, String>;
 
