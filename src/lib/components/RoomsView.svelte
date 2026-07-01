@@ -37,7 +37,7 @@
   let creating = $state(false);
 
   // Tab state
-  let activeTab = $state<'timeline' | 'summary' | 'participants'>('timeline');
+  let activeTab = $state<'summary' | 'timeline' | 'participants'>('summary');
 
   // Summary state
   let roomDocument = $state('');
@@ -101,7 +101,7 @@
   async function selectRoom(roomId: string) {
     selectedRoom = roomId;
     roomMemories = [];
-    activeTab = 'timeline';
+    activeTab = 'summary';
     documentLoaded = false;
     roomDocument = '';
     if (utekeReady) {
@@ -313,12 +313,27 @@
 
           <!-- Tabs -->
           <div class="tabs">
-            <button class="tab" class:active={activeTab === 'timeline'} onclick={() => activeTab = 'timeline'}>Timeline</button>
             <button class="tab" class:active={activeTab === 'summary'} onclick={() => activeTab = 'summary'}>Summary</button>
+            <button class="tab" class:active={activeTab === 'timeline'} onclick={() => activeTab = 'timeline'}>Memories</button>
             <button class="tab" class:active={activeTab === 'participants'} onclick={() => activeTab = 'participants'}>Participants</button>
           </div>
 
-          <!-- Tab: Timeline -->
+          <!-- Tab: Summary -->
+          {#if activeTab === 'summary'}
+            {#if documentLoading}
+              <div class="tab-loading">Loading document…</div>
+            {:else if roomDocument}
+              <div class="room-document">{@html formatMarkdown(roomDocument)}</div>
+            {:else}
+              <div class="tab-empty">
+                <p>No summary available yet.</p>
+                <p class="sub">Run a dream cycle to generate a structured document for this room.<br>
+                <code>uteke dream</code></p>
+              </div>
+            {/if}
+          {/if}
+
+          <!-- Tab: Memories (room recall timeline) -->
           {#if activeTab === 'timeline'}
             {#if roomMemories.length === 0}
               <div class="tab-empty">
@@ -344,21 +359,6 @@
                     </div>
                   </div>
                 {/each}
-              </div>
-            {/if}
-          {/if}
-
-          <!-- Tab: Summary -->
-          {#if activeTab === 'summary'}
-            {#if documentLoading}
-              <div class="tab-loading">Loading document…</div>
-            {:else if roomDocument}
-              <div class="room-document">{@html formatMarkdown(roomDocument)}</div>
-            {:else}
-              <div class="tab-empty">
-                <p>No summary available yet.</p>
-                <p class="sub">Run a dream cycle to generate a structured document for this room.<br>
-                <code>uteke dream</code></p>
               </div>
             {/if}
           {/if}
