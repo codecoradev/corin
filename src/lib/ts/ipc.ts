@@ -192,17 +192,17 @@ export const connection = {
   list: () => invoke<ConnectionInfo[]>('list_connections'),
   add: (opts: {
     name: string;
-    product_type: string;
+    productType: string;
     url: string;
-    auth_token?: string;
-    auth_type?: string;
+    authToken?: string;
+    authType?: string;
   }) => invoke<string>('add_connection', opts),
   update: (opts: {
     id: string;
     name?: string;
     url?: string;
-    auth_token?: string;
-    auth_type?: string;
+    authToken?: string;
+    authType?: string;
   }) => invoke<void>('update_connection', opts),
   delete: (id: string) => invoke<void>('delete_connection', { id }),
   test: (id: string) => invoke<HealthInfo>('test_connection', { id }),

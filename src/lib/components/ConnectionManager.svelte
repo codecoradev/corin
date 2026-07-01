@@ -73,10 +73,10 @@
     try {
       await connection.add({
         name: addName.trim(),
-        product_type: 'uteke',
+        productType: 'uteke',
         url: addUrl.trim(),
-        auth_token: addToken.trim() || undefined,
-        auth_type: addToken.trim() ? 'bearer' : undefined,
+        authToken: addToken.trim() || undefined,
+        authType: addToken.trim() ? 'bearer' : undefined,
       });
       addName = '';
       addUrl = '';
