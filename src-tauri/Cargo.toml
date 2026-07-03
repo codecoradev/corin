@@ -1,6 +1,6 @@
 [package]
 name = "corin"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 description = "CorIn — Cora Intelligence. Desktop knowledge workstation."
 
@@ -22,7 +22,7 @@ chrono = "0.4"
 dirs = "6"
 toml = "1.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-uteke-core = { git = "https://github.com/codecoradev/uteke.git", branch = "develop" }
+uteke-core = { version = "0.6.4", default-features = false }
 
 [dev-dependencies]
 

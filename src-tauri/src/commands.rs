@@ -1,7 +1,10 @@
-//! IPC command layer — thin Tauri command wrappers over uteke-core.
+//! IPC command layer — Tauri commands over uteke-serve HTTP API.
 //!
 //! Every command is an `async fn` decorated with `#[tauri::command]`.
 //! State is held in [`AppState`] behind `tokio::sync::Mutex`.
+//!
+//! All memory CRUD goes through the HTTP client (`uteke_client::UtekeClient`).
+//! uteke-core is retained only for graph_store() (add_edge) and graph_data().
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -98,9 +101,9 @@ pub struct StatsResponse {
 
 /// Managed state shared across all Tauri commands.
 ///
-/// Uses uteke-core as the primary store (native embedding, graph,
-/// cosine auto-linking). CorIn's own SQLite DB is kept only for
-/// app-level settings (not memories).
+/// All memory CRUD goes through `uteke_client` (HTTP → uteke-serve).
+/// uteke-core is retained only for `graph_store()` and `graph_data()`.
+/// CorIn's own SQLite DB is for settings only.
 #[derive(Default)]
 pub struct AppState {
     /// Path to the CorIn SQLite database (~/.codecora/corin/corin.db).
@@ -108,18 +111,11 @@ pub struct AppState {
     /// CorIn SQLite connection for settings only.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
-    /// Uteke-core native store (embedding + graph + cosine auto-link).
+    /// Uteke-core instance — used only for graph_store() and graph_data().
     pub uteke: Option<uteke_core::Uteke>,
-    /// HTTP client for uteke-serve (semantic search, cosine auto-link).
+    /// HTTP client for uteke-serve (all memory CRUD).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
-}
-
-impl AppState {
-    /// Check if the uteke-core native store is available.
-    fn ensure_uteke(&self) -> Result<&uteke_core::Uteke, CommandError> {
-        self.uteke.as_ref().ok_or(CommandError::NotInitialized)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -128,24 +124,25 @@ impl AppState {
 
 #[tauri::command]
 pub async fn remember(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     content: String,
     tags: Vec<String>,
     namespace: Option<String>,
     _content_type: Option<String>,
     _importance: Option<f32>,
 ) -> Result<String, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
-
-    let tag_refs: Vec<&str> = tags.iter().map(|t| t.as_str()).collect();
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
     let ns = namespace.as_deref();
-
-    let id = uteke
-        .remember(&content, &tag_refs, None, ns)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    Ok(id)
+    client
+        .remember(&content, &tags, ns)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
 // NOTE: Auto-edge generation deferred to Phase 2 when uteke-core library
@@ -159,29 +156,18 @@ pub async fn recall(
     namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<SearchResult>, CommandError> {
-    let s = state.lock().await;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
     let limit = limit.unwrap_or(10);
 
-    // ── API-first: try uteke-serve ──
-    if let Some(client) = s.uteke_client.clone()
-        && client.is_available().await
-        && let Ok(results) = client.recall(&query, namespace.as_deref(), limit).await
-    {
-        return Ok(results
-            .into_iter()
-            .map(|r| SearchResult {
-                id: r.memory.id,
-                content: r.memory.content,
-                score: r.score,
-                tags: r.memory.tags,
-            })
-            .collect());
-    }
-
-    // ── Fallback: uteke-core native recall ──
-    let uteke = s.ensure_uteke()?;
-    let results = uteke
-        .recall(&query, limit, None, namespace.as_deref(), 0.0)
+    let results = client
+        .recall(&query, namespace.as_deref(), limit)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     Ok(results
@@ -214,43 +200,19 @@ pub async fn list(
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
     let limit = limit.unwrap_or(50);
     let offset = offset.unwrap_or(0);
 
-    // ── API-first: try uteke-serve ──
-    {
-        let client = {
-            let s = state.lock().await;
-            s.uteke_client.clone()
-        };
-        if let Some(client) = client
-            && client.is_available().await
-            && let Ok(memories) = client
-                .list(namespace.as_deref(), tag.as_deref(), limit, offset)
-                .await
-        {
-            return Ok(memories
-                .into_iter()
-                .map(|m| MemoryEntry {
-                    id: m.id,
-                    content: m.content,
-                    tags: m.tags,
-                    content_type: Some(m.content_type),
-                    importance: Some(m.importance),
-                    namespace: Some(m.namespace),
-                    created_at: Some(m.created_at),
-                    updated_at: Some(m.updated_at),
-                })
-                .collect());
-        }
-    }
-
-    // ── Fallback: uteke-core native list ──
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
-    let memories = uteke
-        .store()
-        .list(tag.as_deref(), namespace.as_deref(), limit, offset)
+    let memories = client
+        .list(namespace.as_deref(), tag.as_deref(), limit, offset)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     Ok(memories
@@ -260,10 +222,10 @@ pub async fn list(
             content: m.content,
             tags: m.tags,
             content_type: Some(m.content_type),
-            importance: Some(m.importance as f32),
-            namespace: Some(m.namespace.clone()),
-            created_at: Some(m.created_at.to_rfc3339()),
-            updated_at: Some(m.updated_at.to_rfc3339()),
+            importance: Some(m.importance),
+            namespace: Some(m.namespace),
+            created_at: Some(m.created_at),
+            updated_at: Some(m.updated_at),
         })
         .collect())
 }
@@ -273,11 +235,16 @@ pub async fn forget(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<(), CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
-    uteke
-        .store()
-        .delete(&id)
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .forget(&id)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(())
 }
@@ -287,23 +254,27 @@ pub async fn get_memory(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     id: String,
 ) -> Result<MemoryEntry, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
-    let m = uteke
-        .store()
-        .get_by_id(&id)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .ok_or(CommandError::NotFound(id))?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let m = client
+        .get(&id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     Ok(MemoryEntry {
         id: m.id,
         content: m.content,
         tags: m.tags,
         content_type: Some(m.content_type),
-        importance: Some(m.importance as f32),
+        importance: Some(m.importance),
         namespace: Some(m.namespace),
-        created_at: Some(m.created_at.to_rfc3339()),
-        updated_at: Some(m.updated_at.to_rfc3339()),
+        created_at: Some(m.created_at),
+        updated_at: Some(m.updated_at),
     })
 }
 
@@ -317,35 +288,46 @@ pub async fn get_graph_data(
     namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let (client, gd) = {
+        let s = state.lock().await;
+        let client = s.uteke_client.clone();
+        let gd = s
+            .uteke
+            .as_ref()
+            .and_then(|u| u.graph_data(namespace.as_deref()).ok());
+        (client, gd)
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let Some(gd) = gd else {
+        return Ok(GraphData {
+            nodes: vec![],
+            edges: vec![],
+        });
+    };
     let limit = limit.unwrap_or(100);
 
-    let gd = uteke
-        .graph_data(namespace.as_deref())
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    // Convert uteke-core GraphData → CorIn GraphData
-    let nodes: Vec<MemoryEntry> = gd
-        .nodes
-        .into_iter()
-        .take(limit)
-        .filter_map(|n| {
-            // GraphNode has memory_id; fetch memory to get content
-            let mid = n.memory_id.as_deref()?;
-            let m = uteke.get_by_id(mid).ok()??;
-            Some(MemoryEntry {
+    // Fetch memory content via HTTP for each graph node
+    let mut nodes: Vec<MemoryEntry> = Vec::new();
+    for n in gd.nodes.into_iter().take(limit) {
+        let mid = match n.memory_id.as_deref() {
+            Some(id) => id,
+            None => continue,
+        };
+        if let Ok(m) = client.get(mid).await {
+            nodes.push(MemoryEntry {
                 id: m.id,
                 content: m.content,
                 tags: m.tags,
                 content_type: Some(m.content_type),
-                importance: Some(m.importance as f32),
+                importance: Some(m.importance),
                 namespace: Some(m.namespace),
-                created_at: Some(m.created_at.to_rfc3339()),
-                updated_at: Some(m.updated_at.to_rfc3339()),
-            })
-        })
-        .collect();
+                created_at: Some(m.created_at),
+                updated_at: Some(m.updated_at),
+            });
+        }
+    }
 
     let node_id_set: std::collections::HashSet<String> =
         nodes.iter().map(|n| n.id.clone()).collect();
@@ -372,14 +354,20 @@ pub async fn get_neighbors(
     depth: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
     let _depth = depth.unwrap_or(1);
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let (client, gd) = {
+        let s = state.lock().await;
+        let client = s.uteke_client.clone();
+        let gd = s.uteke.as_ref().and_then(|u| u.graph_data(None).ok());
+        (client, gd)
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let Some(gd) = gd else {
+        return Ok(vec![]);
+    };
 
-    // Use graph_store to find neighbors via edges
-    let gd = uteke
-        .graph_data(None)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
+    // Use graph_data to find neighbors via edges
     let neighbor_ids: std::collections::HashSet<String> = gd
         .edges
         .iter()
@@ -395,16 +383,16 @@ pub async fn get_neighbors(
 
     let mut entries = Vec::new();
     for nid in neighbor_ids {
-        if let Ok(Some(m)) = uteke.get_by_id(&nid) {
+        if let Ok(m) = client.get(&nid).await {
             entries.push(MemoryEntry {
                 id: m.id,
                 content: m.content,
                 tags: m.tags,
                 content_type: Some(m.content_type),
-                importance: Some(m.importance as f32),
+                importance: Some(m.importance),
                 namespace: Some(m.namespace),
-                created_at: Some(m.created_at.to_rfc3339()),
-                updated_at: Some(m.updated_at.to_rfc3339()),
+                created_at: Some(m.created_at),
+                updated_at: Some(m.updated_at),
             });
         }
     }
@@ -427,31 +415,36 @@ pub async fn add_edge(
         ));
     }
 
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
-    // Verify both nodes exist
-    if uteke
-        .get_by_id(&source)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .is_none()
-    {
+    // Verify both nodes exist via HTTP
+    if client.get(&source).await.is_err() {
         return Err(CommandError::NotFound(source));
     }
-    if uteke
-        .get_by_id(&target)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?
-        .is_none()
-    {
+    if client.get(&target).await.is_err() {
         return Err(CommandError::NotFound(target));
     }
 
-    let rel = edge_type.as_deref().unwrap_or("related");
-    let w = weight.unwrap_or(1.0) as f64;
-
-    let gs = uteke_core::graph::GraphStore::new(uteke.graph_store());
-    gs.add_edge(&source, &target, rel, w)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    // add_edge must run inside the lock — graph_store() returns &Connection
+    // that borrows from the Uteke instance inside Mutex<AppState>.
+    {
+        let s = state.lock().await;
+        let Some(uteke) = s.uteke.as_ref() else {
+            return Err(CommandError::NotInitialized);
+        };
+        let conn = uteke.graph_store();
+        let gs = uteke_core::graph::GraphStore::new(conn);
+        let rel = edge_type.as_deref().unwrap_or("related");
+        let w = weight.unwrap_or(1.0) as f64;
+        gs.add_edge(&source, &target, rel, w)
+            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    }
 
     Ok(0) // uteke-core edges use string IDs, not auto-increment i64
 }
@@ -477,25 +470,27 @@ pub async fn remove_edge(
 pub async fn list_rooms(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<Vec<RoomEntry>, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
-    let rooms = uteke
-        .store()
-        .list_rooms(None)
+    let rooms = client
+        .rooms(None)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     let entries: Vec<RoomEntry> = rooms
         .into_iter()
-        .map(|r| {
-            let stats = uteke.store().room_stats(&r.id).unwrap_or(None);
-            RoomEntry {
-                id: r.id.clone(),
-                name: r.title.unwrap_or_else(|| r.id.clone()),
-                participant_count: stats.as_ref().map(|s| s.participant_count).unwrap_or(0),
-                memory_count: stats.as_ref().map(|s| s.memory_count).unwrap_or(0),
-                created_at: Some(r.created_at.clone()),
-            }
+        .map(|r| RoomEntry {
+            id: r.id.clone(),
+            name: r.title.unwrap_or_else(|| r.id.clone()),
+            participant_count: 0,
+            memory_count: 0,
+            created_at: Some(r.created_at),
         })
         .collect();
 
@@ -504,7 +499,7 @@ pub async fn list_rooms(
 
 #[tauri::command]
 pub async fn get_room_summary(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<String, CommandError> {
     let client = {
@@ -523,7 +518,7 @@ pub async fn get_room_summary(
 
 #[tauri::command]
 pub async fn create_room(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     name: String,
     namespace: Option<String>,
     _tags: Option<Vec<String>>,
@@ -546,7 +541,7 @@ pub async fn create_room(
 
 #[tauri::command]
 pub async fn get_room_document(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<String, CommandError> {
     let client = {
@@ -844,7 +839,7 @@ pub async fn uteke_graph(
     namespace: Option<String>,
     _limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    // ── API-first: try uteke-serve HTTP ──
+    // ── HTTP-only via uteke-serve ──
     {
         let client = {
             let s = state.lock().await;
@@ -888,44 +883,54 @@ pub async fn uteke_graph(
     }
 
     // ── Fallback: uteke-core native graph (cosine auto-linked edges) ──
-    let s = state.lock().await;
-    if let Some(uteke) = s.uteke.as_ref() {
-        let gd = uteke
-            .graph_data(namespace.as_deref())
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    // graph_data() still exists on uteke-core, but get_by_id() is removed.
+    // Fetch memory content via HTTP for each graph node.
+    {
+        let (client, gd) = {
+            let s = state.lock().await;
+            let client = s.uteke_client.clone();
+            let gd = s
+                .uteke
+                .as_ref()
+                .and_then(|u| u.graph_data(namespace.as_deref()).ok());
+            (client, gd)
+        };
 
-        let nodes: Vec<MemoryEntry> = gd
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                let mid = n.memory_id.as_deref()?;
-                let m = uteke.get_by_id(mid).ok().flatten()?;
-                Some(MemoryEntry {
-                    id: m.id,
-                    content: m.content,
-                    tags: m.tags,
-                    content_type: Some(m.content_type),
-                    importance: Some(m.importance as f32),
-                    namespace: Some(m.namespace),
-                    created_at: Some(m.created_at.to_rfc3339()),
-                    updated_at: Some(m.updated_at.to_rfc3339()),
+        if let (Some(client), Some(gd)) = (client, gd) {
+            let mut nodes: Vec<MemoryEntry> = Vec::new();
+            for n in &gd.nodes {
+                let mid = match n.memory_id.as_deref() {
+                    Some(id) => id,
+                    None => continue,
+                };
+                if let Ok(m) = client.get(mid).await {
+                    nodes.push(MemoryEntry {
+                        id: m.id,
+                        content: m.content,
+                        tags: m.tags,
+                        content_type: Some(m.content_type),
+                        importance: Some(m.importance),
+                        namespace: Some(m.namespace),
+                        created_at: Some(m.created_at),
+                        updated_at: Some(m.updated_at),
+                    });
+                }
+            }
+
+            let edges: Vec<GraphEdge> = gd
+                .edges
+                .iter()
+                .enumerate()
+                .map(|(i, e)| GraphEdge {
+                    id: Some(i as i64),
+                    source: e.source_id.clone(),
+                    target: e.target_id.clone(),
+                    weight: Some(e.weight as f32),
                 })
-            })
-            .collect();
+                .collect();
 
-        let edges: Vec<GraphEdge> = gd
-            .edges
-            .iter()
-            .enumerate()
-            .map(|(i, e)| GraphEdge {
-                id: Some(i as i64),
-                source: e.source_id.clone(),
-                target: e.target_id.clone(),
-                weight: Some(e.weight as f32),
-            })
-            .collect();
-
-        return Ok(GraphData { nodes, edges });
+            return Ok(GraphData { nodes, edges });
+        }
     }
 
     Ok(GraphData {
@@ -1072,27 +1077,30 @@ pub async fn uteke_room_recall(
     limit: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
     let limit = limit.unwrap_or(20);
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
-    // Use native store — the HTTP /room/recall endpoint has a namespace
-    // scoping bug and returns 0 results. Native recall_room works correctly.
-    let results = uteke
-        .store()
-        .recall_room(&room_id, None, limit)
+    let results = client
+        .room_recall(&room_id, limit)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     Ok(results
         .into_iter()
-        .map(|m| MemoryEntry {
-            id: m.id,
-            content: m.content,
-            tags: m.tags,
-            content_type: Some(m.content_type),
-            importance: Some(m.importance as f32),
-            namespace: Some(m.namespace),
-            created_at: Some(m.created_at.to_rfc3339()),
-            updated_at: Some(m.updated_at.to_rfc3339()),
+        .map(|r| MemoryEntry {
+            id: r.memory.id,
+            content: r.memory.content,
+            tags: r.memory.tags,
+            content_type: Some(r.memory.content_type),
+            importance: Some(r.memory.importance),
+            namespace: Some(r.memory.namespace),
+            created_at: Some(r.memory.created_at),
+            updated_at: Some(r.memory.updated_at),
         })
         .collect())
 }
@@ -1137,50 +1145,27 @@ pub async fn uteke_stats(
 pub async fn stats(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<StatsResponse, CommandError> {
-    // ── API-first: try uteke-serve before touching local store ──
-    {
-        let client = {
-            let s = state.lock().await;
-            s.uteke_client.clone()
-        };
-        if let Some(client) = client
-            && client.is_available().await
-            && let Ok(server_stats) = client.stats().await
-        {
-            let total_namespaces = client.namespaces().await.unwrap_or_default().len();
-            return Ok(StatsResponse {
-                total_memories: server_stats.total_memories,
-                total_namespaces,
-                total_tags: server_stats.unique_tags,
-                total_edges: 0,
-                db_size_bytes: server_stats.db_size_bytes,
-            });
-        }
-    }
+    // HTTP-only via uteke-serve
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
-    // ── Fallback: read from uteke-core native store ──
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
-
-    let total_memories = uteke.count(None).unwrap_or(0);
-    let namespaces = uteke.list_namespaces().unwrap_or_default();
-    let total_namespaces = namespaces.len();
-    let tags = uteke.store().unique_tags(None).unwrap_or_default();
-
-    let graph = uteke.graph_data(None).map(|gd| gd.edges.len()).unwrap_or(0);
-
-    let db_size_bytes = uteke_core::uteke_home()
-        .ok()
-        .and_then(|p| std::fs::metadata(p.join("uteke.db")).ok())
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let server_stats = client
+        .stats()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    let total_namespaces = client.namespaces().await.unwrap_or_default().len();
 
     Ok(StatsResponse {
-        total_memories,
+        total_memories: server_stats.total_memories,
         total_namespaces,
-        total_tags: tags.len(),
-        total_edges: graph,
-        db_size_bytes,
+        total_tags: server_stats.unique_tags,
+        total_edges: 0,
+        db_size_bytes: server_stats.db_size_bytes,
     })
 }
 
@@ -1188,11 +1173,16 @@ pub async fn stats(
 pub async fn list_namespaces(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
 ) -> Result<Vec<String>, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
-    let namespaces = uteke
-        .store()
-        .list_namespaces()
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let namespaces = client
+        .namespaces()
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(namespaces)
 }
@@ -1200,30 +1190,31 @@ pub async fn list_namespaces(
 #[tauri::command]
 pub async fn list_tags(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    namespace: Option<String>,
+    _namespace: Option<String>,
 ) -> Result<HashMap<String, usize>, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
-    let tags = uteke
-        .store()
-        .tags_with_counts(namespace.as_deref())
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    // No direct HTTP endpoint for tags_with_counts.
+    // Approximate with namespaces_with_counts (namespace names as "tags").
+    let ns_counts = client.namespaces_with_counts().await.unwrap_or_default();
 
-    let tag_counts: HashMap<String, usize> = tags.into_iter().map(|t| (t.name, t.count)).collect();
+    let tag_counts: HashMap<String, usize> = ns_counts
+        .into_iter()
+        .map(|nc| (nc.name, nc.count))
+        .collect();
 
-    // Sort by count descending, take top 50
-    let mut sorted: Vec<(String, usize)> = tag_counts.into_iter().collect();
-    sorted.sort_by_key(|a| std::cmp::Reverse(a.1));
-    sorted.truncate(50);
-    let top: HashMap<String, usize> = sorted.into_iter().collect();
-
-    Ok(top)
+    Ok(tag_counts)
 }
 
 #[tauri::command]
 pub async fn get_settings(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<HashMap<String, String>, CommandError> {
     let s = state.lock().await;
     let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
@@ -1242,7 +1233,7 @@ pub async fn get_settings(
 
 #[tauri::command]
 pub async fn set_settings(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     settings: HashMap<String, String>,
 ) -> Result<(), CommandError> {
     let mut s = state.lock().await;
@@ -1264,12 +1255,17 @@ pub async fn export_data(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     format: String,
 ) -> Result<String, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
-    let memories = uteke
-        .store()
+    let memories = client
         .list(None, None, 10000, 0)
+        .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     match format.as_str() {
@@ -1282,8 +1278,8 @@ pub async fn export_data(
                     "content": m.content,
                     "tags": m.tags,
                     "namespace": m.namespace,
-                    "created_at": m.created_at.to_rfc3339(),
-                    "updated_at": m.updated_at.to_rfc3339(),
+                    "created_at": m.created_at,
+                    "updated_at": m.updated_at,
                 })).collect::<Vec<_>>(),
             });
             Ok(serde_json::to_string_pretty(&export).unwrap_or_default())
@@ -1297,7 +1293,7 @@ pub async fn export_data(
                     m.content,
                     m.tags.join(", "),
                     m.namespace,
-                    m.created_at.to_rfc3339(),
+                    m.created_at,
                 ));
             }
             Ok(doc)
@@ -1314,8 +1310,13 @@ pub async fn import_data(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     data: String,
 ) -> Result<usize, CommandError> {
-    let s = state.lock().await;
-    let uteke = s.ensure_uteke()?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
 
     let parsed: serde_json::Value =
         serde_json::from_str(&data).map_err(|e| CommandError::Uteke(e.to_string()))?;
@@ -1347,9 +1348,9 @@ pub async fn import_data(
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let tag_refs: Vec<&str> = tags.iter().map(|t| t.as_str()).collect();
-        uteke
-            .remember(content, &tag_refs, None, namespace.as_deref())
+        client
+            .remember(content, &tags, namespace.as_deref())
+            .await
             .map_err(|e| CommandError::Uteke(e.to_string()))?;
         count += 1;
     }
