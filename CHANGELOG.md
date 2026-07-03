@@ -1,3 +1,68 @@
+## [0.2.0] — 2026-07-03
+
+### Added
+
+**Connection Edit Form (perf follow-up)**
+- Pencil (✎) edit button per connection card → inline form pre-filled with
+  name + url. Token field intentionally blank (backend never returns the
+  stored token; leaving blank keeps the existing token, typing replaces it).
+- Editing the primary connection live-rebuilds the client so URL/token
+  changes take effect immediately (no restart).
+
+**Fast Load + Pagination + In-Process Cache (perf)**
+- Killed 21-way namespace fan-out: Dashboard recent now uses a single
+  cross-namespace `/recall` seed (uteke #448 is fixed for recall); search is
+  one call instead of N.
+- `stores/cache.svelte.ts` — short-TTL in-process cache (namespaces 30s,
+  stats 60s). Invalidated on remember/forget/reconnect/disconnect/set-primary.
+  No external infra (Redis) — desktop app stays local-first.
+- `stores/pagination.svelte.ts` — generic offset pager; MemoryList +
+  NamespacesView use "Load more" instead of fixed-page prev/next.
+- NamespacesView: counts are optional ("Load counts" button, limit:1 per ns
+  concurrently) instead of sequential limit:500 fetches; detail is paginated.
+
+**Runtime Reconnect + Status Polling (#83)**
+- `reconnect_connection(id)` — rebuilds the live `uteke_client` from a connection
+  without restarting the app; also health-checks and updates status
+- `disconnect_connection` — drops the live client (recall/search fail until
+  reconnect); marks primary connection `disconnected`, preserves the row + flag
+- `set_primary_connection` now live-swaps the active backend immediately
+- "Set Primary" only offered on `connected` connections; "Disconnect" only on
+  the connected primary
+- `stores/connections.svelte.ts` — reactive store with periodic health polling
+  (primary every 15s, all every 60s) so status badges stay fresh
+- Reconnect / Disconnect buttons per connection card
+- In-app delete confirmation dialog (Tauri webview blocks native `confirm()`)
+- Security: db file perms set to `0600` on startup; auth token wiped to NULL
+  before row deletion (`clear_token`); tokens masked in logs (`mask_token_log`)
+
+**Remote Connection Manager (#37, #77–#82)**
+- `connections` table + trait-based `ProductAdapter` / `MemoryBackend` adapters
+- `UtekeAdapter` wraps the HTTP client with bearer auth on every request
+- Config resolution priority: DB primary → `UTEKE_SERVER_URL` env → TOML → default
+- Local-vs-remote detection skips local auto-start for remote URLs
+- Connection Manager UI in Settings: cards, add form, test, set primary, delete
+
+**Namespace Filter for Graph & Memories (#93)**
+- Multi-select namespace filter dropdown (checkbox, search, select-all with
+  3-state indicator: ☑ all / ☐ none / ⊟ partial) — reusable `NamespaceFilter`
+  component shared by Graph and Memories views.
+- Per-namespace fan-out on both graph and list endpoints: `null` = all
+  namespaces, `[]` = none, `[...]` = explicit selection.
+- `/namespaces?with_counts=true` support (uteke #527) with graceful fallback
+  to plain `/namespaces` + `count: 0` on older servers.
+- Namespaces that error (read-only token, missing, etc.) are silently skipped;
+  remaining namespaces still load.
+- `AGENTS.md` — project-level pre-push checklist (cargo fmt, clippy, svelte-check).
+
+**Room Management UI (#74)**
+- Create room form (name + namespace) with Enter/Escape shortcuts
+- 3-tab detail panel: Timeline, Summary, Participants
+- Chronological timeline with relative timestamps and namespace badges
+- Room document viewer via uteke-serve room/document endpoint
+- Participant grouping by namespace with memory counts
+- Delete room with confirmation dialog (DELETE /room/delete endpoint)
+
 # Changelog
 
 All notable changes to CorIn will be documented in this file.

@@ -49,14 +49,15 @@ export const graph = {
 
 export const room = {
   list: () => invoke<RoomEntry[]>('list_rooms'),
-  getSummary: (id: string) => invoke<string>('get_room_summary', { room_id: id }),
-  getDocument: (id: string) => invoke<string>('get_room_document', { room_id: id }),
+  getSummary: (id: string) => invoke<string>('get_room_summary', { roomId: id }),
+  getDocument: (id: string) => invoke<string>('get_room_document', { roomId: id }),
   create: (name: string, opts?: { namespace?: string; tags?: string[] }) =>
     invoke<string>('create_room', {
       name,
       namespace: opts?.namespace ?? null,
       tags: opts?.tags ?? null,
     }),
+  delete: (id: string) => invoke<void>('delete_room', { roomId: id }),
 };
 
 export const system = {
@@ -67,7 +68,7 @@ export const system = {
   setSettings: (settings: Record<string, string>) => invoke<void>('set_settings', { settings }),
   exportData: (format: 'json' | 'markdown') => invoke<string>('export_data', { format }),
   importData: (data: string) => invoke<number>('import_data', { data }),
-  openDataDir: () => invoke<string>('init_data_dir'),
+  openDataDir: () => invoke<string>('init_data_dir'), // returns path, doesn't open file manager
 };
 
 // Tauri event listener
@@ -90,15 +91,17 @@ export const uteke = {
       limit: opts?.limit ?? null,
     }),
   namespaces: () => invoke<string[]>('uteke_namespaces'),
+  namespacesWithCounts: () => invoke<Array<{ name: string; count: number }>>('uteke_namespaces_with_counts'),
   rooms: (namespace?: string) =>
     invoke<{ id: string; title: string | null; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }[]>('uteke_rooms', {
       namespace: namespace ?? null,
     }),
   roomRecall: (roomId: string, limit?: number) =>
     invoke<MemoryEntry[]>('uteke_room_recall', { roomId, limit: limit ?? null }),
-  list: (opts?: { namespace?: string; tag?: string; limit?: number; offset?: number }) =>
+  list: (opts?: { namespace?: string; namespaces?: string[]; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,
+      namespaces: opts?.namespaces ?? null,
       tag: opts?.tag ?? null,
       limit: opts?.limit ?? null,
       offset: opts?.offset ?? null,
@@ -139,13 +142,13 @@ export const utekeServer = {
 
   forget: (id: string) => invoke<void>('uteke_forget', { id }),
 
-  graph: (namespace?: string) =>
+  graph: (namespace?: string, namespaces?: string[]) =>
     invoke<{
       nodes: Array<{ id: string; label: string; entity_type: string | null }>;
       edges: Array<{ source: string; target: string; relation: string; weight: number }>;
       stats: { node_count: number; edge_count: number; relation_types: string[] };
       hint?: string;
-    }>('uteke_server_graph', { namespace: namespace ?? null }),
+    }>('uteke_server_graph', { namespace: namespace ?? null, namespaces: namespaces ?? null }),
 
   stats: () => invoke<{
     total_memories?: number;
@@ -157,4 +160,55 @@ export const utekeServer = {
     available?: boolean;
     hint?: string;
   }>('uteke_server_stats'),
+};
+
+// AI Agent Integration (#55)
+export const agents = {
+  detect: () => invoke<Array<{ name: string; config_path: string; found: boolean }>>('detect_agents'),
+  generateAgentMd: (projectDir?: string) => invoke<string>('generate_agent_md', { projectDir: projectDir ?? null }),
+  runDream: () => invoke<{ success: boolean; result: unknown; hint?: string }>('run_dream_cycle'),
+};
+
+// Connection Manager (#37)
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  product_type: 'uteke';
+  url: string;
+  has_token: boolean;
+  capabilities: { read: boolean; write: boolean; search: boolean; realtime: boolean };
+  status: string;
+  is_primary: boolean;
+  created_at: string;
+  last_tested_at: string | null;
+}
+
+export interface HealthInfo {
+  success: boolean;
+  latency_ms: number;
+  version: string | null;
+  error: string | null;
+}
+
+export const connection = {
+  list: () => invoke<ConnectionInfo[]>('list_connections'),
+  add: (opts: {
+    name: string;
+    productType: string;
+    url: string;
+    authToken?: string;
+    authType?: string;
+  }) => invoke<string>('add_connection', opts),
+  update: (opts: {
+    id: string;
+    name?: string;
+    url?: string;
+    authToken?: string;
+    authType?: string;
+  }) => invoke<void>('update_connection', opts),
+  delete: (id: string) => invoke<void>('delete_connection', { id }),
+  test: (id: string) => invoke<HealthInfo>('test_connection', { id }),
+  setPrimary: (id: string) => invoke<void>('set_primary_connection', { id }),
+  reconnect: (id: string) => invoke<HealthInfo>('reconnect_connection', { id }),
+  disconnect: () => invoke<void>('disconnect_connection'),
 };

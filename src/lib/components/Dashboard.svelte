@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { system, memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
+  import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
+  import { getStats } from '../stores/cache.svelte';
   import type { StatsResponse, MemoryEntry } from '../ts/types';
 
   interface Props {
@@ -14,34 +15,41 @@
   let recent = $state<MemoryEntry[]>([]);
   let searchQuery = $state('');
   let loading = $state(true);
-  let utekeReady = $state(false);
-  let utekeStats = $state<StatsResponse | null>(null);
   let serverOnline = $state(false);
 
   async function loadData() {
     loading = true;
     try {
-      // Check if Uteke is available and merge data
-      utekeReady = await uteke.available();
-
-      // Check if uteke-serve is running (semantic search)
-      const status = await utekeServer.status();
+      // Cached stats + online check run concurrently (no view-switch refetch).
+      const [s, status] = await Promise.all([
+        getStats(),
+        utekeServer.status().catch(() => ({ available: false })),
+      ]);
+      stats = s;
       serverOnline = status.available;
 
-      if (utekeReady) {
-        // Read from Uteke DB (has actual data)
-        utekeStats = await uteke.stats();
-        recent = await uteke.list({ namespace: namespace ?? undefined, limit: 10 });
-        // Also get Hub stats for local data
-        try {
-          stats = await system.stats();
-        } catch {
-          stats = utekeStats;
-        }
+      // Recent memories.
+      // /recall is cross-namespace now (uteke #448 fixed) so a single
+      // call returns a diverse recent-ish seed across ALL namespaces —
+      // no more 21-way fan-out.
+      if (namespace) {
+        recent = await memoryApi.list({ namespace, limit: 10 }).catch(() => []);
+      } else if (serverOnline) {
+        const results = await utekeServer
+          .recall('knowledge memory note idea project', { limit: 10 })
+          .catch(() => []);
+        recent = results.map((r) => ({
+          id: r.id,
+          content: r.content,
+          tags: r.tags,
+          content_type: 'text',
+          importance: r.importance ?? null,
+          namespace: r.namespace ?? null,
+          created_at: null,
+          updated_at: null,
+        }));
       } else {
-        // Fallback to Hub DB only
-        stats = await system.stats();
-        recent = await memoryApi.list({ namespace: namespace ?? undefined, limit: 10 });
+        recent = await memoryApi.list({ limit: 10 }).catch(() => []);
       }
     } catch {
       // store not initialized yet
@@ -81,45 +89,22 @@
     <div class="loading">Loading...</div>
   {:else}
     <div class="stats-grid">
-      {#if utekeReady && utekeStats}
-        <div class="stat-card uteke-badge">
-          <div class="stat-value">{utekeStats.total_memories}</div>
-          <div class="stat-label">Uteke Memories</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_memories ?? 0}</div>
-          <div class="stat-label">Hub Memories</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{Math.max(utekeStats?.total_namespaces ?? 0, stats?.total_namespaces ?? 0)}</div>
-          <div class="stat-label">Namespaces</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{Math.max(utekeStats?.total_tags ?? 0, stats?.total_tags ?? 0)}</div>
-          <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{formatBytes((utekeStats?.db_size_bytes ?? 0) + (stats?.db_size_bytes ?? 0))}</div>
-          <div class="stat-label">Total DB Size</div>
-        </div>
-      {:else}
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_memories ?? 0}</div>
-          <div class="stat-label">Memories</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
-          <div class="stat-label">Namespaces</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_tags ?? 0}</div>
-          <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
-          <div class="stat-label">DB Size</div>
-        </div>
-      {/if}
+      <div class="stat-card">
+        <div class="stat-value">{stats?.total_memories ?? 0}</div>
+        <div class="stat-label">Memories</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
+        <div class="stat-label">Namespaces</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{stats?.total_tags ?? 0}</div>
+        <div class="stat-label">Tags</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
+        <div class="stat-label">DB Size</div>
+      </div>
     </div>
 
     <div class="recent-section">

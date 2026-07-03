@@ -10,19 +10,24 @@
   import MemoryEditor from './lib/components/MemoryEditor.svelte';
   import GraphView from './lib/components/GraphView.svelte';
   import RoomsView from './lib/components/RoomsView.svelte';
-  import SettingsView from './lib/components/SettingsView.svelte';
+  import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
+  import DetailPanel from './lib/components/DetailPanel.svelte';
 
   // App state
   let dataDirInitialized = $state(false);
   let dataDir = $state<string | null>(null);
   let activeView = $state<View>('dashboard');
-  let selectedMemoryId = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
   let namespace = $state<string | null>(null);
+
+  // Overlay state (views stay mounted underneath)
   let showEditor = $state(false);
+  let showSettings = $state(false);
+  let detailId = $state<string | null>(null);
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
+  let refreshKey = $state(0);
 
   async function initDataDir() {
     try {
@@ -36,21 +41,40 @@
 
   function navigate(view: View) {
     activeView = view;
-    selectedMemoryId = null;
     searchQuery = null;
+
+    // Settings is a modal popup, not a full view.
+    if (view === 'settings') {
+      showSettings = true;
+      return;
+    }
   }
 
-  function selectMemory(id: string) {
-    selectedMemoryId = id;
+  // ─── Memory detail (universal slide-in panel) ────────────────────
+  // Works from any view: dashboard, memories, namespaces, graph, rooms.
+  // The underlying view stays mounted — no re-render when returning.
+  function openDetail(id: string) {
+    detailId = id;
   }
 
-  function newMemory() {
-    editorMemory = null;
+  function closeDetail() {
+    detailId = null;
+  }
+
+  // Navigate within the detail panel (e.g. click a neighbor)
+  function detailNavigate(id: string) {
+    detailId = id;
+  }
+
+  // When a memory is edited from the detail panel
+  function editMemory(m: MemoryEntry) {
+    editorMemory = m;
     showEditor = true;
   }
 
-  function editMemory(m: MemoryEntry) {
-    editorMemory = m;
+  // ─── Memory editor ────────────────────────────────────────────────
+  function newMemory() {
+    editorMemory = null;
     showEditor = true;
   }
 
@@ -62,13 +86,12 @@
   function handleSave() {
     showEditor = false;
     editorMemory = null;
-    // Trigger re-render by toggling a state
-    if (activeView === 'dashboard' || activeView === 'memories') {
-      refreshKey++;
-    }
+    refreshKey++;
   }
 
-  let refreshKey = $state(0);
+  function closeSettings() {
+    showSettings = false;
+  }
 
   function quickSearch(query: string) {
     searchQuery = query;
@@ -76,12 +99,10 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    // Ctrl+B: toggle sidebar
     if (e.ctrlKey && e.key === 'b') {
       e.preventDefault();
       sidebarCollapsed = !sidebarCollapsed;
     }
-    // Ctrl+N: new memory (only if not already in editor)
     if (e.ctrlKey && e.key === 'n' && !showEditor) {
       e.preventDefault();
       newMemory();
@@ -90,9 +111,6 @@
 
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
-    // Auto-init data directory on startup
-    // setup() hook in lib.rs already initializes ~/.codecora/
-    // This call just ensures the connection is stored in state
     initDataDir();
     return () => window.removeEventListener('keydown', handleKeydown);
   });
@@ -105,7 +123,7 @@
       <h1>CorIn</h1>
       <p>Cora Intelligence — desktop knowledge workstation</p>
       <button class="primary-btn" onclick={initDataDir}>Initialize Workspace</button>
-      <p class="hint">Data will be stored in <code>~/.codecora/hub/</code></p>
+      <p>Data will be stored in <code>~/.codecora/corin/</code></p>
     </div>
   </div>
 {:else}
@@ -118,38 +136,45 @@
       oncollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
     />
 
+    <!--
+      Main content area — views stay mounted here.
+      No view is unmounted when a detail panel opens.
+      refreshKey forces re-fetch after editor save.
+    -->
     <main class="main-content">
-      {#if selectedMemoryId}
-        <MemoryDetail
-          memoryId={selectedMemoryId}
-          onedit={editMemory}
-          onback={() => {
-            selectedMemoryId = null;
-            refreshKey++;
-          }}
-          onneighborclick={selectMemory}
-        />
-      {:else if activeView === 'dashboard'}
+      {#if activeView === 'dashboard'}
         {#key refreshKey}
-          <Dashboard {namespace} onmemoryclick={selectMemory} onquicksearch={quickSearch} />
+          <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} />
         {/key}
       {:else if activeView === 'memories'}
         {#key refreshKey}
-          <MemoryList {namespace} onmemoryclick={selectMemory} onnewmemory={newMemory} />
+          <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} />
         {/key}
       {:else if activeView === 'namespaces'}
-        <NamespacesView
-          onmemoryclick={selectMemory}
-        />
+        <NamespacesView onmemoryclick={openDetail} />
       {:else if activeView === 'graph'}
-        <GraphView onmemoryclick={selectMemory} />
+        <GraphView onmemoryclick={openDetail} />
       {:else if activeView === 'rooms'}
-        <RoomsView {namespace} onmemoryclick={selectMemory} />
-      {:else if activeView === 'settings'}
-        <SettingsView />
+        <RoomsView {namespace} onmemoryclick={openDetail} />
       {/if}
     </main>
   </div>
+{/if}
+
+<!-- Universal slide-in detail panel (used by all views) -->
+{#if detailId}
+  <DetailPanel memoryId={detailId} onclose={closeDetail} onneighborclick={detailNavigate} onedit={editMemory}>
+    <MemoryDetail
+      memoryId={detailId}
+      onback={closeDetail}
+      onneighborclick={detailNavigate}
+      onedit={editMemory}
+    />
+  </DetailPanel>
+{/if}
+
+{#if showSettings}
+  <SettingsModal onclose={closeSettings} />
 {/if}
 
 {#if showEditor}
@@ -221,19 +246,5 @@
 
   .primary-btn:hover {
     opacity: 0.85;
-  }
-
-  .hint {
-    font-size: 0.8rem;
-    margin-top: 0.75rem;
-  }
-
-  .hint code {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    padding: 2px 6px;
-    background: var(--bg-tertiary);
-    border-radius: 3px;
-    color: var(--accent);
   }
 </style>

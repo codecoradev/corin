@@ -4,10 +4,13 @@
 //! defaults → config file → runtime overrides.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Default Uteke serve URL when config is missing or unreadable.
+const DEFAULT_SERVE_URL: &str = "http://127.0.0.1:8767";
 
 /// Root config structure — maps to `~/.codecora/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,14 +62,114 @@ pub fn codecora_root() -> Result<PathBuf, ConfigError> {
     Ok(home.join(".codecora"))
 }
 
-/// Resolve the Hub data directory: `~/.codecora/hub/`.
-pub fn hub_dir() -> Result<PathBuf, ConfigError> {
-    Ok(codecora_root()?.join("hub"))
+/// Resolve the CorIn data directory: `~/.codecora/corin/`.
+pub fn corin_dir() -> Result<PathBuf, ConfigError> {
+    Ok(codecora_root()?.join("corin"))
 }
 
-/// Resolve the Hub database path: `~/.codecora/hub/hub.db`.
-pub fn hub_db_path() -> Result<PathBuf, ConfigError> {
-    Ok(hub_dir()?.join("hub.db"))
+/// Resolve the CorIn database path: `~/.codecora/corin/corin.db`.
+pub fn corin_db_path() -> Result<PathBuf, ConfigError> {
+    Ok(corin_dir()?.join("corin.db"))
+}
+
+/// Detect the Uteke serve URL by reading Uteke config files.
+///
+/// Tries both config files in order:
+/// 1. `~/.uteke/uteke.toml` (main config, section `[server]`)
+/// 2. `~/.uteke/config.toml` (legacy/fallback)
+///
+/// Reads `[server].host` and `[server].port`, falling back to
+/// `DEFAULT_SERVE_URL` (`http://127.0.0.1:8767`) when config is missing
+/// or the `[server]` section is absent (all keys commented out).
+pub fn detect_uteke_serve_url() -> String {
+    let Some(home) = dirs::home_dir() else {
+        return DEFAULT_SERVE_URL.to_string();
+    };
+
+    // Try both config files: uteke.toml first, then config.toml.
+    for name in &["uteke.toml", "config.toml"] {
+        let path = home.join(format!(".uteke/{name}"));
+        let Ok(contents) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(parsed) = contents.parse::<toml::Value>() else {
+            continue;
+        };
+
+        // Uteke uses [server] section with `host` and `port` keys.
+        // Also check [serve] as a fallback for alternative spellings.
+        let section = parsed.get("server").or_else(|| parsed.get("serve"));
+        let Some(section) = section else {
+            continue;
+        };
+
+        let port = section.get("port").and_then(|p| {
+            p.as_integer()
+                .map(|i| i.to_string())
+                .or_else(|| p.as_str().map(String::from))
+        });
+
+        // Port found — build the URL.
+        if let Some(port) = port {
+            let host = section
+                .get("host")
+                .or_else(|| section.get("bind"))
+                .and_then(|h| h.as_str())
+                .unwrap_or("127.0.0.1");
+            return format!("http://{host}:{port}");
+        }
+
+        // Section exists but port not set — section is commented out.
+        // Continue to next config file or fall through to default.
+    }
+
+    DEFAULT_SERVE_URL.to_string()
+}
+
+/// Resolve the uteke server configuration with full priority chain.
+///
+/// Priority:
+/// 1. Primary connection in DB (connections table, is_primary=1)
+/// 2. `UTEKE_SERVER_URL` environment variable
+/// 3. `~/.uteke/uteke.toml` / `config.toml` [server] section
+/// 4. `DEFAULT_SERVE_URL` fallback
+///
+/// Returns (url, auth_token).
+pub fn resolve_uteke_server(conn: Option<&rusqlite::Connection>) -> (String, Option<String>) {
+    // 1. DB primary connection (highest priority).
+    if let Some(Some(row)) = conn.and_then(|c| {
+        crate::connections::store::get_primary(c, crate::connections::ProductType::Uteke).ok()
+    }) {
+        return (row.url, row.auth_token);
+    }
+
+    // 2. Environment variable.
+    if let Ok(url) = std::env::var("UTEKE_SERVER_URL") {
+        let token = std::env::var("UTEKE_AUTH_TOKEN").ok();
+        return (url, token);
+    }
+
+    // 3. TOML config (legacy).
+    let url = detect_uteke_serve_url();
+    (url, None)
+}
+
+/// Whether a URL points to a remote (non-local) server.
+pub fn is_remote_url(url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    // Strip the port (":8767") and/or path ("/api") to get the bare host.
+    // A URL with no port and no path (e.g. "https://uteke.example.dev")
+    // is itself the host — don't treat it as local.
+    let host = match rest.split_once(':').or_else(|| rest.split_once('/')) {
+        Some((h, _)) => h,
+        None => rest,
+    };
+    host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0"
 }
 
 /// Resolve the Uteke symlink directory: `~/.codecora/uteke/`.
@@ -204,20 +307,57 @@ pub fn config_path() -> Result<PathBuf, ConfigError> {
 ///
 /// Creates:
 /// - `~/.codecora/`
-/// - `~/.codecora/hub/`
+/// - `~/.codecora/corin/`
 /// - `~/.codecora/cache/`
 /// - `~/.codecora/logs/`
+///
+/// Also runs legacy migration: if `~/.codecora/hub/hub.db` exists, it is
+/// moved to `~/.codecora/corin/corin.db` and the old `hub/` directory is
+/// removed.
 pub fn ensure_directory_structure() -> Result<PathBuf, ConfigError> {
     let root = codecora_root()?;
-    let hub = hub_dir()?;
+    let corin = corin_dir()?;
 
-    for dir in &[&root, &hub, &root.join("cache"), &root.join("logs")] {
+    for dir in &[&root, &corin, &root.join("cache"), &root.join("logs")] {
         if !dir.exists() {
             fs::create_dir_all(dir).map_err(|e| ConfigError::Io(e.to_string()))?;
         }
     }
 
-    Ok(hub)
+    // Legacy migration: ~/.codecora/hub/hub.db → ~/.codecora/corin/corin.db
+    migrate_legacy_hub_db(&root, &corin)?;
+
+    Ok(corin)
+}
+
+/// Migrate the old Hub database to the new CorIn path.
+///
+/// - Source: `~/.codecora/hub/hub.db`
+/// - Target: `~/.codecora/corin/corin.db`
+///
+/// If the source exists and the target does not, the file is moved.
+/// If both exist, the legacy file is left in place (user must decide).
+/// After a successful move, the now-empty `hub/` directory is removed.
+fn migrate_legacy_hub_db(root: &Path, corin_dir: &Path) -> Result<(), ConfigError> {
+    let legacy_hub_dir = root.join("hub");
+    let legacy_db = legacy_hub_dir.join("hub.db");
+    let new_db = corin_dir.join("corin.db");
+
+    if legacy_db.exists() && !new_db.exists() {
+        fs::rename(&legacy_db, &new_db).map_err(|e| ConfigError::Io(e.to_string()))?;
+
+        // Remove the old hub/ directory if it is now empty.
+        if legacy_hub_dir.exists()
+            && fs::read_dir(&legacy_hub_dir)
+                .map_err(|e| ConfigError::Io(e.to_string()))?
+                .next()
+                .is_none()
+        {
+            let _ = fs::remove_dir(&legacy_hub_dir);
+        }
+    }
+
+    Ok(())
 }
 
 /// Load config from `~/.codecora/config.toml`.
@@ -275,7 +415,7 @@ pub fn init_environment() -> Result<(PathBuf, CodecoraConfig), ConfigError> {
         config
     };
 
-    let db_path = hub_db_path()?;
+    let db_path = corin_db_path()?;
     Ok((db_path, config))
 }
 
@@ -335,6 +475,27 @@ mod tests {
     }
 
     #[test]
+    fn test_is_remote_url() {
+        // No port, no path (regression: previously parsed as local).
+        assert!(is_remote_url("https://uteke.ajianaz.dev"));
+        assert!(is_remote_url("http://uteke.example.com"));
+        // With port.
+        assert!(is_remote_url("https://uteke.ajianaz.dev:8767"));
+        assert!(is_remote_url("http://10.0.0.5:8767"));
+        // With path.
+        assert!(is_remote_url("https://api.example.com/memories"));
+        assert!(is_remote_url("https://example.com/uteke"));
+        // Local addresses stay local.
+        assert!(!is_remote_url("http://127.0.0.1:8767"));
+        assert!(!is_remote_url("http://localhost:8767"));
+        assert!(!is_remote_url("http://0.0.0.0:8767"));
+        assert!(!is_remote_url("http://127.0.0.1"));
+        // No scheme.
+        assert!(!is_remote_url("uteke.ajianaz.dev"));
+        assert!(!is_remote_url(""));
+    }
+
+    #[test]
     fn test_config_serialization() {
         let config = CodecoraConfig::default();
         let toml_str = toml::to_string(&config).unwrap();
@@ -358,9 +519,9 @@ max_results = 100
     }
 
     #[test]
-    fn test_hub_db_path_ends_with_hub_db() {
-        let path = hub_db_path().unwrap();
-        assert!(path.ends_with("hub.db"));
+    fn test_corin_db_path_ends_with_corin_db() {
+        let path = corin_db_path().unwrap();
+        assert!(path.ends_with("corin.db"));
     }
 
     #[test]
