@@ -3,9 +3,14 @@
   import { uteke } from '../ts/ipc';
 
   interface Props {
-    /** Currently selected namespaces. Empty/null = all selected. */
-    selected: string[];
-    onchange: (selected: string[]) => void;
+    /**
+     * Selected namespaces.
+     * - `null`  → all selected (default; show every namespace)
+     * - `[]`    → none selected (show nothing)
+     * - `[...]` → explicit selection
+     */
+    selected: string[] | null;
+    onchange: (selected: string[] | null) => void;
   }
 
   let { selected, onchange }: Props = $props();
@@ -15,9 +20,14 @@
   let filterText = $state('');
   let loading = $state(false);
 
-  // The full set of known namespace names — used to compute "all selected".
   let allNames = $derived(allNamespaces.map((n) => n.name));
-  let allSelected = $derived(selected.length === 0 || allNames.every((n) => selected.includes(n)));
+
+  // Resolve the effective selection: null (= all) becomes the full list so
+  // checkbox state and toggling work on a concrete set.
+  let effective = $derived<string[]>(selected === null ? allNames : selected);
+
+  let allSelected = $derived(allNames.length > 0 && effective.length === allNames.length);
+  let noneSelected = $derived(selected !== null && selected.length === 0);
 
   let filtered = $derived(
     filterText.trim()
@@ -42,23 +52,26 @@
     loadNamespaces();
   });
 
+  // Toggle a single namespace. Starts from the effective (resolved) set so
+  // unchecking one item from the "all" state removes just that item, instead
+  // of flipping to "only this item checked".
   function toggle(ns: string) {
-    const set = new Set(selected);
+    const set = new Set(effective);
     if (set.has(ns)) set.delete(ns);
     else set.add(ns);
-    // Emit the explicit selection. An empty array means "all" semantically,
-    // but callers may pass it through as the full set when fanning out.
-    onchange([...set]);
+    const arr = [...set];
+    // If we're back to the full set, normalize to null (= all) so the parent
+    // treats it as "no filter".
+    onchange(arr.length === allNames.length && allNames.length > 0 ? null : arr);
   }
 
   function toggleAll() {
-    // If all selected → clear (will read as "none"; we treat empty as all
-    // below, so instead selecting-all when none is the useful toggle).
     if (allSelected) {
-      // Deselect everything → effectively "none" unless caller maps to all.
+      // all → none
       onchange([]);
     } else {
-      onchange([...allNames]);
+      // none or partial → all
+      onchange(null);
     }
   }
 
@@ -71,16 +84,14 @@
     open = false;
   }
 
-  // Label shown on the trigger button.
-  let label = $derived(
-    loading
-      ? 'Loading…'
-      : allSelected || selected.length === 0
-        ? `All (${allNames.length})`
-        : selected.length === 1
-          ? selected[0]
-          : `${selected.length} of ${allNames.length}`,
-  );
+  let label = $derived.by(() => {
+    if (loading) return 'Loading…';
+    if (allNames.length === 0) return 'Namespaces';
+    if (selected === null || allSelected) return `All (${allNames.length})`;
+    if (noneSelected) return 'None';
+    if (selected.length === 1) return selected[0];
+    return `${selected.length} of ${allNames.length}`;
+  });
 
   $effect(() => {
     if (open) {
@@ -111,8 +122,8 @@
       </div>
 
       <button class="select-all" onclick={toggleAll}>
-        <span class="check">{allSelected ? '☑' : '☐'}</span>
-        <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
+        <span class="check">{allSelected ? '☑' : noneSelected ? '☐' : '⊟'}</span>
+        <span>{allSelected ? 'Deselect all' : noneSelected ? 'Select all' : 'Select all'}</span>
         <span class="count">{totalMemories}</span>
       </button>
 
@@ -123,7 +134,7 @@
           <label class="ns-row">
             <input
               type="checkbox"
-              checked={allSelected || selected.includes(ns.name)}
+              checked={effective.includes(ns.name)}
               onchange={() => toggle(ns.name)}
             />
             <span class="ns-name">{ns.name}</span>

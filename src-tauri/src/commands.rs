@@ -685,8 +685,19 @@ pub async fn uteke_list(
     }
 
     // Multi-namespace mode: fan out and merge.
+    // An explicit empty list means "none" → empty result.
     if let Some(ns_list) = namespaces {
         return list_multi_namespace(&client, &ns_list, tag.as_deref(), limit, offset).await;
+    }
+
+    // "All" mode (no namespace scope): legacy /list with no namespace only
+    // returns the "default" namespace. Fan out across ALL namespaces so the
+    // memories list reflects everything (works on any server version).
+    if namespace.is_none() {
+        let all_ns = client.namespaces().await.unwrap_or_default();
+        if !all_ns.is_empty() {
+            return list_multi_namespace(&client, &all_ns, tag.as_deref(), limit, offset).await;
+        }
     }
 
     let memories = client
@@ -1599,12 +1610,33 @@ pub async fn uteke_server_graph(
     }
 
     // Multi-namespace mode: user selected specific namespaces in the filter.
-    // Fetch /list per namespace (server /graph does not support multi-ns),
-    // merge, and build a tag-based graph. Works on both old and new servers.
+    // An explicit empty list means "none" → empty graph. A non-empty list
+    // fans out /list per namespace, merges, and builds a tag-based graph.
     if let Some(ns_list) = namespaces {
         return build_multi_namespace_graph(&client, &ns_list).await;
     }
 
+    // "All" mode (no namespace scope): legacy /list and /graph with no
+    // namespace only return the "default" namespace, so the graph would
+    // miss every other namespace. Fan out across ALL namespaces instead.
+    // Try the server's cosine /graph first (real edges if available).
+    if namespace.is_none() {
+        let graph = client
+            .graph(None)
+            .await
+            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+        if !graph.edges.is_empty() {
+            return Ok(serde_json::json!({
+                "nodes": graph.nodes,
+                "edges": graph.edges,
+                "stats": graph.stats,
+            }));
+        }
+        let all_ns = client.namespaces().await.unwrap_or_default();
+        return build_multi_namespace_graph(&client, &all_ns).await;
+    }
+
+    // Single namespace scoped (legacy path).
     let graph = client
         .graph(namespace.as_deref())
         .await

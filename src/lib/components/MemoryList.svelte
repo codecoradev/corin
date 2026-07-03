@@ -13,14 +13,24 @@
 
   let { namespace, onmemoryclick, onnewmemory }: Props = $props();
 
-  // Multi-namespace filter. Empty = all selected. Takes precedence over the
-  // single `namespace` prop when populated.
-  let selectedNamespaces = $state<string[]>([]);
+  // Multi-namespace filter. `null` = all (show every namespace),
+  // `[]` = none, array = explicit. Takes precedence over the single
+  // `namespace` prop when not null.
+  let selectedNamespaces = $state<string[] | null>(null);
 
   // Search result state (separate from paged list).
   let searchResults = $state<(MemoryEntry & { score?: number })[] | null>(null);
   let searchQuery = $state('');
   let searching = $state(false);
+
+  // Resolved single-namespace scope for search: the one picked namespace
+  // when exactly one is selected, else fall back to the prop. Computed via
+  // derived to avoid touching `.length` on a nullable state directly.
+  let searchNs = $derived(
+    selectedNamespaces !== null && selectedNamespaces.length === 1
+      ? selectedNamespaces[0]
+      : namespace,
+  );
 
   // Paged list (no search query).
   let utekeReady = $state(false);
@@ -32,10 +42,10 @@
 
   async function loadList() {
     await checkReady();
-    const useMulti = selectedNamespaces.length > 0;
+    // `null` (all) → backend fans out every namespace. `[]`/array → explicit.
     pager = createPager({
-      namespace: useMulti ? null : namespace,
-      namespaces: useMulti ? selectedNamespaces : undefined,
+      namespaces: selectedNamespaces,
+      namespace,
       pageSize: 20,
       useUteke: utekeReady,
     });
@@ -53,10 +63,6 @@
       // /recall is cross-namespace (uteke #448 fixed) — ONE call, no fan-out.
       // Scope to the single selected namespace when exactly one is picked;
       // search across all when multiple/all are selected.
-      const searchNs =
-        selectedNamespaces.length === 1
-          ? selectedNamespaces[0]
-          : namespace;
       const ok = await utekeServer.status().then((s) => s.available).catch(() => false);
       if (ok) {
         const results = await utekeServer.recall(searchQuery, {

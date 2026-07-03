@@ -18,8 +18,8 @@
   let totalNodesShown = $state(0);
   let totalEdgesShown = $state(0);
 
-  // Namespace filter state. Empty array = all namespaces selected.
-  let selectedNamespaces = $state<string[]>([]);
+  // Namespace filter state. `null` = all namespaces selected.
+  let selectedNamespaces = $state<string[] | null>(null);
 
   // Simulation state
   let W = 800;
@@ -149,12 +149,12 @@
         // The backend returns real cosine edges when available, or a
         // tag-based fallback graph so connections are always present.
         try {
-          // Pass the selected namespaces to the backend. The backend fans
-          // out `/list` across them (or uses `/graph` when a single ns is
-          // picked) and builds a tag-based graph. Works on legacy servers.
+          // Pass the selected namespaces to the backend. `null` (all) and `[]`
+          // (none) are distinct; the backend fans out across all namespaces
+          // when no selection is passed.
           const sg = await utekeServer.graph(
             undefined,
-            selectedNamespaces.length > 0 ? selectedNamespaces : undefined,
+            selectedNamespaces ?? undefined,
           );
           // Build the node pool from the server graph nodes. We only
           // seed INITIAL_SEED of them, but keep ALL edges that connect
@@ -632,7 +632,6 @@
 
 <div class="graph-view">
   <div class="graph-toolbar">
-    <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
     {#if !loading && totalNodesShown > 0}
       <span class="graph-info">{totalNodesShown} nodes · {totalEdgesShown} edges</span>
       {#if serverOnline}
@@ -642,6 +641,8 @@
       {/if}
       <span class="hint-text">click to expand · double-click for detail</span>
     {/if}
+    <div class="toolbar-spacer"></div>
+    <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
   <div class="canvas-wrap">
     <canvas
@@ -662,8 +663,9 @@
 <style>
   .graph-view { height: 100%; display: flex; flex-direction: column; }
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); }
+  .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
-  .hint-text { font-size: 0.7rem; color: var(--text-muted); opacity: 0.6; margin-left: auto; }
+  .hint-text { font-size: 0.7rem; color: var(--text-muted); opacity: 0.6; }
   .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
   .mode-tag.semantic { background: rgba(166,227,161,0.15); color: var(--green); }
   .mode-tag.local { background: rgba(148,226,213,0.15); color: var(--teal); }
