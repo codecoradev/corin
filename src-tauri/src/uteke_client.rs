@@ -289,10 +289,7 @@ impl UtekeClient {
         let names = self.namespaces().await?;
         Ok(names
             .into_iter()
-            .map(|name| NamespaceCount {
-                name,
-                count: 0,
-            })
+            .map(|name| NamespaceCount { name, count: 0 })
             .collect())
     }
 
