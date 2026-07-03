@@ -1,4 +1,4 @@
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-07-03
 
 ### Added
 
@@ -42,6 +42,18 @@
 - Config resolution priority: DB primary → `UTEKE_SERVER_URL` env → TOML → default
 - Local-vs-remote detection skips local auto-start for remote URLs
 - Connection Manager UI in Settings: cards, add form, test, set primary, delete
+
+**Namespace Filter for Graph & Memories (#93)**
+- Multi-select namespace filter dropdown (checkbox, search, select-all with
+  3-state indicator: ☑ all / ☐ none / ⊟ partial) — reusable `NamespaceFilter`
+  component shared by Graph and Memories views.
+- Per-namespace fan-out on both graph and list endpoints: `null` = all
+  namespaces, `[]` = none, `[...]` = explicit selection.
+- `/namespaces?with_counts=true` support (uteke #527) with graceful fallback
+  to plain `/namespaces` + `count: 0` on older servers.
+- Namespaces that error (read-only token, missing, etc.) are silently skipped;
+  remaining namespaces still load.
+- `AGENTS.md` — project-level pre-push checklist (cargo fmt, clippy, svelte-check).
 
 **Room Management UI (#74)**
 - Create room form (name + namespace) with Enter/Escape shortcuts
