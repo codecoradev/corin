@@ -57,15 +57,12 @@ jobs:
           - settings:
               platform: macos-latest
               args: "--target aarch64-apple-darwin"
-          # TODO: Re-enable after uteke-core fixes
-          # - numkong AVX-512 issue: codecoradev/uteke#533
-          # - ort-sys x86_64 prebuilt issue: codecoradev/uteke#534
-          # - settings:
-          #     platform: macos-latest
-          #     args: "--target x86_64-apple-darwin"
-          # - settings:
-          #     platform: ubuntu-22.04
-          #     args: ""
+          - settings:
+              platform: macos-latest
+              args: "--target x86_64-apple-darwin"
+          - settings:
+              platform: ubuntu-22.04
+              args: ""
           - settings:
               platform: windows-latest
               args: ""
@@ -86,7 +83,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.settings.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.settings.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
