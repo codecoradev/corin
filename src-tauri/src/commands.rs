@@ -1768,7 +1768,10 @@ async fn build_multi_namespace_graph(
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for ns in namespaces {
-        match client.list(Some(ns.as_str()), None, PER_NAMESPACE_LIMIT, 0).await {
+        match client
+            .list(Some(ns.as_str()), None, PER_NAMESPACE_LIMIT, 0)
+            .await
+        {
             Ok(list) => {
                 for m in list {
                     if seen_ids.insert(m.id.clone()) {
