@@ -118,15 +118,6 @@ pub struct AppState {
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
 }
 
-impl AppState {
-    /// Get the uteke HTTP client or return NotInitialized.
-    fn ensure_client(&self) -> Result<&crate::uteke_client::UtekeClient, CommandError> {
-        self.uteke_client
-            .as_ref()
-            .ok_or(CommandError::NotInitialized)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Commands: Memory CRUD
 // ---------------------------------------------------------------------------
