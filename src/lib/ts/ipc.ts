@@ -91,15 +91,17 @@ export const uteke = {
       limit: opts?.limit ?? null,
     }),
   namespaces: () => invoke<string[]>('uteke_namespaces'),
+  namespacesWithCounts: () => invoke<Array<{ name: string; count: number }>>('uteke_namespaces_with_counts'),
   rooms: (namespace?: string) =>
     invoke<{ id: string; title: string | null; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }[]>('uteke_rooms', {
       namespace: namespace ?? null,
     }),
   roomRecall: (roomId: string, limit?: number) =>
     invoke<MemoryEntry[]>('uteke_room_recall', { roomId, limit: limit ?? null }),
-  list: (opts?: { namespace?: string; tag?: string; limit?: number; offset?: number }) =>
+  list: (opts?: { namespace?: string; namespaces?: string[]; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,
+      namespaces: opts?.namespaces ?? null,
       tag: opts?.tag ?? null,
       limit: opts?.limit ?? null,
       offset: opts?.offset ?? null,
@@ -140,13 +142,13 @@ export const utekeServer = {
 
   forget: (id: string) => invoke<void>('uteke_forget', { id }),
 
-  graph: (namespace?: string) =>
+  graph: (namespace?: string, namespaces?: string[]) =>
     invoke<{
       nodes: Array<{ id: string; label: string; entity_type: string | null }>;
       edges: Array<{ source: string; target: string; relation: string; weight: number }>;
       stats: { node_count: number; edge_count: number; relation_types: string[] };
       hint?: string;
-    }>('uteke_server_graph', { namespace: namespace ?? null }),
+    }>('uteke_server_graph', { namespace: namespace ?? null, namespaces: namespaces ?? null }),
 
   stats: () => invoke<{
     total_memories?: number;

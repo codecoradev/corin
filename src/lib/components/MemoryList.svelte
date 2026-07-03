@@ -3,6 +3,7 @@
   import { createPager } from '../stores/pagination.svelte';
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry } from '../ts/types';
+  import NamespaceFilter from './NamespaceFilter.svelte';
 
   interface Props {
     namespace: string | null;
@@ -12,10 +13,24 @@
 
   let { namespace, onmemoryclick, onnewmemory }: Props = $props();
 
+  // Multi-namespace filter. `null` = all (show every namespace),
+  // `[]` = none, array = explicit. Takes precedence over the single
+  // `namespace` prop when not null.
+  let selectedNamespaces = $state<string[] | null>(null);
+
   // Search result state (separate from paged list).
   let searchResults = $state<(MemoryEntry & { score?: number })[] | null>(null);
   let searchQuery = $state('');
   let searching = $state(false);
+
+  // Resolved single-namespace scope for search: the one picked namespace
+  // when exactly one is selected, else fall back to the prop. Computed via
+  // derived to avoid touching `.length` on a nullable state directly.
+  let searchNs = $derived(
+    selectedNamespaces !== null && selectedNamespaces.length === 1
+      ? selectedNamespaces[0]
+      : namespace,
+  );
 
   // Paged list (no search query).
   let utekeReady = $state(false);
@@ -27,7 +42,13 @@
 
   async function loadList() {
     await checkReady();
-    pager = createPager({ namespace, pageSize: 20, useUteke: utekeReady });
+    // `null` (all) → backend fans out every namespace. `[]`/array → explicit.
+    pager = createPager({
+      namespaces: selectedNamespaces,
+      namespace,
+      pageSize: 20,
+      useUteke: utekeReady,
+    });
     await pager.loadInitial();
   }
 
@@ -40,10 +61,12 @@
     try {
       await checkReady();
       // /recall is cross-namespace (uteke #448 fixed) — ONE call, no fan-out.
+      // Scope to the single selected namespace when exactly one is picked;
+      // search across all when multiple/all are selected.
       const ok = await utekeServer.status().then((s) => s.available).catch(() => false);
       if (ok) {
         const results = await utekeServer.recall(searchQuery, {
-          namespace: namespace ?? undefined,
+          namespace: searchNs ?? undefined,
           limit: 20,
         });
         searchResults = results.map((r) => ({
@@ -98,6 +121,7 @@
   // Reload list when namespace changes; clear any active search.
   $effect(() => {
     namespace;
+    selectedNamespaces;
     searchResults = null;
     searchQuery = '';
     loadList();
@@ -130,6 +154,7 @@
       {/if}
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
+    <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
 
   {#if isLoading && list.length === 0}

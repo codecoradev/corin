@@ -656,10 +656,17 @@ pub async fn uteke_available(
 }
 
 /// List memories via HTTP (always fresh).
+///
+/// Supports a multi-namespace filter via `namespaces`. When provided, the
+/// command fans out `/list` across the selected namespaces, merges the
+/// results (dedup by id), and sorts newest-first. This works on legacy
+/// servers (per-namespace `/list`) and lets the UI show memories from
+/// several namespaces at once.
 #[tauri::command]
 pub async fn uteke_list(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
+    namespaces: Option<Vec<String>>,
     tag: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
@@ -676,12 +683,84 @@ pub async fn uteke_list(
     if !client.is_available().await {
         return Ok(vec![]);
     }
+
+    // Multi-namespace mode: fan out and merge.
+    // An explicit empty list means "none" → empty result.
+    if let Some(ns_list) = namespaces {
+        return list_multi_namespace(&client, &ns_list, tag.as_deref(), limit, offset).await;
+    }
+
+    // "All" mode (no namespace scope): legacy /list with no namespace only
+    // returns the "default" namespace. Fan out across ALL namespaces so the
+    // memories list reflects everything (works on any server version).
+    if namespace.is_none() {
+        let all_ns = client.namespaces().await.unwrap_or_default();
+        if !all_ns.is_empty() {
+            return list_multi_namespace(&client, &all_ns, tag.as_deref(), limit, offset).await;
+        }
+    }
+
     let memories = client
         .list(namespace.as_deref(), tag.as_deref(), limit, offset)
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(memories
         .into_iter()
+        .map(|m| MemoryEntry {
+            id: m.id,
+            content: m.content,
+            tags: m.tags,
+            content_type: Some(m.content_type),
+            importance: Some(m.importance),
+            namespace: Some(m.namespace),
+            created_at: Some(m.created_at),
+            updated_at: Some(m.updated_at),
+        })
+        .collect())
+}
+
+/// Fan out `/list` across multiple namespaces, merge, dedup, sort newest-first.
+///
+/// To support offset pagination across namespaces without server-side
+/// cross-namespace paging (uteke #526), we over-fetch from each namespace
+/// and slice after merge. Capped so this stays cheap for a desktop app.
+async fn list_multi_namespace(
+    client: &crate::uteke_client::UtekeClient,
+    namespaces: &[String],
+    tag: Option<&str>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    // Fetch enough from each namespace to satisfy offset + limit after merge.
+    // Cap to avoid huge payloads on large servers.
+    const PER_NAMESPACE_CAP: usize = 200;
+    let fetch = (offset + limit).min(PER_NAMESPACE_CAP).max(limit);
+
+    let mut all: Vec<crate::uteke_client::UtekeMemory> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for ns in namespaces {
+        match client.list(Some(ns.as_str()), tag, fetch, 0).await {
+            Ok(list) => {
+                for m in list {
+                    if seen.insert(m.id.clone()) {
+                        all.push(m);
+                    }
+                }
+            }
+            // Skip inaccessible namespaces (read-only token, missing, etc).
+            Err(e) => {
+                eprintln!("CorIn: list: skipping namespace '{ns}': {e}");
+            }
+        }
+    }
+
+    // Sort newest-first (created_at is ISO-8601 UTC, so lexical sort works).
+    all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    Ok(all
+        .into_iter()
+        .skip(offset)
+        .take(limit)
         .map(|m| MemoryEntry {
             id: m.id,
             content: m.content,
@@ -872,6 +951,30 @@ pub async fn uteke_namespaces(
     }
     client
         .namespaces()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// List namespaces with memory counts (backward-compatible).
+///
+/// Uses `/namespaces?with_counts=true` on newer uteke servers; falls back
+/// to plain `/namespaces` with `count: 0` (unknown) on older ones.
+#[tauri::command]
+pub async fn uteke_namespaces_with_counts(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<Vec<crate::uteke_client::NamespaceCount>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    client
+        .namespaces_with_counts()
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
@@ -1481,6 +1584,7 @@ pub async fn uteke_forget(
 pub async fn uteke_server_graph(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
+    namespaces: Option<Vec<String>>,
 ) -> Result<serde_json::Value, CommandError> {
     let client = {
         let s = state.lock().await;
@@ -1505,6 +1609,34 @@ pub async fn uteke_server_graph(
         }));
     }
 
+    // Multi-namespace mode: user selected specific namespaces in the filter.
+    // An explicit empty list means "none" → empty graph. A non-empty list
+    // fans out /list per namespace, merges, and builds a tag-based graph.
+    if let Some(ns_list) = namespaces {
+        return build_multi_namespace_graph(&client, &ns_list).await;
+    }
+
+    // "All" mode (no namespace scope): legacy /list and /graph with no
+    // namespace only return the "default" namespace, so the graph would
+    // miss every other namespace. Fan out across ALL namespaces instead.
+    // Try the server's cosine /graph first (real edges if available).
+    if namespace.is_none() {
+        let graph = client
+            .graph(None)
+            .await
+            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+        if !graph.edges.is_empty() {
+            return Ok(serde_json::json!({
+                "nodes": graph.nodes,
+                "edges": graph.edges,
+                "stats": graph.stats,
+            }));
+        }
+        let all_ns = client.namespaces().await.unwrap_or_default();
+        return build_multi_namespace_graph(&client, &all_ns).await;
+    }
+
+    // Single namespace scoped (legacy path).
     let graph = client
         .graph(namespace.as_deref())
         .await
@@ -1536,7 +1668,34 @@ pub async fn uteke_server_graph(
         }));
     }
 
-    // Build nodes from memories.
+    let (nodes, edges, relation_types) = build_tag_graph(&memories);
+    let node_count = nodes.len();
+    let edge_count = edges.len();
+
+    Ok(serde_json::json!({
+        "nodes": nodes,
+        "edges": edges,
+        "stats": {
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "relation_types": relation_types,
+        },
+        "hint": "Tag-based fallback graph (cosine auto-link not active on uteke v0.3.2)",
+    }))
+}
+
+/// Build a tag-based graph (nodes + edges) from a slice of memories.
+/// Edges connect memories that share a tag (capped per tag to avoid clutter).
+///
+/// Returns `(nodes, edges, relation_types)` as JSON values ready to embed
+/// in the command response.
+fn build_tag_graph(
+    memories: &[crate::uteke_client::UtekeMemory],
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Vec<&'static str>,
+) {
     let nodes: Vec<serde_json::Value> = memories
         .iter()
         .map(|m| {
@@ -1548,11 +1707,9 @@ pub async fn uteke_server_graph(
         })
         .collect();
 
-    // Build edges from shared tags.
-    // For each tag, collect all memory IDs that have it, then connect them.
     let mut tag_to_memories: std::collections::HashMap<&str, Vec<&str>> =
         std::collections::HashMap::new();
-    for m in &memories {
+    for m in memories {
         for tag in &m.tags {
             tag_to_memories.entry(tag.as_str()).or_default().push(&m.id);
         }
@@ -1561,7 +1718,6 @@ pub async fn uteke_server_graph(
     let mut edges: Vec<serde_json::Value> = Vec::new();
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     for ids in tag_to_memories.values() {
-        // Connect all pairs within the same tag (cap at 5 per tag to avoid clutter).
         let max_pairs = 5;
         let mut count = 0;
         for i in 0..ids.len() {
@@ -1586,13 +1742,63 @@ pub async fn uteke_server_graph(
         }
     }
 
-    let node_count = nodes.len();
-    let edge_count = edges.len();
-    let relation_types: Vec<&str> = if edges.is_empty() {
+    let relation_types: Vec<&'static str> = if edges.is_empty() {
         vec![]
     } else {
         vec!["shared_tag"]
     };
+
+    (nodes, edges, relation_types)
+}
+
+/// Multi-namespace graph: fetch memories from each selected namespace via
+/// `/list`, merge (dedup by id), and build a tag-based graph.
+///
+/// This is the path used by the namespace filter UI. It works on legacy
+/// servers (per-namespace `/list` is always available) and on newer ones.
+async fn build_multi_namespace_graph(
+    client: &crate::uteke_client::UtekeClient,
+    namespaces: &[String],
+) -> Result<serde_json::Value, CommandError> {
+    // Cap memories per namespace to keep the graph performant on large
+    // servers (e.g. 19k memories on the VPS).
+    const PER_NAMESPACE_LIMIT: usize = 60;
+
+    let mut memories: Vec<crate::uteke_client::UtekeMemory> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for ns in namespaces {
+        match client
+            .list(Some(ns.as_str()), None, PER_NAMESPACE_LIMIT, 0)
+            .await
+        {
+            Ok(list) => {
+                for m in list {
+                    if seen_ids.insert(m.id.clone()) {
+                        memories.push(m);
+                    }
+                }
+            }
+            // A namespace may be inaccessible (read-only token, missing, etc).
+            // Skip it but keep the other namespaces.
+            Err(e) => {
+                eprintln!("CorIn: graph: skipping namespace '{ns}': {e}");
+            }
+        }
+    }
+
+    if memories.is_empty() {
+        return Ok(serde_json::json!({
+            "nodes": [],
+            "edges": [],
+            "stats": {"node_count": 0, "edge_count": 0, "relation_types": []},
+            "hint": "No memories in the selected namespace(s)",
+        }));
+    }
+
+    let (nodes, edges, relation_types) = build_tag_graph(&memories);
+    let node_count = nodes.len();
+    let edge_count = edges.len();
 
     Ok(serde_json::json!({
         "nodes": nodes,
@@ -1602,7 +1808,10 @@ pub async fn uteke_server_graph(
             "edge_count": edge_count,
             "relation_types": relation_types,
         },
-        "hint": "Tag-based fallback graph (cosine auto-link not active on uteke v0.3.2)",
+        "hint": format!(
+            "Tag-based graph across {} namespace(s)",
+            namespaces.len()
+        ),
     }))
 }
 
