@@ -111,6 +111,7 @@
   </button>
 
   {#if open}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="dropdown" role="menu" onclick={(e) => e.stopPropagation()}>
       <div class="search">
         <input
