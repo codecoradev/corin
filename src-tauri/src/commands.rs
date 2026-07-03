@@ -424,19 +424,11 @@ pub async fn add_edge(
         ));
     }
 
-    let (client, gs) = {
+    let client = {
         let s = state.lock().await;
-        let client = s.uteke_client.clone();
-        let gs = s.uteke.as_ref().and_then(|u| {
-            let conn = u.graph_store();
-            Some(uteke_core::graph::GraphStore::new(conn))
-        });
-        (client, gs)
+        s.uteke_client.clone()
     };
     let Some(client) = client else {
-        return Err(CommandError::NotInitialized);
-    };
-    let Some(gs) = gs else {
         return Err(CommandError::NotInitialized);
     };
 
@@ -448,11 +440,20 @@ pub async fn add_edge(
         return Err(CommandError::NotFound(target));
     }
 
-    let rel = edge_type.as_deref().unwrap_or("related");
-    let w = weight.unwrap_or(1.0) as f64;
-
-    gs.add_edge(&source, &target, rel, w)
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    // add_edge must run inside the lock — graph_store() returns &Connection
+    // that borrows from the Uteke instance inside Mutex<AppState>.
+    {
+        let s = state.lock().await;
+        let Some(uteke) = s.uteke.as_ref() else {
+            return Err(CommandError::NotInitialized);
+        };
+        let conn = uteke.graph_store();
+        let gs = uteke_core::graph::GraphStore::new(conn);
+        let rel = edge_type.as_deref().unwrap_or("related");
+        let w = weight.unwrap_or(1.0) as f64;
+        gs.add_edge(&source, &target, rel, w)
+            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    }
 
     Ok(0) // uteke-core edges use string IDs, not auto-increment i64
 }
