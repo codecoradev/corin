@@ -1,4 +1,4 @@
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-07-03
 
 ### Added
 
@@ -62,6 +62,9 @@
 - Room document viewer via uteke-serve room/document endpoint
 - Participant grouping by namespace with memory counts
 - Delete room with confirmation dialog (DELETE /room/delete endpoint)
+
+### Changed
+- **uteke-core v0.6.4** — pinned to crates.io with `default-features = false` (ONNX gate). Resolves CI build failures on all platforms. No longer uses git branch pin.
 
 # Changelog
 
