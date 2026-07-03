@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
   import type { GraphData } from '../ts/types';
+  import NamespaceFilter from './NamespaceFilter.svelte';
 
   interface Props {
     onmemoryclick: (id: string) => void;
@@ -16,6 +17,9 @@
   let expandingNode = $state<string | null>(null);
   let totalNodesShown = $state(0);
   let totalEdgesShown = $state(0);
+
+  // Namespace filter state. Empty array = all namespaces selected.
+  let selectedNamespaces = $state<string[]>([]);
 
   // Simulation state
   let W = 800;
@@ -145,7 +149,13 @@
         // The backend returns real cosine edges when available, or a
         // tag-based fallback graph so connections are always present.
         try {
-          const sg = await utekeServer.graph();
+          // Pass the selected namespaces to the backend. The backend fans
+          // out `/list` across them (or uses `/graph` when a single ns is
+          // picked) and builds a tag-based graph. Works on legacy servers.
+          const sg = await utekeServer.graph(
+            undefined,
+            selectedNamespaces.length > 0 ? selectedNamespaces : undefined,
+          );
           // Build the node pool from the server graph nodes. We only
           // seed INITIAL_SEED of them, but keep ALL edges that connect
           // the seeded nodes so lines appear on first paint.
@@ -584,6 +594,15 @@
   }
 
   // ─── Lifecycle ─────────────────────────────────────────────────────
+  // Reload the graph when the namespace selection changes (debounced so
+  // rapid toggling doesn't fire a request per click).
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    selectedNamespaces; // track dependency
+    if (reloadTimer) clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => loadSeed(), 220);
+  });
+
   onMount(() => {
     const canvas = canvasEl;
     if (canvas && canvas.parentElement) {
@@ -612,8 +631,9 @@
 </script>
 
 <div class="graph-view">
-  {#if !loading && totalNodesShown > 0}
-    <div class="graph-toolbar">
+  <div class="graph-toolbar">
+    <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
+    {#if !loading && totalNodesShown > 0}
       <span class="graph-info">{totalNodesShown} nodes · {totalEdgesShown} edges</span>
       {#if serverOnline}
         <span class="mode-tag semantic">Semantic</span>
@@ -621,8 +641,8 @@
         <span class="mode-tag local">Local</span>
       {/if}
       <span class="hint-text">click to expand · double-click for detail</span>
-    </div>
-  {/if}
+    {/if}
+  </div>
   <div class="canvas-wrap">
     <canvas
       bind:this={canvasEl}

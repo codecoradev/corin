@@ -73,6 +73,17 @@ pub struct GraphStats {
     pub relation_types: Vec<String>,
 }
 
+/// A namespace with its memory count.
+///
+/// Returned by `/namespaces?with_counts=true` (uteke >= #527).
+/// On older servers, `count` is `0` (unknown) — callers should treat 0 as
+/// "count unavailable" rather than "empty".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamespaceCount {
+    pub name: String,
+    pub count: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UtekeRoom {
     pub id: String,
@@ -249,6 +260,40 @@ impl UtekeClient {
             .json()
             .await
             .map_err(|e| e.to_string())
+    }
+
+    /// List namespaces with memory counts.
+    ///
+    /// Backward-compatible: tries `?with_counts=true` (uteke >= #527).
+    /// Falls back to plain `/namespaces` with count `0` (unknown) on older
+    /// servers that return 404.
+    pub async fn namespaces_with_counts(&self) -> Result<Vec<NamespaceCount>, String> {
+        let resp = self
+            .authed(
+                self.client
+                    .get(format!("{}/namespaces", self.base_url))
+                    .query(&[("with_counts", "true")]),
+            )
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // New server returns 200 with [{name, count}].
+        if resp.status().is_success() {
+            return resp.json().await.map_err(|e| e.to_string());
+        }
+
+        // Older server → 404. Fall back to plain list with unknown counts.
+        // Consume the error body so the connection can be reused.
+        let _ = resp.text().await;
+        let names = self.namespaces().await?;
+        Ok(names
+            .into_iter()
+            .map(|name| NamespaceCount {
+                name,
+                count: 0,
+            })
+            .collect())
     }
 
     /// Get graph data (nodes + edges from memory_edges + graph_edges).

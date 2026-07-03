@@ -3,6 +3,7 @@
   import { createPager } from '../stores/pagination.svelte';
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry } from '../ts/types';
+  import NamespaceFilter from './NamespaceFilter.svelte';
 
   interface Props {
     namespace: string | null;
@@ -11,6 +12,10 @@
   }
 
   let { namespace, onmemoryclick, onnewmemory }: Props = $props();
+
+  // Multi-namespace filter. Empty = all selected. Takes precedence over the
+  // single `namespace` prop when populated.
+  let selectedNamespaces = $state<string[]>([]);
 
   // Search result state (separate from paged list).
   let searchResults = $state<(MemoryEntry & { score?: number })[] | null>(null);
@@ -27,7 +32,13 @@
 
   async function loadList() {
     await checkReady();
-    pager = createPager({ namespace, pageSize: 20, useUteke: utekeReady });
+    const useMulti = selectedNamespaces.length > 0;
+    pager = createPager({
+      namespace: useMulti ? null : namespace,
+      namespaces: useMulti ? selectedNamespaces : undefined,
+      pageSize: 20,
+      useUteke: utekeReady,
+    });
     await pager.loadInitial();
   }
 
@@ -40,10 +51,16 @@
     try {
       await checkReady();
       // /recall is cross-namespace (uteke #448 fixed) — ONE call, no fan-out.
+      // Scope to the single selected namespace when exactly one is picked;
+      // search across all when multiple/all are selected.
+      const searchNs =
+        selectedNamespaces.length === 1
+          ? selectedNamespaces[0]
+          : namespace;
       const ok = await utekeServer.status().then((s) => s.available).catch(() => false);
       if (ok) {
         const results = await utekeServer.recall(searchQuery, {
-          namespace: namespace ?? undefined,
+          namespace: searchNs ?? undefined,
           limit: 20,
         });
         searchResults = results.map((r) => ({
@@ -98,6 +115,7 @@
   // Reload list when namespace changes; clear any active search.
   $effect(() => {
     namespace;
+    selectedNamespaces;
     searchResults = null;
     searchQuery = '';
     loadList();
@@ -130,6 +148,7 @@
       {/if}
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
+    <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
 
   {#if isLoading && list.length === 0}

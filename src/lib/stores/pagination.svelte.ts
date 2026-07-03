@@ -14,6 +14,7 @@ import type { MemoryEntry } from '../ts/types';
 
 export interface PagerOpts {
   namespace?: string | null;
+  namespaces?: string[];
   pageSize?: number;
   /** If false, use the local fallback (memoryApi) instead of uteke HTTP. */
   useUteke?: boolean;
@@ -22,6 +23,7 @@ export interface PagerOpts {
 export function createPager(opts: PagerOpts = {}) {
   const pageSize = opts.pageSize ?? 20;
   const namespace = opts.namespace ?? null;
+  const namespaces = opts.namespaces ?? null;
   const useUteke = opts.useUteke ?? true;
 
   let items = $state<MemoryEntry[]>([]);
@@ -33,7 +35,12 @@ export function createPager(opts: PagerOpts = {}) {
   async function fetchPage(off: number, limit: number): Promise<MemoryEntry[]> {
     if (useUteke) {
       return uteke
-        .list({ namespace: namespace ?? undefined, limit, offset: off })
+        .list({
+          namespace: namespace ?? undefined,
+          namespaces: namespaces ?? undefined,
+          limit,
+          offset: off,
+        })
         .catch(() => []);
     }
     return memoryApi.list({ namespace: namespace ?? undefined, limit }).catch(() => []);
