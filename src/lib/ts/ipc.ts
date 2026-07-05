@@ -219,6 +219,12 @@ export const utekeServer = {
     available?: boolean;
     hint?: string;
   }>('uteke_server_stats'),
+
+  recent: (opts?: { namespace?: string | null; limit?: number }) =>
+    invoke<MemoryEntry[]>('uteke_recent', {
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
 };
 
 // AI Agent Integration (#55)
