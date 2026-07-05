@@ -29,25 +29,12 @@
       serverOnline = status.available;
 
       // Recent memories.
-      // /recall is cross-namespace now (uteke #448 fixed) so a single
-      // call returns a diverse recent-ish seed across ALL namespaces —
-      // no more 21-way fan-out.
-      if (namespace) {
+      // Prefer /recent endpoint (uteke >= 0.6.4) for true recency sort.
+      // Falls back to /list or /recall on older servers.
+      if (serverOnline) {
+        recent = await utekeServer.recent({ namespace, limit: 10 }).catch(() => []);
+      } else if (namespace) {
         recent = await memoryApi.list({ namespace, limit: 10 }).catch(() => []);
-      } else if (serverOnline) {
-        const results = await utekeServer
-          .recall('knowledge memory note idea project', { limit: 10 })
-          .catch(() => []);
-        recent = results.map((r) => ({
-          id: r.id,
-          content: r.content,
-          tags: r.tags,
-          content_type: 'text',
-          importance: r.importance ?? null,
-          namespace: r.namespace ?? null,
-          created_at: null,
-          updated_at: null,
-        }));
       } else {
         recent = await memoryApi.list({ limit: 10 }).catch(() => []);
       }
