@@ -652,7 +652,11 @@ impl UtekeClient {
     }
 
     /// Delete a tag from a namespace.
-    pub async fn delete_tag(&self, tag: &str, namespace: Option<&str>) -> Result<serde_json::Value, String> {
+    pub async fn delete_tag(
+        &self,
+        tag: &str,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
         let mut body = serde_json::json!({
             "tag": tag,
         });
