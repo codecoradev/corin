@@ -3,8 +3,8 @@
 //! Every command is an `async fn` decorated with `#[tauri::command]`.
 //! State is held in [`AppState`] behind `tokio::sync::Mutex`.
 //!
-//! All memory CRUD goes through the HTTP client (`uteke_client::UtekeClient`).
-//! uteke-core is retained only for graph_store() (add_edge) and graph_data().
+//! All operations go through the HTTP client (`uteke_client::UtekeClient`).
+//! Corin is a pure HTTP client — no native uteke-core dependency.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -111,9 +111,7 @@ pub struct AppState {
     /// CorIn SQLite connection for settings only.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
-    /// Uteke-core instance — used only for graph_store() and graph_data().
-    pub uteke: Option<uteke_core::Uteke>,
-    /// HTTP client for uteke-serve (all memory CRUD).
+    /// HTTP client for uteke-serve (all memory CRUD + graph operations).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
 }
@@ -431,35 +429,35 @@ pub async fn add_edge(
         return Err(CommandError::NotFound(target));
     }
 
-    // add_edge must run inside the lock — graph_store() returns &Connection
-    // that borrows from the Uteke instance inside Mutex<AppState>.
-    {
-        let s = state.lock().await;
-        let Some(uteke) = s.uteke.as_ref() else {
-            return Err(CommandError::NotInitialized);
-        };
-        let conn = uteke.graph_store();
-        let gs = uteke_core::graph::GraphStore::new(conn);
-        let rel = edge_type.as_deref().unwrap_or("related");
-        let w = weight.unwrap_or(1.0) as f64;
-        gs.add_edge(&source, &target, rel, w)
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    }
+    // HTTP-only edge mutation via uteke-serve (POST /graph/edge).
+    let rel = edge_type.as_deref().unwrap_or("related");
+    client
+        .add_edge(&source, &target, Some(rel), weight)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    Ok(0) // uteke-core edges use string IDs, not auto-increment i64
+    Ok(0)
 }
 
 #[tauri::command]
 pub async fn remove_edge(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    _id: i64,
+    source: String,
+    target: String,
+    relation: Option<String>,
 ) -> Result<(), CommandError> {
-    // Edge removal by numeric ID is no longer supported with uteke-core
-    // (edges use string-based source/target keys). Frontend should
-    // use source+target to identify edges for deletion.
-    // This command is kept for backward compatibility but is a no-op.
-    let _ = state.lock().await;
-    Ok(())
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+
+    client
+        .remove_edge(&source, &target, relation.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -1386,17 +1384,11 @@ pub async fn init_data_dir(
     )
     .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    // Open uteke-core native store (~/.uteke) with embedding + graph
-    let uteke_home = uteke_core::uteke_home().map_err(|e| CommandError::Io(e.to_string()))?;
-    let uteke_store =
-        uteke_core::Uteke::open(&uteke_home).map_err(|e| CommandError::Uteke(e.to_string()))?;
-
     let corin_dir = crate::config::corin_dir().map_err(|e| CommandError::Io(e.to_string()))?;
 
     s.data_dir = Some(corin_dir.clone());
     s.db_path = Some(db_path);
     s.conn = Some(conn);
-    s.uteke = Some(uteke_store);
 
     Ok(corin_dir.to_string_lossy().to_string())
 }
