@@ -286,59 +286,53 @@ pub async fn get_graph_data(
     namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    let (client, gd) = {
+    let client = {
         let s = state.lock().await;
-        let client = s.uteke_client.clone();
-        let gd = s
-            .uteke
-            .as_ref()
-            .and_then(|u| u.graph_data(namespace.as_deref()).ok());
-        (client, gd)
+        s.uteke_client.clone()
     };
     let Some(client) = client else {
         return Err(CommandError::NotInitialized);
     };
-    let Some(gd) = gd else {
+    if !client.is_available().await {
         return Ok(GraphData {
             nodes: vec![],
             edges: vec![],
         });
-    };
-    let limit = limit.unwrap_or(100);
-
-    // Fetch memory content via HTTP for each graph node
-    let mut nodes: Vec<MemoryEntry> = Vec::new();
-    for n in gd.nodes.into_iter().take(limit) {
-        let mid = match n.memory_id.as_deref() {
-            Some(id) => id,
-            None => continue,
-        };
-        if let Ok(m) = client.get(mid).await {
-            nodes.push(MemoryEntry {
-                id: m.id,
-                content: m.content,
-                tags: m.tags,
-                content_type: Some(m.content_type),
-                importance: Some(m.importance),
-                namespace: Some(m.namespace),
-                created_at: Some(m.created_at),
-                updated_at: Some(m.updated_at),
-            });
-        }
     }
 
-    let node_id_set: std::collections::HashSet<String> =
-        nodes.iter().map(|n| n.id.clone()).collect();
+    let limit = limit.unwrap_or(100);
+    let gd = client
+        .graph(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Map HTTP graph response to frontend types
+    let nodes: Vec<MemoryEntry> = gd
+        .nodes
+        .into_iter()
+        .take(limit)
+        .map(|n| MemoryEntry {
+            id: n.id,
+            content: n.label,
+            tags: vec![],
+            content_type: n.entity_type,
+            importance: None,
+            namespace: None,
+            created_at: None,
+            updated_at: None,
+        })
+        .collect();
 
     let edges: Vec<GraphEdge> = gd
         .edges
         .into_iter()
-        .filter(|e| node_id_set.contains(&e.source_id) && node_id_set.contains(&e.target_id))
-        .map(|e| GraphEdge {
-            id: None,
-            source: e.source_id,
-            target: e.target_id,
-            weight: Some(e.weight as f32),
+        .take(limit)
+        .enumerate()
+        .map(|(i, e)| GraphEdge {
+            id: Some(i as i64),
+            source: e.source,
+            target: e.target,
+            weight: Some(e.weight),
         })
         .collect();
 
@@ -352,29 +346,33 @@ pub async fn get_neighbors(
     depth: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
     let _depth = depth.unwrap_or(1);
-    let (client, gd) = {
+    let client = {
         let s = state.lock().await;
-        let client = s.uteke_client.clone();
-        let gd = s.uteke.as_ref().and_then(|u| u.graph_data(None).ok());
-        (client, gd)
+        s.uteke_client.clone()
     };
     let Some(client) = client else {
         return Err(CommandError::NotInitialized);
     };
-    let Some(gd) = gd else {
+    if !client.is_available().await {
         return Ok(vec![]);
-    };
+    }
 
-    // Use graph_data to find neighbors via edges
+    // Use HTTP graph endpoint filtered to neighbors of the given node
+    let gd = client
+        .graph_neighbors(&id, None)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Collect neighbor node IDs from edges connected to the target node
     let neighbor_ids: std::collections::HashSet<String> = gd
         .edges
         .iter()
-        .filter(|e| e.source_id == id || e.target_id == id)
+        .filter(|e| e.source == id || e.target == id)
         .map(|e| {
-            if e.source_id == id {
-                e.target_id.clone()
+            if e.source == id {
+                e.target.clone()
             } else {
-                e.source_id.clone()
+                e.source.clone()
             }
         })
         .collect();
@@ -880,57 +878,7 @@ pub async fn uteke_graph(
         }
     }
 
-    // ── Fallback: uteke-core native graph (cosine auto-linked edges) ──
-    // graph_data() still exists on uteke-core, but get_by_id() is removed.
-    // Fetch memory content via HTTP for each graph node.
-    {
-        let (client, gd) = {
-            let s = state.lock().await;
-            let client = s.uteke_client.clone();
-            let gd = s
-                .uteke
-                .as_ref()
-                .and_then(|u| u.graph_data(namespace.as_deref()).ok());
-            (client, gd)
-        };
-
-        if let (Some(client), Some(gd)) = (client, gd) {
-            let mut nodes: Vec<MemoryEntry> = Vec::new();
-            for n in &gd.nodes {
-                let mid = match n.memory_id.as_deref() {
-                    Some(id) => id,
-                    None => continue,
-                };
-                if let Ok(m) = client.get(mid).await {
-                    nodes.push(MemoryEntry {
-                        id: m.id,
-                        content: m.content,
-                        tags: m.tags,
-                        content_type: Some(m.content_type),
-                        importance: Some(m.importance),
-                        namespace: Some(m.namespace),
-                        created_at: Some(m.created_at),
-                        updated_at: Some(m.updated_at),
-                    });
-                }
-            }
-
-            let edges: Vec<GraphEdge> = gd
-                .edges
-                .iter()
-                .enumerate()
-                .map(|(i, e)| GraphEdge {
-                    id: Some(i as i64),
-                    source: e.source_id.clone(),
-                    target: e.target_id.clone(),
-                    weight: Some(e.weight as f32),
-                })
-                .collect();
-
-            return Ok(GraphData { nodes, edges });
-        }
-    }
-
+    // No uteke-serve available — return empty graph
     Ok(GraphData {
         nodes: vec![],
         edges: vec![],
