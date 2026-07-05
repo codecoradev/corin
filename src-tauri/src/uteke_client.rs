@@ -4,9 +4,9 @@
 //! [`crate::config::detect_uteke_serve_url`] from `~/.uteke/config.toml`,
 //! falling back to [`DEFAULT_URL`] when the config is missing.
 //!
-//! Falls back to direct DB access (rusqlite) when server is not running.
-//! This gives CorIn semantic search, cosine auto-linking, and graph API
-//! without bundling the full uteke-core library (avoids dep conflicts).
+//! Corin is a pure HTTP client to uteke-serve — no native uteke-core
+//! dependency. All operations (memory CRUD, graph, rooms) go through
+//! the HTTP API.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -301,6 +301,102 @@ impl UtekeClient {
         }
 
         let resp = req.send().await.map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Add an edge between two memories (POST /graph/edge).
+    pub async fn add_edge(
+        &self,
+        source: &str,
+        target: &str,
+        relation: Option<&str>,
+        weight: Option<f32>,
+    ) -> Result<(), String> {
+        let mut body = serde_json::json!({
+            "source": source,
+            "target": target,
+        });
+        if let Some(rel) = relation {
+            body["relation"] = serde_json::Value::String(rel.to_string());
+        }
+        if let Some(w) = weight {
+            body["weight"] = serde_json::json!(w);
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/graph/edge", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        // Consume response body.
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Remove an edge (DELETE /graph/edge).
+    pub async fn remove_edge(
+        &self,
+        source: &str,
+        target: &str,
+        relation: Option<&str>,
+    ) -> Result<(), String> {
+        let mut req = self
+            .authed(self.client.delete(format!("{}/graph/edge", self.base_url)))
+            .query(&[("source", source), ("target", target)]);
+        if let Some(rel) = relation {
+            req = req.query(&[("relation", rel)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Get graph data filtered to neighbors of a specific node.
+    ///
+    /// Uses GET /graph with `node_id` filter (uteke-serve returns only
+    /// edges connected to that node).
+    pub async fn graph_neighbors(
+        &self,
+        node_id: &str,
+        namespace: Option<&str>,
+    ) -> Result<GraphResponse, String> {
+        let mut req = self.authed(self.client.get(format!("{}/graph", self.base_url)));
+        req = req.query(&[("node_id", node_id)]);
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Get graph statistics only (no nodes/edges).
+    pub async fn graph_stats(&self) -> Result<GraphStats, String> {
+        let resp = self
+            .authed(self.client.get(format!("{}/graph/stats", self.base_url)))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
 
         if !resp.status().is_success() {
             return Err(format!("server returned {}", resp.status()));
