@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse,
+  DocSummary, DocEntry, DocSearchResult,
+  KanbanBoard, KanbanTaskDetail, KanbanTask, KanbanComment, KanbanStats, CreateTaskResponse,
 } from './types';
 
 export const memory = {
@@ -38,13 +40,14 @@ export const graph = {
   getNeighbors: (id: string, depth?: number) =>
     invoke<MemoryEntry[]>('get_neighbors', { id, depth: depth ?? null }),
   addEdge: (source: string, target: string, opts?: { edgeType?: string; weight?: number }) =>
-    invoke<number>('add_edge', {
+    invoke<void>('add_edge', {
       source,
       target,
       edge_type: opts?.edgeType ?? null,
       weight: opts?.weight ?? null,
     }),
-  removeEdge: (id: number) => invoke<void>('remove_edge', { id }),
+  removeEdge: (source: string, target: string) =>
+    invoke<boolean>('remove_edge', { source, target }),
 };
 
 export const room = {
@@ -58,6 +61,60 @@ export const room = {
       tags: opts?.tags ?? null,
     }),
   delete: (id: string) => invoke<void>('delete_room', { roomId: id }),
+};
+
+export const docs = {
+  list: (opts?: { namespace?: string; limit?: number }) =>
+    invoke<DocSummary[]>('doc_list', {
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
+  listRoots: (opts?: { namespace?: string; limit?: number }) =>
+    invoke<DocSummary[]>('doc_list_roots', {
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
+  children: (parentId: string, opts?: { namespace?: string; limit?: number }) =>
+    invoke<DocSummary[]>('doc_children', {
+      parentId,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
+  get: (idOrSlug: string, opts?: { namespace?: string }) =>
+    invoke<DocEntry>('doc_get', {
+      idOrSlug,
+      namespace: opts?.namespace ?? null,
+    }),
+  create: (slug: string, title: string, content: string, opts?: {
+    tags?: string[];
+    namespace?: string;
+    parent?: string;
+  }) => invoke<{ id: string; slug: string }>('doc_create', {
+    slug,
+    title,
+    content,
+    tags: opts?.tags ?? [],
+    namespace: opts?.namespace ?? null,
+    parent: opts?.parent ?? null,
+  }),
+  search: (query: string, opts?: { namespace?: string; limit?: number; mode?: string }) =>
+    invoke<DocSearchResult[]>('doc_search', {
+      query,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+      mode: opts?.mode ?? 'hybrid',
+    }),
+  delete: (idOrSlug: string, opts?: { namespace?: string }) =>
+    invoke<{ deleted: boolean; subtree_size: number }>('doc_delete', {
+      idOrSlug,
+      namespace: opts?.namespace ?? null,
+    }),
+  move: (idOrSlug: string, opts?: { newParent?: string; namespace?: string }) =>
+    invoke<{ moved: boolean }>('doc_move', {
+      idOrSlug,
+      newParent: opts?.newParent ?? null,
+      namespace: opts?.namespace ?? null,
+    }),
 };
 
 export const system = {
@@ -96,8 +153,10 @@ export const uteke = {
     invoke<{ id: string; title: string | null; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }[]>('uteke_rooms', {
       namespace: namespace ?? null,
     }),
-  roomRecall: (roomId: string, limit?: number) =>
-    invoke<MemoryEntry[]>('uteke_room_recall', { roomId, limit: limit ?? null }),
+  roomRecall: (roomId: string, opts?: { query?: string; limit?: number }) =>
+    invoke<MemoryEntry[]>('uteke_room_recall', { roomId, query: opts?.query ?? null, limit: opts?.limit ?? null }),
+  recent: (opts?: { namespace?: string; limit?: number }) =>
+    invoke<MemoryEntry[]>('uteke_recent', { namespace: opts?.namespace ?? null, limit: opts?.limit ?? null }),
   list: (opts?: { namespace?: string; namespaces?: string[]; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,
@@ -211,4 +270,57 @@ export const connection = {
   setPrimary: (id: string) => invoke<void>('set_primary_connection', { id }),
   reconnect: (id: string) => invoke<HealthInfo>('reconnect_connection', { id }),
   disconnect: () => invoke<void>('disconnect_connection'),
+};
+
+// Kanban (Hermes dashboard plugin API)
+export const kanban = {
+  available: () => invoke<boolean>('kanban_available'),
+  board: (opts?: { tenant?: string; includeArchived?: boolean }) =>
+    invoke<KanbanBoard>('kanban_board', {
+      tenant: opts?.tenant ?? null,
+      includeArchived: opts?.includeArchived ?? null,
+    }),
+  task: (taskId: string) => invoke<KanbanTaskDetail>('kanban_task_detail', { taskId }),
+  createTask: (opts: {
+    title: string;
+    body?: string;
+    assignee?: string;
+    tenant?: string;
+    priority?: number;
+    triage?: boolean;
+  }) => invoke<CreateTaskResponse>('kanban_create_task', {
+    title: opts.title,
+    body: opts.body ?? null,
+    assignee: opts.assignee ?? null,
+    tenant: opts.tenant ?? null,
+    priority: opts.priority ?? null,
+    triage: opts.triage ?? null,
+  }),
+  updateTask: (taskId: string, opts: {
+    status?: string;
+    assignee?: string;
+    priority?: number;
+    title?: string;
+    body?: string;
+    result?: string;
+    summary?: string;
+    blockReason?: string;
+  }) => invoke<KanbanTask>('kanban_update_task', {
+    taskId,
+    status: opts.status ?? null,
+    assignee: opts.assignee ?? null,
+    priority: opts.priority ?? null,
+    title: opts.title ?? null,
+    body: opts.body ?? null,
+    result: opts.result ?? null,
+    summary: opts.summary ?? null,
+    blockReason: opts.blockReason ?? null,
+  }),
+  addComment: (taskId: string, body: string, author?: string) =>
+    invoke<KanbanComment>('kanban_add_comment', {
+      taskId,
+      body,
+      author: author ?? null,
+    }),
+  stats: () => invoke<KanbanStats>('kanban_stats'),
 };

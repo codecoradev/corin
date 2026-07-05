@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod config;
 pub mod connections;
+pub mod kanban_client;
 pub mod uteke_client;
 
 use std::sync::Arc;
@@ -341,6 +342,7 @@ pub fn run() {
             commands::uteke_neighbors,
             commands::uteke_namespaces,
             commands::uteke_namespaces_with_counts,
+            commands::uteke_recent,
             commands::uteke_rooms,
             commands::uteke_room_recall,
             commands::uteke_search,
@@ -361,6 +363,23 @@ pub fn run() {
             commands::set_primary_connection,
             commands::reconnect_connection,
             commands::disconnect_connection,
+            // Documents (uteke-serve doc API)
+            commands::doc_list,
+            commands::doc_list_roots,
+            commands::doc_children,
+            commands::doc_get,
+            commands::doc_create,
+            commands::doc_search,
+            commands::doc_delete,
+            commands::doc_move,
+            // Kanban (Hermes dashboard plugin API)
+            commands::kanban_available,
+            commands::kanban_board,
+            commands::kanban_task_detail,
+            commands::kanban_create_task,
+            commands::kanban_update_task,
+            commands::kanban_add_comment,
+            commands::kanban_stats,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -431,6 +450,26 @@ pub fn run() {
                                 eprintln!("CorIn: using remote uteke-serve at {server_url}");
                                 let client = UtekeClient::with_auth(&server_url, auth_token);
                                 s.uteke_client = Some(client);
+                            }
+
+                            // Kanban: detect Hermes dashboard (simple TCP check).
+                            let kanban_url = crate::kanban_client::DEFAULT_URL;
+                            let kanban_available = is_port_open("127.0.0.1", 9119);
+                            if kanban_available {
+                                let kanban_token =
+                                    crate::kanban_client::KanbanClient::resolve_session_token(None);
+                                let kc = crate::kanban_client::KanbanClient::new(
+                                    kanban_url,
+                                    kanban_token,
+                                );
+                                eprintln!(
+                                    "CorIn: Hermes dashboard kanban available at {kanban_url}"
+                                );
+                                s.kanban_client = Some(kc);
+                            } else {
+                                eprintln!(
+                                    "CorIn: Hermes dashboard not reachable — kanban disabled"
+                                );
                             }
                         }
                         Err(e) => {

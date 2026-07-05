@@ -235,11 +235,11 @@ impl MemoryBackend for UtekeAdapter {
     fn room_recall(
         &self,
         room_id: String,
-        _query: String,
+        query: String,
     ) -> impl std::future::Future<Output = Result<Vec<Memory>, String>> + Send {
         let client = self.client.clone();
         async move {
-            let results = client.room_recall(&room_id, 100).await?;
+            let results = client.room_recall(&room_id, &query, 100).await?;
             Ok(results.into_iter().map(Into::into).collect())
         }
     }

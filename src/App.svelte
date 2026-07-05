@@ -13,6 +13,8 @@
   import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
   import DetailPanel from './lib/components/DetailPanel.svelte';
+  import KanbanView from './lib/components/KanbanView.svelte';
+  import DocumentsView from './lib/components/DocumentsView.svelte';
 
   // App state
   let dataDirInitialized = $state(false);
@@ -156,6 +158,10 @@
         <GraphView onmemoryclick={openDetail} />
       {:else if activeView === 'rooms'}
         <RoomsView {namespace} onmemoryclick={openDetail} />
+      {:else if activeView === 'kanban'}
+        <KanbanView />
+      {:else if activeView === 'documents'}
+        <DocumentsView {namespace} />
       {/if}
     </main>
   </div>

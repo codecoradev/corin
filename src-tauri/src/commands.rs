@@ -95,6 +95,124 @@ pub struct StatsResponse {
     pub db_size_bytes: u64,
 }
 
+// ── Document types (frontend-facing) ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocSummary {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub namespace: String,
+    pub version: i64,
+    pub updated_at: String,
+    pub parent_id: Option<String>,
+    pub depth: i64,
+    pub has_children: bool,
+    pub sort_order: i64,
+}
+
+impl From<crate::uteke_client::UtekeDocumentSummary> for DocSummary {
+    fn from(d: crate::uteke_client::UtekeDocumentSummary) -> Self {
+        Self {
+            id: d.id,
+            slug: d.slug,
+            title: d.title,
+            namespace: d.namespace,
+            version: d.version,
+            updated_at: d.updated_at,
+            parent_id: d.parent_id,
+            depth: d.depth,
+            has_children: d.has_children,
+            sort_order: d.sort_order,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocEntry {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub content: String,
+    pub namespace: String,
+    pub tags: Vec<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub version: i64,
+    pub content_type: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub parent_id: Option<String>,
+    pub path: String,
+    pub depth: i64,
+    pub sort_order: i64,
+    pub has_children: bool,
+}
+
+impl From<crate::uteke_client::UtekeDocument> for DocEntry {
+    fn from(d: crate::uteke_client::UtekeDocument) -> Self {
+        Self {
+            id: d.id,
+            slug: d.slug,
+            title: d.title,
+            content: d.content,
+            namespace: d.namespace,
+            tags: d.tags,
+            metadata: if d.metadata.is_null() {
+                None
+            } else {
+                Some(d.metadata)
+            },
+            version: d.version,
+            content_type: d.content_type,
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+            parent_id: d.parent_id,
+            path: d.path,
+            depth: d.depth,
+            sort_order: d.sort_order,
+            has_children: d.has_children,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocSearchResult {
+    pub document: DocSummary,
+    pub chunk_heading: String,
+    pub chunk_snippet: String,
+    pub score: f32,
+    pub mode: String,
+}
+
+impl From<crate::uteke_client::UtekeDocSearchResult> for DocSearchResult {
+    fn from(r: crate::uteke_client::UtekeDocSearchResult) -> Self {
+        Self {
+            document: DocSummary::from(r.document),
+            chunk_heading: r.chunk_heading,
+            chunk_snippet: r.chunk_snippet,
+            score: r.score,
+            mode: r.mode,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocCreateResult {
+    pub id: String,
+    pub slug: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocDeleteResult {
+    pub deleted: bool,
+    pub subtree_size: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocMoveResult {
+    pub moved: bool,
+}
+
 // ---------------------------------------------------------------------------
 // AppState
 // ---------------------------------------------------------------------------
@@ -116,6 +234,9 @@ pub struct AppState {
     /// HTTP client for uteke-serve (all memory CRUD).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
+    /// HTTP client for Hermes dashboard kanban plugin.
+    /// None if dashboard is not running.
+    pub kanban_client: Option<crate::kanban_client::KanbanClient>,
 }
 
 // ---------------------------------------------------------------------------
@@ -407,8 +528,8 @@ pub async fn add_edge(
     target: String,
     edge_type: Option<String>,
     weight: Option<f32>,
-) -> Result<i64, CommandError> {
-    // Reject self-loop edges
+) -> Result<(), CommandError> {
+    // Reject self-loop edges (also validated server-side, but fail fast client-side)
     if source == target {
         return Err(CommandError::Uteke(
             "self-loop edges are not allowed (source must differ from target)".to_string(),
@@ -423,43 +544,39 @@ pub async fn add_edge(
         return Err(CommandError::NotInitialized);
     };
 
-    // Verify both nodes exist via HTTP
-    if client.get(&source).await.is_err() {
-        return Err(CommandError::NotFound(source));
-    }
-    if client.get(&target).await.is_err() {
-        return Err(CommandError::NotFound(target));
-    }
-
-    // add_edge must run inside the lock — graph_store() returns &Connection
-    // that borrows from the Uteke instance inside Mutex<AppState>.
-    {
-        let s = state.lock().await;
-        let Some(uteke) = s.uteke.as_ref() else {
-            return Err(CommandError::NotInitialized);
-        };
-        let conn = uteke.graph_store();
-        let gs = uteke_core::graph::GraphStore::new(conn);
-        let rel = edge_type.as_deref().unwrap_or("related");
-        let w = weight.unwrap_or(1.0) as f64;
-        gs.add_edge(&source, &target, rel, w)
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    }
-
-    Ok(0) // uteke-core edges use string IDs, not auto-increment i64
+    // Delegate to uteke-serve HTTP endpoint (uteke >= 0.6.5).
+    // Server validates both source/target exist and rejects self-loops.
+    client
+        .graph_add_edge(
+            &source,
+            &target,
+            edge_type.as_deref(),
+            weight.map(|w| w as f64),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e))
 }
 
 #[tauri::command]
 pub async fn remove_edge(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    _id: i64,
-) -> Result<(), CommandError> {
-    // Edge removal by numeric ID is no longer supported with uteke-core
-    // (edges use string-based source/target keys). Frontend should
-    // use source+target to identify edges for deletion.
-    // This command is kept for backward compatibility but is a no-op.
-    let _ = state.lock().await;
-    Ok(())
+    source: String,
+    target: String,
+) -> Result<bool, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+
+    // Delegate to uteke-serve HTTP endpoint (uteke >= 0.6.5).
+    // Returns true if edge existed and was removed, false if not found.
+    client
+        .graph_remove_edge(&source, &target)
+        .await
+        .map_err(|e| CommandError::Uteke(e))
 }
 
 // ---------------------------------------------------------------------------
@@ -1074,6 +1191,7 @@ pub async fn uteke_neighbors(
 pub async fn uteke_room_recall(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
+    query: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
     let limit = limit.unwrap_or(20);
@@ -1086,7 +1204,7 @@ pub async fn uteke_room_recall(
     };
 
     let results = client
-        .room_recall(&room_id, limit)
+        .room_recall(&room_id, query.as_deref().unwrap_or(""), limit)
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
@@ -1101,6 +1219,41 @@ pub async fn uteke_room_recall(
             namespace: Some(r.memory.namespace),
             created_at: Some(r.memory.created_at),
             updated_at: Some(r.memory.updated_at),
+        })
+        .collect())
+}
+
+/// Recent memories via HTTP (uteke >= 0.6.4).
+#[tauri::command]
+pub async fn uteke_recent(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    limit: Option<usize>,
+    namespace: Option<String>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+
+    let results = client
+        .recent(limit, namespace.as_deref(), None)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    Ok(results
+        .into_iter()
+        .map(|m| MemoryEntry {
+            id: m.id,
+            content: m.content,
+            tags: m.tags,
+            content_type: Some(m.content_type),
+            importance: Some(m.importance),
+            namespace: Some(m.namespace),
+            created_at: Some(m.created_at),
+            updated_at: Some(m.updated_at),
         })
         .collect())
 }
@@ -2192,6 +2345,355 @@ fn mask_token_log(token: Option<&str>) -> String {
         Some(t) if t.len() <= 6 => "<redacted>".to_string(),
         Some(t) => format!("<redacted:{}…>", &t[..6]),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Commands: Documents (uteke-serve doc API)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn doc_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<DocSummary>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let docs = client
+        .doc_list(namespace.as_deref(), limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(docs.into_iter().map(DocSummary::from).collect())
+}
+
+#[tauri::command]
+pub async fn doc_list_roots(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<DocSummary>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let docs = client
+        .doc_list_roots(namespace.as_deref(), limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(docs.into_iter().map(DocSummary::from).collect())
+}
+
+#[tauri::command]
+pub async fn doc_children(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    parent_id: String,
+    namespace: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<DocSummary>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let docs = client
+        .doc_children(&parent_id, namespace.as_deref(), limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(docs.into_iter().map(DocSummary::from).collect())
+}
+
+#[tauri::command]
+pub async fn doc_get(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id_or_slug: String,
+    namespace: Option<String>,
+) -> Result<DocEntry, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let doc = client
+        .doc_get(&id_or_slug, namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(DocEntry::from(doc))
+}
+
+#[tauri::command]
+pub async fn doc_create(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    slug: String,
+    title: String,
+    content: String,
+    tags: Vec<String>,
+    namespace: Option<String>,
+    parent: Option<String>,
+) -> Result<DocCreateResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let doc = client
+        .doc_create(
+            &slug,
+            &title,
+            &content,
+            namespace.as_deref(),
+            tags,
+            parent.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(DocCreateResult {
+        id: doc.id,
+        slug: doc.slug,
+    })
+}
+
+#[tauri::command]
+pub async fn doc_search(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    query: String,
+    namespace: Option<String>,
+    limit: Option<u32>,
+    mode: Option<String>,
+) -> Result<Vec<DocSearchResult>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let results = client
+        .doc_search(&query, namespace.as_deref(), limit, mode.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(results.into_iter().map(DocSearchResult::from).collect())
+}
+
+#[tauri::command]
+pub async fn doc_delete(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id_or_slug: String,
+    namespace: Option<String>,
+) -> Result<DocDeleteResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .doc_delete(&id_or_slug, namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(DocDeleteResult {
+        deleted: true,
+        subtree_size: 0,
+    })
+}
+
+#[tauri::command]
+pub async fn doc_move(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id_or_slug: String,
+    new_parent: Option<String>,
+    namespace: Option<String>,
+) -> Result<DocMoveResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .doc_move(&id_or_slug, new_parent.as_deref(), namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e))?;
+    Ok(DocMoveResult { moved: true })
+}
+
+// ---------------------------------------------------------------------------
+// Commands: Kanban (Hermes dashboard plugin API)
+// ---------------------------------------------------------------------------
+
+/// Check if the Hermes dashboard kanban API is available.
+#[tauri::command]
+pub async fn kanban_available(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<bool, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(false);
+    };
+    Ok(client.is_authenticated().await)
+}
+
+/// Fetch the full kanban board grouped by status columns.
+#[tauri::command]
+pub async fn kanban_board(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    tenant: Option<String>,
+    include_archived: Option<bool>,
+) -> Result<crate::kanban_client::KanbanBoard, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .get_board(tenant.as_deref(), include_archived.unwrap_or(false))
+        .await
+        .map_err(|e| CommandError::Uteke(e))
+}
+
+/// Fetch a single task with comments, events, links, and runs.
+#[tauri::command]
+pub async fn kanban_task_detail(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    task_id: String,
+) -> Result<crate::kanban_client::KanbanTaskDetail, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .get_task(&task_id)
+        .await
+        .map_err(|e| CommandError::Uteke(e))
+}
+
+/// Create a new task on the kanban board.
+#[tauri::command]
+pub async fn kanban_create_task(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    title: String,
+    body: Option<String>,
+    assignee: Option<String>,
+    tenant: Option<String>,
+    priority: Option<i32>,
+    triage: Option<bool>,
+) -> Result<crate::kanban_client::CreateTaskResponse, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let payload = crate::kanban_client::CreateTaskRequest {
+        title,
+        body,
+        assignee,
+        tenant,
+        priority,
+        triage,
+    };
+    client
+        .create_task(&payload)
+        .await
+        .map_err(|e| CommandError::Uteke(e))
+}
+
+/// Update a task (status, assignee, priority, title, body).
+#[tauri::command]
+pub async fn kanban_update_task(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    task_id: String,
+    status: Option<String>,
+    assignee: Option<String>,
+    priority: Option<i32>,
+    title: Option<String>,
+    body: Option<String>,
+    result: Option<String>,
+    summary: Option<String>,
+    block_reason: Option<String>,
+) -> Result<crate::kanban_client::KanbanTask, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let payload = crate::kanban_client::UpdateTaskRequest {
+        status,
+        assignee,
+        priority,
+        title,
+        body,
+        result,
+        summary,
+        block_reason,
+    };
+    client
+        .update_task(&task_id, &payload)
+        .await
+        .map_err(|e| CommandError::Uteke(e))
+}
+
+/// Add a comment to a task.
+#[tauri::command]
+pub async fn kanban_add_comment(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    task_id: String,
+    body: String,
+    author: Option<String>,
+) -> Result<crate::kanban_client::KanbanComment, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    let payload = crate::kanban_client::AddCommentRequest { body, author };
+    client
+        .add_comment(&task_id, &payload)
+        .await
+        .map_err(|e| CommandError::Uteke(e))
+}
+
+/// Fetch board statistics.
+#[tauri::command]
+pub async fn kanban_stats(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<crate::kanban_client::KanbanStats, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.kanban_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client.get_stats().await.map_err(|e| CommandError::Uteke(e))
 }
 
 /// Find a binary in PATH.

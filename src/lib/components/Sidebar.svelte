@@ -40,6 +40,8 @@
     { view: 'namespaces', label: 'Namespaces', icon: '◫' },
     { view: 'graph', label: 'Graph', icon: '◉' },
     { view: 'rooms', label: 'Rooms', icon: '▣' },
+    { view: 'kanban', label: 'Kanban', icon: '▦' },
+    { view: 'documents', label: 'Documents', icon: '📄' },
   ];
 
   const bottomItems: { view: View; label: string; icon: string }[] = [
