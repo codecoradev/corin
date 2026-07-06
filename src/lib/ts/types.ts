@@ -1,7 +1,27 @@
 // View type for navigation
 export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'settings';
 
-// Memory entry from uteke-core
+// Ecosystem product definitions
+export interface ProductCard {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  color: string;
+  defaultUrl: string;
+  healthPath: string;
+}
+
+// Product health check result
+export interface ProductHealth {
+  id: string;
+  available: boolean;
+  latency_ms: number;
+  version: string | null;
+  error: string | null;
+}
+
+// Memory entry from uteke-serve (HTTP API)
 export interface MemoryEntry {
   id: string;
   content: string;

@@ -333,6 +333,7 @@ pub fn run() {
             commands::detect_agents,
             commands::generate_agent_md,
             commands::run_dream_cycle,
+            commands::get_dream_history,
             // Uteke Integration
             commands::uteke_available,
             commands::uteke_get,
@@ -361,6 +362,8 @@ pub fn run() {
             commands::set_primary_connection,
             commands::reconnect_connection,
             commands::disconnect_connection,
+            // Ecosystem health (#19 — multi-product dashboard)
+            commands::check_product_health,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -494,6 +497,17 @@ fn init_schema(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
         );
         CREATE INDEX IF NOT EXISTS idx_connections_type ON connections(product_type);
         CREATE INDEX IF NOT EXISTS idx_connections_primary ON connections(is_primary);
+        CREATE TABLE IF NOT EXISTS dream_run_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ran_at TEXT NOT NULL,
+            success INTEGER NOT NULL DEFAULT 1,
+            total_changes INTEGER NOT NULL DEFAULT 0,
+            total_warnings INTEGER NOT NULL DEFAULT 0,
+            total_errors INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            phases_json TEXT DEFAULT '[]'
+        );
+        CREATE INDEX IF NOT EXISTS idx_dream_history_ran_at ON dream_run_history(ran_at);
         ",
     )?;
     Ok(())

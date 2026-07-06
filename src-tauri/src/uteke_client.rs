@@ -126,6 +126,29 @@ pub struct EdgeList {
     pub incoming: Vec<MemoryEdge>,
 }
 
+// ── Dream Cycle (maintenance pipeline) ──────────────────────────────
+
+/// Result of a single dream phase.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseResult {
+    pub phase: String,
+    pub status: String,
+    pub summary: String,
+    pub changes: usize,
+    pub warnings: usize,
+}
+
+/// Full dream cycle report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DreamReport {
+    pub phases: Vec<PhaseResult>,
+    pub total_changes: usize,
+    pub total_warnings: usize,
+    pub total_errors: usize,
+    pub dry_run: bool,
+    pub duration_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UtekeRoom {
     pub id: String,
@@ -749,6 +772,42 @@ impl UtekeClient {
 
         if !resp.status().is_success() {
             return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    // ── Dream Cycle (maintenance pipeline) ───────────────────────────
+
+    /// Run the dream cycle via HTTP (POST /dream).
+    ///
+    /// Triggers the full maintenance pipeline on the uteke server:
+    /// lint → backlinks → dedup → orphans → compact → verify.
+    /// The server handles the heavy lifting (embedding model, SQLite ops).
+    pub async fn dream(
+        &self,
+        namespace: Option<&str>,
+        dry_run: bool,
+    ) -> Result<DreamReport, String> {
+        let mut body = serde_json::json!({
+            "dry_run": dry_run,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/dream", self.base_url)))
+            .json(&body)
+            .timeout(Duration::from_secs(300)) // 5 min timeout for large stores
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            return Err(format!("server returned {status}: {body_text}"));
         }
 
         resp.json().await.map_err(|e| e.to_string())

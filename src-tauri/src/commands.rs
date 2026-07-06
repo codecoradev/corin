@@ -101,8 +101,8 @@ pub struct StatsResponse {
 
 /// Managed state shared across all Tauri commands.
 ///
-/// All memory CRUD goes through `uteke_client` (HTTP → uteke-serve).
-/// uteke-core is retained only for `graph_store()` and `graph_data()`.
+/// All memory CRUD and graph operations go through `uteke_client` (HTTP → uteke-serve).
+/// Corin is a pure HTTP client with no native uteke-core dependency.
 /// CorIn's own SQLite DB is for settings only.
 #[derive(Default)]
 pub struct AppState {
@@ -143,9 +143,8 @@ pub async fn remember(
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
-// NOTE: Auto-edge generation deferred to Phase 2 when uteke-core library
-// is integrated. Phase 1 edges are managed via uteke CLI import or
-// the graph_edges table directly.
+// NOTE: Auto-edge generation deferred to Phase 2.
+// Phase 1 edges are managed via uteke-serve HTTP API (POST /graph/edge).
 
 #[tauri::command]
 pub async fn recall(
@@ -1867,11 +1866,48 @@ pub async fn generate_agent_md(project_dir: Option<String>) -> Result<String, Co
 }
 
 /// Run uteke dream cycle (maintenance pipeline).
+///
+/// Prefers HTTP POST /dream on uteke-serve when available.
+/// Falls back to CLI `uteke dream --json --quiet` when server is not running
+/// (e.g. remote connection without a running server, or disconnected mode).
 #[tauri::command]
 pub async fn run_dream_cycle(
-    _state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    dry_run: Option<bool>,
 ) -> Result<serde_json::Value, CommandError> {
-    // Find uteke binary
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+
+    // ── Path A: HTTP (preferred) ──
+    if let Some(ref client) = client
+        && client.is_available().await
+    {
+        let report = client
+            .dream(namespace.as_deref(), dry_run.unwrap_or(false))
+            .await
+            .map_err(CommandError::Uteke)?;
+
+        // Persist run to history.
+        let s = state.lock().await;
+        if let Some(conn) = s.conn.as_ref() {
+            let _ = save_dream_run(conn, &report);
+        }
+
+        return Ok(serde_json::json!({
+            "success": report.total_errors == 0,
+            "phases": report.phases,
+            "total_changes": report.total_changes,
+            "total_warnings": report.total_warnings,
+            "total_errors": report.total_errors,
+            "dry_run": report.dry_run,
+            "duration_ms": report.duration_ms,
+        }));
+    }
+
+    // ── Path B: CLI fallback ──
     let uteke_bin = find_in_path("uteke")
         .or_else(|| dirs::home_dir().map(|h| h.join(".local/bin/uteke")))
         .filter(|p| p.is_file());
@@ -1879,32 +1915,201 @@ pub async fn run_dream_cycle(
     let Some(bin) = uteke_bin else {
         return Ok(serde_json::json!({
             "success": false,
-            "hint": "uteke binary not found. Install: curl -fsSL https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh | sh"
+            "hint": "uteke binary not found and server unavailable. Install: curl -fsSL https://raw.githubusercontent.com/codecoradev/uteke/main/install.sh | sh"
         }));
     };
 
-    let output = std::process::Command::new(&bin)
-        .arg("dream")
-        .arg("--json")
-        .arg("--quiet")
-        .output()
-        .map_err(|e| CommandError::Io(e.to_string()))?;
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.arg("dream").arg("--json").arg("--quiet");
+    if dry_run == Some(true) {
+        cmd.arg("--dry-run");
+    }
+    if let Some(ref ns) = namespace {
+        cmd.arg("--namespace").arg(ns);
+    }
+
+    let output = cmd.output().map_err(|e| CommandError::Io(e.to_string()))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    // Try to parse JSON output
     let result = serde_json::from_str::<serde_json::Value>(&stdout).unwrap_or_else(|_| {
         serde_json::json!({
             "raw_stdout": stdout,
-            "raw_stderr": stderr,
+            "raw_stderr": String::from_utf8_lossy(&output.stderr).to_string(),
         })
     });
 
-    Ok(serde_json::json!({
+    // Merge CLI output into flat response matching HTTP path shape.
+    let mut resp = serde_json::json!({
         "success": output.status.success(),
-        "result": result,
-    }))
+        "phases": [],
+        "total_changes": 0,
+        "total_warnings": 0,
+        "total_errors": 0,
+        "dry_run": dry_run.unwrap_or(false),
+        "duration_ms": 0,
+    });
+    if let Some(phases) = result.get("phases").and_then(|v| v.as_array()) {
+        resp["phases"] = serde_json::json!(phases);
+    }
+    if let Some(c) = result.get("total_changes").and_then(|v| v.as_u64()) {
+        resp["total_changes"] = serde_json::json!(c);
+    }
+    if let Some(w) = result.get("total_warnings").and_then(|v| v.as_u64()) {
+        resp["total_warnings"] = serde_json::json!(w);
+    }
+    if let Some(e) = result.get("total_errors").and_then(|v| v.as_u64()) {
+        resp["total_errors"] = serde_json::json!(e);
+    }
+    if let Some(d) = result.get("duration_ms").and_then(|v| v.as_u64()) {
+        resp["duration_ms"] = serde_json::json!(d);
+    }
+    if !output.status.success() {
+        resp["hint"] = serde_json::json!(format!(
+            "uteke dream CLI exited with code {}. Check server connectivity.",
+            output.status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(resp)
+}
+
+/// Save a dream cycle result to the run history table.
+fn save_dream_run(
+    conn: &rusqlite::Connection,
+    report: &crate::uteke_client::DreamReport,
+) -> Result<(), rusqlite::Error> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let phases_json = serde_json::to_string(&report.phases).unwrap_or_default();
+    conn.execute(
+        "INSERT INTO dream_run_history (ran_at, success, total_changes, total_warnings, total_errors, duration_ms, phases_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+            now,
+            report.total_errors == 0,
+            report.total_changes as i64,
+            report.total_warnings as i64,
+            report.total_errors as i64,
+            report.duration_ms as i64,
+            phases_json,
+        ],
+    )?;
+    // Keep only the last 50 runs.
+    conn.execute(
+        "DELETE FROM dream_run_history WHERE id NOT IN (
+             SELECT id FROM dream_run_history ORDER BY ran_at DESC LIMIT 50
+         )",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Get dream cycle run history (last N runs).
+#[tauri::command]
+pub async fn get_dream_history(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    limit: Option<usize>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let limit = limit.unwrap_or(10) as i64;
+    let s = state.lock().await;
+    let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, ran_at, success, total_changes, total_warnings, total_errors, duration_ms, phases_json
+             FROM dream_run_history
+             ORDER BY ran_at DESC
+             LIMIT ?1",
+        )
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![limit], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, i64>(0)?,
+                "ran_at": row.get::<_, String>(1)?,
+                "success": row.get::<_, bool>(2)?,
+                "total_changes": row.get::<_, i64>(3)?,
+                "total_warnings": row.get::<_, i64>(4)?,
+                "total_errors": row.get::<_, i64>(5)?,
+                "duration_ms": row.get::<_, i64>(6)?,
+                "phases": serde_json::from_str::<Vec<crate::uteke_client::PhaseResult>>(
+                    &row.get::<_, String>(7).unwrap_or_default()
+                ).unwrap_or_default(),
+            }))
+        })
+        .map_err(|e| CommandError::Uteke(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect::<Vec<_>>();
+
+    Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Commands: Ecosystem health check (#19 — multi-product dashboard)
+// ---------------------------------------------------------------------------
+
+/// Health check result for an ecosystem product.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProductHealth {
+    pub id: String,
+    pub available: bool,
+    pub latency_ms: u64,
+    pub version: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Perform a lightweight HTTP GET health check against any CodeCora product.
+///
+/// Sends GET to `{url}{health_path}` with a 3s timeout. Returns
+/// availability, latency, version (parsed from JSON if present), and error.
+/// Used by the Dashboard to show multi-product status cards.
+#[tauri::command]
+pub async fn check_product_health(
+    url: String,
+    health_path: String,
+) -> Result<ProductHealth, CommandError> {
+    let full_url = format!("{}{}", url.trim_end_matches('/'), health_path);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    let start = std::time::Instant::now();
+    let result = client.get(&full_url).send().await;
+
+    let latency_ms = start.elapsed().as_millis() as u64;
+
+    match result {
+        Ok(resp) if resp.status().is_success() => {
+            // Try to parse version from JSON body.
+            let version = resp
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(String::from));
+            Ok(ProductHealth {
+                id: url.clone(),
+                available: true,
+                latency_ms,
+                version,
+                error: None,
+            })
+        }
+        Ok(resp) => Ok(ProductHealth {
+            id: url,
+            available: false,
+            latency_ms,
+            version: None,
+            error: Some(format!("HTTP {}", resp.status())),
+        }),
+        Err(e) => Ok(ProductHealth {
+            id: url,
+            available: false,
+            latency_ms,
+            version: None,
+            error: Some(e.to_string()),
+        }),
+    }
 }
 
 // ---------------------------------------------------------------------------
