@@ -1,94 +1,97 @@
-# CorIn — Feature Roadmap
+# Corin — Feature Roadmap
 
-> Reference: Uteke features that CorIn should integrate with or expose via UI.
-> Updated: 2026-06-22 (Uteke v0.3.1, schema v11)
+> Reference: Uteke features that Corin integrates with or exposes via UI.
+> Updated: 2026-07-06 (Uteke v0.6.7)
 
 ## 🔍 Search & Retrieval
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| Hybrid Search | Semantic (meaning) + keyword (text). Results merged via RRF algorithm. | Phase 2: use uteke-core recall instead of LIKE |
-| Recall Cache | Same query = no re-embed. LRU cache returns previous results instantly. | Phase 2: automatic via uteke-core |
-| Time-travel | Recall memory as it was at a past date — "what did I know on June 1?" | Phase 3: timeline UI |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Hybrid Search | Semantic (meaning) + keyword (text). Results merged via RRF algorithm. | ✅ via Uteke HTTP |
+| Recall Cache | Same query = no re-embed. LRU cache returns previous results instantly. | ✅ automatic via uteke-serve |
+| Time-travel | Recall memory as it was at a past date. | ⬚ Not yet — needs timeline UI |
 
-## 🏠 Organisasi Memory
+## 🏠 Memory Organization
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| Namespaces | Isolation per agent. Agent A can't read Agent B's memories. Like separate folders. | ✅ Sidebar → Namespaces view |
-| Rooms | Shared workspace for multi-agent. Cross-namespace with author attribution. | ✅ Rooms view (Uteke rooms table) |
-| Memory Types | Every memory has a type: fact, procedure, decision, preference, etc. Auto-detected. | Phase 2: show type badge in list/detail |
-| Tags & Metadata | Tags for categorization, entity/category for filtering, key:value for structured data. | ✅ Tag display + filter |
-| Tiered Memory | Old, rarely-accessed memories auto-become "cold". Cleanup via aging. | Phase 3: aging settings |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Namespaces | Isolation per agent/namespace. | ✅ Namespaces view + multi-select filter |
+| Rooms | Shared workspace for multi-agent. Cross-namespace with author attribution. | ✅ Rooms view (list, detail, create, delete) |
+| Memory Types | Every memory has a type: fact, procedure, decision, preference. Auto-detected. | ⬚ Not yet — needs type badge in UI |
+| Tags & Metadata | Tags for categorization. | ✅ Client methods exist, UI pending |
+| Tiered Memory | Old, rarely-accessed memories auto-become "cold". | ⬚ Not yet |
 
 ## 🔗 Graph & Linking
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| Relationship Graph | Memories linked with edges: references, supersedes, contradicts, replies_to. | ✅ Canvas force-directed (tag-based for now) |
-| Backlinks | If A references B, B auto-gets backlink to A. Bidirectional. | Phase 2: uteke-core graph API |
-| Cosine Auto-Linking | On save, auto-find similar memories and create similar_to edge. | Phase 2: uteke-core integration (#17) |
-| Orphan Detection | Find memories with no connections and low importance — cleanup candidates. | Phase 3: maintenance UI |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Relationship Graph | Memories linked with edges: references, supersedes, contradicts, replies_to. | ✅ Force-directed canvas + namespace filter |
+| Backlinks | If A references B, B auto-gets backlink to A. Bidirectional. | ✅ via Uteke graph API |
+| Cosine Auto-Linking | On save, auto-find similar memories and create `similar_to` edge. | ✅ automatic via uteke-serve |
+| Orphan Detection | Find memories with no connections and low importance. | ✅ via Dream cycle |
 
 ## 📊 Quality & Intelligence
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| Smart Decay | Old memories auto-lose importance. Important ones can be pinned. | Phase 3: decay settings |
-| Salience + Recency | Recall results boosted by type (decision > fact > note) and age (new > old). | Phase 2: sort options |
-| Citations | Every memory can have source: URL, file, user, or import. Know where it came from. | Phase 2: source field in editor |
-| Timeline Events | Audit log per memory: when created, updated, recalled, tagged, etc. | Phase 3: timeline view (#20) |
-| Dream Cycle | One-command maintenance: lint → fix backlinks → dedup → find orphans. Like "sleep" for brain. | Phase 3: maintenance button |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Smart Decay | Old memories auto-lose importance. Important ones can be pinned. | ⬚ Pin/unpin client methods exist, UI pending |
+| Salience + Recency | Recall results boosted by type and age. | ✅ via Uteke recall |
+| Citations | Every memory has source: URL, file, user, or import. | ⬚ Not yet |
+| Timeline Events | Audit log per memory: created, updated, recalled, tagged. | ⬚ Client method exists, UI pending |
+| Dream Cycle | One-command maintenance: lint → fix backlinks → dedup → find orphans. | ✅ Dream cycle button + auto-schedule |
 
 ## 📝 Document Engine (Wiki)
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| Document Engine | Store full markdown documents (not snippets). Auto-chunk per heading, each chunk gets own embedding. Like Obsidian/Outline. | Phase 2: markdown editor (#18) |
-| Markdown Chunker | Split documents by # heading. Code blocks not split. | Phase 2: CodeMirror integration |
-| Embed-aware Chunking | Chunk size adjusted to embedder token limit (ONNX: 1024 chars, OpenAI: 32K chars). | Phase 2: automatic via uteke-core |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Document Engine | Store full markdown documents. Auto-chunk per heading, each chunk gets own embedding. | ✅ Tree nav + CodeMirror 6 + CRUD |
+| Markdown Chunker | Split documents by heading. Code blocks not split. | ✅ via uteke-serve |
+| Document Update | Update existing document content. | ⬚ Uses upsert (`POST /doc/create`), dedicated `POST /doc/update` pending (uteke issue) |
+| Document Move | Move documents between tree locations. | ✅ `doc_move` command |
 
 ## 🔌 Integration & Server
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| MCP Server | JSON-RPC protocol for AI agents (Claude Desktop, Cursor, Hermes). Via stdio or HTTP. | Phase 3: Hub as MCP viewer |
-| Server Mode | Persistent daemon in memory. Recall ~42ms vs ~3s cold start CLI. 75x faster. | Phase 2: Hub reads via server mode |
-| Graph API | GET /graph endpoint — returns JSON nodes + edges for graph visualization. | Phase 2: replace direct DB read |
-| View-Only API Keys | Read-only tokens for clients that should only read, not write. | Phase 3: settings UI |
-| Hermes Plugin | Auto-install plugin to Hermes Agent. Includes room operations. | Phase 3: auto-detect Hermes |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| MCP Server | JSON-RPC for AI agents (Claude Desktop, Cursor, Hermes). | ✅ See `docs/mcp-integration.md` |
+| Uteke Server | Persistent daemon. Corin auto-starts `uteke-serve` on launch. | ✅ Auto-start + status indicator |
+| Graph API | JSON nodes + edges for graph visualization. | ✅ via Uteke HTTP |
+| Connection Manager | Connect to multiple Uteke instances. Trait-based adapter layer. | ✅ Full CRUD + health polling |
+| Hermes Dashboard | Kanban integration via REST API. | ⬚ KanbanClient exists, not wired to UI |
+| Import/Export | Backup/restore via JSON & Markdown. | ✅ Native import/export UI |
 
 ## ⚙️ Infrastructure
 
-| Feature | Description | Hub Integration |
-|---------|-------------|-----------------|
-| Pluggable Embeddings | Choose backend: ONNX (default, offline), OpenAI, or Ollama. Via config. | Phase 2: settings dropdown |
-| Fully Offline | No internet needed. ONNX model local. No telemetry. | ✅ Hub is local-first |
-| Single Binary | One binary file. No Docker, Python, database server, or API key needed. | ✅ Hub bundles via Tauri |
-| Import/Export | Backup/restore via JSONL. | ✅ Settings → Export JSON/Markdown |
-| Configurable Limits | All limits (content length, tags, payload) overridable via env vars or config. | Phase 2: advanced settings |
-
----
-
-## 🆕 Uteke v0.3.x Features (NEW)
-
-| Feature | Uteke API | Description | CorIn Integration |
-|---------|-----------|-------------|-------------------|
-| Document Engine | `uteke doc create/get/list/delete/export` | Wiki/knowledge base. Simpan markdown utuh, auto-chunk per heading, tiap chunk dapat embedding. Obsidian/Outline-style. | Phase 2: markdown editor + doc list |
-| Cosine Auto-Linking | Automatic on `remember()` | Memory baru otomatis dicari kemiripan. ≥0.80 → similar_to, ≥0.92 → possible_duplicate | Phase 2: auto-edges in graph + detail |
-| Markdown Chunker | `chunk_markdown()` | Pisah dokumen by # heading. Code block tidak di-split. Paragraph fallback. | Phase 2: CodeMirror integration |
-| Embed-aware Chunking | `chunk_markdown_embed_aware()` | Chunk size from embedder.max_seq_len(). ONNX=1024, OpenAI=32K per chunk. | Phase 2: automatic via uteke-core |
-| Graph API | `GET /graph` | Server endpoint return nodes + edges + stats JSON | Phase 2: replace direct DB read |
-| View-Only API Key | `--read-only-token` | Read-only token (GET only, 403 for POST/DELETE) | Phase 3: settings UI |
-| Configurable Limits | `[limits]` config + env vars | Content 10K→100K, payload 1MB→10MB. Override via UTEKE_MAX_* | Phase 2: advanced settings |
-| Room Remember | Hermes plugin action | `room_remember` — simpan memory ke room dengan author attribution | Phase 3: create room from CorIn |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Fully Offline | No internet needed for core features. | ✅ Local-first |
+| Single Binary | One binary per platform. No Docker, Python, or DB server needed. | ✅ Tauri bundles |
+| Auto-updater | Signed platform updates. | ✅ Tauri updater |
+| Configurable Limits | Override content length, tags, payload limits. | ⬚ Via uteke config, not Corin UI |
 
 ---
 
 ## Phase Mapping
 
-| Phase | Focus | Issues |
+| Phase | Focus | Status |
 |-------|-------|--------|
-| **Phase 1 (current)** | CorIn MVP: CRUD, graph (tag-based), namespaces, rooms, settings | ✅ Done |
-| **Phase 2** | uteke-core integration: hybrid search, real graph edges, auto-linking, document engine, markdown editor | #16, #17, #18 |
-| **Phase 3** | Advanced: timeline, maintenance, multi-product dashboard, Hermes plugin, view-only keys | #19, #20, #37 |
+| **Phase 1** (v0.1.0) | MVP: Memory CRUD, graph (tag-based), namespaces, rooms, CI, centralized storage | ✅ Done |
+| **Phase 2** (v0.2.0) | Uteke HTTP integration: hybrid search, graph edges, auto-linking, document engine, connection manager, import/export, dream cycle | ✅ Done |
+| **Phase 3** (v0.3.0) | Pipeline: doc update endpoint, tags/pin/timeline UI, kanban integration | 🔄 In progress |
+| **Phase 4** | Multi-product dashboard enhancements, advanced settings | ⬚ Planned |
+| **Phase 5** | Mobile companion app | ⬚ Planned |
+
+---
+
+## GitHub Issues
+
+Active development tracked via [codecoradev/corin issues](https://github.com/codecoradev/corin/issues).
+
+| Issue | Title | Phase |
+|-------|-------|-------|
+| #139 | `POST /doc/update` endpoint for document editing | 3 |
+| #123 | Release v0.3.0 sync develop→main | 3 |
+| #116 | Kanban integration via Hermes dashboard | 3 |
+| #25 | Mobile companion app | 5 |
+| #21 | Web API for remote/mobile access | 4 |
+| #20 | Cora review history viewer | 4 |
