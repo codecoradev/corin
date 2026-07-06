@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
-  RoomEntry, StatsResponse,
+  RoomEntry, StatsResponse, ProductHealth,
 } from './types';
 
 export const memory = {
@@ -197,6 +197,15 @@ export const agents = {
       duration_ms: number;
       phases: Array<{ phase: string; status: string; summary: string; changes: number; warnings: number }>;
     }>>('get_dream_history', { limit: limit ?? null }),
+};
+
+// Ecosystem health check (#19 — multi-product dashboard)
+export const ecosystem = {
+  checkHealth: (url: string, healthPath: string) =>
+    invoke<ProductHealth>('check_product_health', {
+      url,
+      healthPath,
+    }),
 };
 
 // Connection Manager (#37)

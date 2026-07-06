@@ -362,6 +362,8 @@ pub fn run() {
             commands::set_primary_connection,
             commands::reconnect_connection,
             commands::disconnect_connection,
+            // Ecosystem health (#19 — multi-product dashboard)
+            commands::check_product_health,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
