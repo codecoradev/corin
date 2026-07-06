@@ -1077,6 +1077,30 @@ pub async fn uteke_room_recall(
         .collect())
 }
 
+/// Room stats via HTTP (POST /room/stats).
+///
+/// Returns authoritative memory_count and participant_count for a room.
+#[tauri::command]
+pub async fn uteke_room_stats(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(serde_json::json!({"memory_count": 0, "participant_count": 0}));
+    };
+    if !client.is_available().await {
+        return Ok(serde_json::json!({"memory_count": 0, "participant_count": 0}));
+    }
+    client
+        .room_stats(&room_id)
+        .await
+        .map_err(CommandError::Uteke)
+}
+
 /// Chronological room memories via HTTP (uteke >= 0.6.7, GET /room/memories).
 ///
 /// Returns memories in a room ordered chronologically (newest first).

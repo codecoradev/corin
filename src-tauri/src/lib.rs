@@ -348,6 +348,7 @@ pub fn run() {
             commands::uteke_rooms,
             commands::uteke_room_recall,
             commands::uteke_room_memories,
+            commands::uteke_room_stats,
             commands::uteke_search,
             commands::uteke_stats,
             // Uteke Server Integration (HTTP)

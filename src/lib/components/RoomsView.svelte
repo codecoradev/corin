@@ -47,6 +47,10 @@
   // Confirm delete state
   let showDeleteConfirm = $state(false);
 
+  // Participants state (authoritative from server)
+  let roomStatsData = $state<{ memory_count: number; participant_count: number; participant_namespaces?: string[] } | null>(null);
+  let participantsLoading = $state(false);
+
   function relativeTime(dateStr: string): string {
     if (!dateStr) return '';
     const now = Date.now();
@@ -64,17 +68,6 @@
     if (diffMo < 12) return `${diffMo}mo ago`;
     const diffYr = Math.floor(diffMo / 12);
     return `${diffYr}y ago`;
-  }
-
-  function getParticipants(): Participant[] {
-    const counts: Record<string, number> = {};
-    for (const m of roomMemories) {
-      const ns = m.namespace ?? 'default';
-      counts[ns] = (counts[ns] ?? 0) + 1;
-    }
-    return Object.entries(counts)
-      .map(([namespace, count]) => ({ namespace, count }))
-      .sort((a, b) => b.count - a.count);
   }
 
   async function loadRooms() {
@@ -104,6 +97,7 @@
     activeTab = 'summary';
     documentLoaded = false;
     roomDocument = '';
+    roomStatsData = null;
     if (utekeReady) {
       // Use chronological room_memories (uteke >= 0.6.7) with fallback to recall
       try {
@@ -112,6 +106,46 @@
         roomMemories = await uteke.roomRecall(roomId, 50).catch(() => []);
       }
     }
+  }
+
+  /** Load participants from server stats (authoritative) */
+  async function loadParticipants() {
+    if (!selectedRoom || !utekeReady) return;
+    participantsLoading = true;
+    try {
+      roomStatsData = await uteke.roomStats(selectedRoom);
+    } catch {
+      roomStatsData = null;
+    }
+    participantsLoading = false;
+  }
+
+  /**
+   * Get participants — authoritative from server stats when available,
+   * falls back to client-side grouping from roomMemories.
+   */
+  function getParticipants(): Participant[] {
+    // Prefer server-provided participant_namespaces list
+    if (roomStatsData?.participant_namespaces?.length) {
+      const memCounts: Record<string, number> = {};
+      for (const m of roomMemories) {
+        const ns = m.namespace ?? 'default';
+        memCounts[ns] = (memCounts[ns] ?? 0) + 1;
+      }
+      return roomStatsData.participant_namespaces
+        .map((ns) => ({ namespace: ns, count: memCounts[ns] ?? 0 }))
+        .sort((a, b) => b.count - a.count);
+    }
+
+    // Fallback: derive from roomMemories (may undercount if limit truncates)
+    const counts: Record<string, number> = {};
+    for (const m of roomMemories) {
+      const ns = m.namespace ?? 'default';
+      counts[ns] = (counts[ns] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([namespace, count]) => ({ namespace, count }))
+      .sort((a, b) => b.count - a.count);
   }
 
   async function loadDocument(roomId: string) {
@@ -130,6 +164,12 @@
   $effect(() => {
     if (selectedRoom && activeTab === 'summary') {
       loadDocument(selectedRoom);
+    }
+  });
+
+  $effect(() => {
+    if (selectedRoom && activeTab === 'participants') {
+      loadParticipants();
     }
   });
 
@@ -371,7 +411,10 @@
           <!-- Tab: Participants -->
           {#if activeTab === 'participants'}
             {@const participants = getParticipants()}
-            {#if participants.length === 0}
+            {@const serverParticipantCount = roomStatsData?.participant_count ?? currentRoom?.participant_count ?? 0}
+            {#if participantsLoading}
+              <div class="tab-loading">Loading participants…</div>
+            {:else if participants.length === 0}
               <div class="tab-empty">
                 <p>No participants yet.</p>
                 <p class="sub">Agents will appear here when they contribute memories to this room.</p>
@@ -390,7 +433,7 @@
                   </div>
                 {/each}
                 <div class="participant-summary">
-                  <span>{participants.length} {participants.length === 1 ? 'participant' : 'participants'} · {roomMemories.length} total memories</span>
+                  <span>{participants.length} {participants.length === 1 ? 'participant' : 'participants'} · {serverParticipantCount > participants.length ? `(server reports ${serverParticipantCount} total)` : ''} · {roomMemories.length} memories loaded</span>
                 </div>
               </div>
             {/if}

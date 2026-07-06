@@ -105,6 +105,8 @@ export const uteke = {
       limit: opts?.limit ?? null,
       author: opts?.author ?? null,
     }),
+  roomStats: (roomId: string) =>
+    invoke<{ memory_count: number; participant_count: number; participant_namespaces?: string[] }>('uteke_room_stats', { roomId }),
   list: (opts?: { namespace?: string; namespaces?: string[]; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,
