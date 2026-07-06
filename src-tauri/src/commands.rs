@@ -1346,7 +1346,7 @@ pub async fn export_data(
 
 #[tauri::command]
 pub async fn import_preview(
-    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    _state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     format: String,
     data: String,
 ) -> Result<serde_json::Value, CommandError> {
@@ -1374,10 +1374,10 @@ pub async fn import_preview(
                 std::collections::HashSet::new();
             if let Some(arr) = parsed.get("memories").and_then(|v| v.as_array()) {
                 for m in arr {
-                    if let Some(ns) = m.get("namespace").and_then(|v| v.as_str()) {
-                        if !ns.is_empty() {
-                            namespaces.insert(ns.to_string());
-                        }
+                    if let Some(ns) = m.get("namespace").and_then(|v| v.as_str())
+                        && !ns.is_empty()
+                    {
+                        namespaces.insert(ns.to_string());
                     }
                 }
             }
@@ -1400,10 +1400,10 @@ pub async fn import_preview(
                     continue;
                 }
                 // Find frontmatter between --- delimiters
-                if let Some(rest) = block.strip_prefix("---\n") {
-                    if let Some(_fm_end) = rest.find("\n---\n") {
-                        count += 1;
-                    }
+                if let Some(rest) = block.strip_prefix("---\n")
+                    && let Some(_fm_end) = rest.find("\n---\n")
+                {
+                    count += 1;
                 }
             }
             Ok(serde_json::json!({
@@ -1517,8 +1517,9 @@ pub async fn import_data(
                     continue;
                 }
                 // Split at frontmatter end
-                if let Some(rest) = block.strip_prefix("---\n") {
-                    if let Some(idx) = rest.find("\n---\n") {
+                if let Some(rest) = block.strip_prefix("---\n")
+                    && let Some(idx) = rest.find("\n---\n")
+                {
                         let fm = &rest[..idx];
                         let body = rest[idx + 5..].trim();
 
@@ -1562,7 +1563,6 @@ pub async fn import_data(
                             .await
                             .map_err(|e| CommandError::Uteke(e.to_string()))?;
                         count += 1;
-                    }
                 }
             }
             Ok(count)
