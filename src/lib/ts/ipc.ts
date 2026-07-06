@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
-  RoomEntry, StatsResponse,
+  RoomEntry, StatsResponse, DocEntry, DocSearchResult,
 } from './types';
 
 export const memory = {
@@ -250,4 +250,67 @@ export const connection = {
   setPrimary: (id: string) => invoke<void>('set_primary_connection', { id }),
   reconnect: (id: string) => invoke<HealthInfo>('reconnect_connection', { id }),
   disconnect: () => invoke<void>('disconnect_connection'),
+};
+
+// Document Engine (#137) — uteke-serve /doc/* API
+export const docs = {
+  list: (opts?: { namespace?: string; limit?: number; roots_only?: boolean; parent?: string }) =>
+    invoke<DocEntry[]>('doc_list', {
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+      roots_only: opts?.roots_only ?? null,
+      parent: opts?.parent ?? null,
+    }),
+
+  get: (opts: { slug?: string; id?: string; namespace?: string }) =>
+    invoke<DocEntry>('doc_get', {
+      slug: opts.slug ?? null,
+      id: opts.id ?? null,
+      namespace: opts.namespace ?? null,
+    }),
+
+  create: (slug: string, title: string, content: string, opts?: { namespace?: string; tags?: string[]; parent?: string }) =>
+    invoke<DocEntry>('doc_create', {
+      slug,
+      title,
+      content,
+      namespace: opts?.namespace ?? null,
+      tags: opts?.tags ?? null,
+      parent: opts?.parent ?? null,
+    }),
+
+  search: (query: string, opts?: { namespace?: string; limit?: number; mode?: string }) =>
+    invoke<DocSearchResult[]>('doc_search', {
+      query,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+      mode: opts?.mode ?? null,
+    }),
+
+  delete: (opts: { id?: string; slug?: string }) =>
+    invoke<void>('doc_delete', {
+      id: opts.id ?? null,
+      slug: opts.slug ?? null,
+    }),
+
+  move: (opts: { id?: string; slug?: string; new_parent?: string; namespace?: string }) =>
+    invoke<unknown>('doc_move', {
+      id: opts.id ?? null,
+      slug: opts.slug ?? null,
+      new_parent: opts.new_parent ?? null,
+      namespace: opts.namespace ?? null,
+    }),
+
+  /** Export document content as a downloadable .md file. */
+  exportFile: (doc: DocEntry) => {
+    const content = doc.content ?? '';
+    const filename = `${doc.slug || doc.title || 'document'}.md`;
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

@@ -12,6 +12,7 @@
   import RoomsView from './lib/components/RoomsView.svelte';
   import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
+  import DocumentsView from './lib/components/DocumentsView.svelte';
   import DetailPanel from './lib/components/DetailPanel.svelte';
 
   // App state
@@ -156,6 +157,8 @@
         <GraphView onmemoryclick={openDetail} />
       {:else if activeView === 'rooms'}
         <RoomsView {namespace} onmemoryclick={openDetail} />
+      {:else if activeView === 'documents'}
+        <DocumentsView {namespace} />
       {/if}
     </main>
   </div>

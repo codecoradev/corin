@@ -368,6 +368,13 @@ pub fn run() {
             commands::set_primary_connection,
             commands::reconnect_connection,
             commands::disconnect_connection,
+            // Document Engine (#137)
+            commands::doc_list,
+            commands::doc_get,
+            commands::doc_create,
+            commands::doc_search,
+            commands::doc_delete,
+            commands::doc_move,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
