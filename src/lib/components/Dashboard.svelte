@@ -1,11 +1,9 @@
 <script lang="ts">
-  import { system, memory as memoryApi, utekeServer, ecosystem } from '../ts/ipc';
+  import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
   import { getStats } from '../stores/cache.svelte';
   import type {
     StatsResponse,
     MemoryEntry,
-    ProductCard,
-    ProductHealth,
   } from '../ts/types';
 
   interface Props {
@@ -15,75 +13,6 @@
   }
 
   let { namespace, onmemoryclick, onquicksearch }: Props = $props();
-
-  // ─── Product cards ───────────────────────────────────────────────
-  // Static registry of CodeCora ecosystem products.
-  // Each product has a default local URL and a health endpoint path.
-  const products: ProductCard[] = [
-    {
-      id: 'uteke',
-      name: 'Uteke',
-      icon: '🧠',
-      description: 'Memories, Graph',
-      color: 'var(--teal)',
-      defaultUrl: 'http://127.0.0.1:8767',
-      healthPath: '/health',
-    },
-    {
-      id: 'cora',
-      name: 'Cora',
-      icon: '🔍',
-      description: 'Code Reviews, SARIF',
-      color: 'var(--accent)',
-      defaultUrl: 'http://127.0.0.1:8768',
-      healthPath: '/api/health',
-    },
-    {
-      id: 'trapfall',
-      name: 'TrapFall',
-      icon: '🪤',
-      description: 'Error Groups, Crashes',
-      color: 'var(--peach)',
-      defaultUrl: 'http://127.0.0.1:8769',
-      healthPath: '/api/health',
-    },
-    {
-      id: 'rungu',
-      name: 'Rungu',
-      icon: '👂',
-      description: 'Feedback, Code Intel',
-      color: 'var(--mauve)',
-      defaultUrl: 'http://127.0.0.1:8770',
-      healthPath: '/api/health',
-    },
-  ];
-
-  let health: Record<string, ProductHealth> = $state({});
-  let healthLoading = $state<Record<string, boolean>>({});
-
-  async function checkAllProducts() {
-    const checks = products.map(async (p) => {
-      healthLoading[p.id] = true;
-      try {
-        const result = await ecosystem.checkHealth(
-          p.defaultUrl,
-          p.healthPath,
-        );
-        health[p.id] = result;
-      } catch {
-        health[p.id] = {
-          id: p.id,
-          available: false,
-          latency_ms: 0,
-          version: null,
-          error: 'check failed',
-        };
-      } finally {
-        healthLoading[p.id] = false;
-      }
-    });
-    await Promise.allSettled(checks);
-  }
 
   // ─── Uteke stats + recent memories ─────────────────────────────────
   let stats = $state<StatsResponse | null>(null);
@@ -124,7 +53,6 @@
   $effect(() => {
     namespace;
     loadData();
-    checkAllProducts();
   });
 
   function formatBytes(bytes: number): string {
@@ -132,55 +60,9 @@
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1048576).toFixed(1)} MB`;
   }
-
-  function statusLabel(h: ProductHealth | undefined): string {
-    if (!h) return 'Checking...';
-    if (h.available) return `${h.latency_ms}ms`;
-    return 'Offline';
-  }
 </script>
 
 <div class="dashboard">
-  <!-- Product cards -->
-  <section class="products-section">
-    <h2 class="section-title">CodeCora Ecosystem</h2>
-    <div class="products-grid">
-      {#each products as product}
-        <div
-          class="product-card"
-          class:online={health[product.id]?.available === true}
-          class:offline={!health[product.id] || health[product.id]?.available === false}
-        >
-          <div class="product-header">
-            <span class="product-icon">{product.icon}</span>
-            <div class="product-info">
-              <span class="product-name" style="color: {product.color}"
-                >{product.name}</span
-              >
-              <span class="product-desc">{product.description}</span>
-            </div>
-            <span
-              class="status-badge"
-              class:badge-online={health[product.id]?.available === true}
-              class:badge-offline={!health[product.id] || health[product.id]?.available === false}
-            >
-              {#if healthLoading[product.id]}
-                ...
-              {:else}
-                {statusLabel(health[product.id])}
-              {/if}
-            </span>
-          </div>
-          <div class="product-meta">
-            {#if health[product.id]?.version}
-              <span class="version-tag">v{health[product.id].version}</span>
-            {/if}
-          </div>
-        </div>
-      {/each}
-    </div>
-  </section>
-
   <!-- Quick search -->
   <div class="quick-search">
     <input
@@ -278,94 +160,6 @@
     margin-bottom: 12px;
     font-weight: 600;
     letter-spacing: 0.02em;
-  }
-
-  /* ─── Product cards ─────────────────────────────────────────────── */
-  .products-section {
-    margin-bottom: 28px;
-  }
-
-  .products-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 10px;
-  }
-
-  .product-card {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px;
-    transition: border-color 0.15s;
-  }
-
-  .product-card.online {
-    border-color: var(--green);
-  }
-
-  .product-card.offline {
-    opacity: 0.6;
-  }
-
-  .product-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .product-icon {
-    font-size: 1.4rem;
-    flex-shrink: 0;
-  }
-
-  .product-info {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .product-name {
-    font-size: 0.9rem;
-    font-weight: 700;
-    line-height: 1.2;
-  }
-
-  .product-desc {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .status-badge {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .badge-online {
-    background: rgba(166, 227, 161, 0.15);
-    color: var(--green);
-  }
-
-  .badge-offline {
-    background: var(--bg-hover);
-    color: var(--text-muted);
-  }
-
-  .product-meta {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
-  }
-
-  .version-tag {
-    font-size: 0.7rem;
-    padding: 1px 6px;
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-    border-radius: 3px;
   }
 
   /* ─── Quick search ──────────────────────────────────────────────── */

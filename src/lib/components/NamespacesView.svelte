@@ -12,7 +12,6 @@
 
   let namespaces = $state<{ name: string; count: number | null; source: string }[]>([]);
   let loading = $state(true);
-  let counting = $state(false);
   let selectedNs = $state<string | null>(null);
 
   // Detail pager (paginated memories of the selected namespace).
@@ -24,16 +23,35 @@
       const hubNs = await system.listNamespaces().catch(() => []);
       const utekeOk = await uteke.available().catch(() => false);
 
+      // Fetch uteke namespace counts in a single call (uteke >= #527).
+      let utekeCounts: Map<string, number> = new Map();
+      if (utekeOk) {
+        try {
+          const counted = await uteke.namespacesWithCounts();
+          for (const item of counted) utekeCounts.set(item.name, item.count);
+        } catch {
+          // Fallback: no counts available on this server version.
+        }
+      }
+
       const result: { name: string; count: number | null; source: string }[] = [];
       for (const ns of hubNs) result.push({ name: ns, count: null, source: 'hub' });
 
       if (utekeOk) {
-        // Cached namespace list (30s TTL).
         const utekeNs = await getNamespaces().catch(() => []);
         for (const ns of utekeNs) {
           const existing = result.find((r) => r.name === ns);
           if (existing) existing.source = 'both';
-          else result.push({ name: ns, count: null, source: 'uteke' });
+          else result.push({ name: ns, count: utekeCounts.get(ns) ?? null, source: 'uteke' });
+          // Also backfill count for hub entries that match.
+          const hubMatch = result.find((r) => r.name === ns);
+          if (hubMatch && hubMatch.source === 'hub') hubMatch.count = utekeCounts.get(ns) ?? null;
+        }
+        // Backfill counts for 'both' entries.
+        for (const r of result) {
+          if (r.source === 'both' && r.count === null) {
+            r.count = utekeCounts.get(r.name) ?? null;
+          }
         }
       }
       namespaces = result.sort((a, b) => a.name.localeCompare(b.name));
@@ -41,32 +59,6 @@
       namespaces = [];
     } finally {
       loading = false;
-    }
-  }
-
-  /** Fill counts concurrently with a tiny request each (was: sequential 500). */
-  async function loadCounts() {
-    if (counting) return;
-    counting = true;
-    try {
-      const utekeOk = await uteke.available().catch(() => false);
-      if (!utekeOk) return;
-      // One request per namespace, but CONCURRENT and limit:1 (we only need
-      // the existence/length signal; a server /count endpoint — uteke #527 —
-      // would make this a single call).
-      await Promise.all(
-        namespaces.map(async (item) => {
-          if (item.count !== null) return;
-          const mems = await uteke
-            .list({ namespace: item.name, limit: 1, offset: 0 })
-            .catch(() => []);
-          // We only know "has ≥1" from limit:1; show ≥1 marker unless empty.
-          item.count = mems.length > 0 ? 1 : 0;
-        })
-      );
-      namespaces = [...namespaces];
-    } finally {
-      counting = false;
     }
   }
 
@@ -86,9 +78,6 @@
   <div class="ns-header">
     <h2>Namespaces</h2>
     <span class="count">{namespaces.length} namespaces</span>
-    <button class="count-btn" onclick={loadCounts} disabled={counting || loading}>
-      {counting ? 'Counting…' : 'Load counts'}
-    </button>
   </div>
 
   {#if loading}
@@ -104,7 +93,7 @@
           >
             <div class="ns-name">{ns.name}</div>
             <div class="ns-meta">
-              <span class="count">{ns.count === null ? '—' : (ns.count > 0 ? '1+' : '0')}</span>
+              <span class="count">{ns.count === null ? '—' : String(ns.count)}</span>
               <span class="src src-{ns.source}">{ns.source}</span>
             </div>
           </button>
@@ -155,14 +144,6 @@
   .ns-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
   .ns-header h2 { font-size: 1.1rem; margin: 0; flex: 1; }
   .ns-header .count { font-size: 0.8rem; color: var(--text-muted); }
-  .count-btn {
-    padding: 4px 12px; font-size: 0.8rem; cursor: pointer;
-    background: var(--bg-tertiary); color: var(--text-secondary);
-    border: 1px solid var(--border); border-radius: 4px;
-  }
-  .count-btn:not(:disabled):hover { border-color: var(--accent); }
-  .count-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
   .layout { display: flex; gap: 16px; }
   .ns-list { width: 240px; display: flex; flex-direction: column; gap: 4px; max-height: 70vh; overflow-y: auto; }
   .ns-card {
