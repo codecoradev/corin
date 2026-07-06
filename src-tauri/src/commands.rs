@@ -101,8 +101,8 @@ pub struct StatsResponse {
 
 /// Managed state shared across all Tauri commands.
 ///
-/// All memory CRUD goes through `uteke_client` (HTTP → uteke-serve).
-/// uteke-core is retained only for `graph_store()` and `graph_data()`.
+/// All memory CRUD and graph operations go through `uteke_client` (HTTP → uteke-serve).
+/// Corin is a pure HTTP client with no native uteke-core dependency.
 /// CorIn's own SQLite DB is for settings only.
 #[derive(Default)]
 pub struct AppState {
@@ -143,9 +143,8 @@ pub async fn remember(
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
-// NOTE: Auto-edge generation deferred to Phase 2 when uteke-core library
-// is integrated. Phase 1 edges are managed via uteke CLI import or
-// the graph_edges table directly.
+// NOTE: Auto-edge generation deferred to Phase 2.
+// Phase 1 edges are managed via uteke-serve HTTP API (POST /graph/edge).
 
 #[tauri::command]
 pub async fn recall(

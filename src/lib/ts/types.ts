@@ -21,7 +21,7 @@ export interface ProductHealth {
   error: string | null;
 }
 
-// Memory entry from uteke-core
+// Memory entry from uteke-serve (HTTP API)
 export interface MemoryEntry {
   id: string;
   content: string;
