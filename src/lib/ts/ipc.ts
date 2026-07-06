@@ -66,8 +66,9 @@ export const system = {
   listTags: (namespace?: string) => invoke<Record<string, number>>('list_tags', { namespace: namespace ?? null }),
   getSettings: () => invoke<Record<string, string>>('get_settings'),
   setSettings: (settings: Record<string, string>) => invoke<void>('set_settings', { settings }),
-  exportData: (format: 'json' | 'markdown') => invoke<string>('export_data', { format }),
-  importData: (data: string) => invoke<number>('import_data', { data }),
+  exportData: (format: 'json' | 'markdown' | 'csv', namespace?: string | null) => invoke<string>('export_data', { format, namespace: namespace ?? null }),
+  importPreview: (format: 'json' | 'markdown', data: string) => invoke<{ format: string; memories: number; edges: number; rooms: number; namespaces: string[]; tags?: string[] }>('import_preview', { format, data }),
+  importData: (format: 'json' | 'markdown', data: string) => invoke<number>('import_data', { format, data }),
   openDataDir: () => invoke<string>('init_data_dir'), // returns path, doesn't open file manager
 };
 

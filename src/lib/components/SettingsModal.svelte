@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { system, updater, agents as agentApi } from '../ts/ipc';
   import type { Update } from '@tauri-apps/plugin-updater';
+  import ImportExport from './ImportExport.svelte';
 
   interface Props {
     onclose: () => void;
@@ -32,6 +33,7 @@
 
   // ─── Data dir info ───
   let dataDir = $state<string | null>(null);
+  let namespaces = $state<string[]>([]);
 
   // ─── AI Agents (#55) ───
   let detectedAgents = $state<Array<{ name: string; config_path: string; found: boolean }>>([]);
@@ -126,6 +128,11 @@
     } catch {
       dataDir = null;
     }
+    try {
+      namespaces = await system.listNamespaces();
+    } catch {
+      namespaces = [];
+    }
   }
 
   onMount(() => {
@@ -149,21 +156,6 @@
       // ignore
     } finally {
       saving = false;
-    }
-  }
-
-  async function handleExport(format: 'json' | 'markdown') {
-    try {
-      const data = await system.exportData(format);
-      const blob = new Blob([data], { type: format === 'json' ? 'application/json' : 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `codecora-export.${format === 'json' ? 'json' : 'md'}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      // ignore
     }
   }
 
@@ -347,15 +339,8 @@
         </section>
 
         <section class="content-section">
-          <h3>Export</h3>
-          <div class="data-actions">
-            <button class="data-btn" onclick={() => handleExport('json')}>
-              ↓ Export JSON
-            </button>
-            <button class="data-btn" onclick={() => handleExport('markdown')}>
-              ↓ Export Markdown
-            </button>
-          </div>
+          <h3>Import / Export</h3>
+          <ImportExport {namespaces} />
         </section>
 
       {:else if activeTab === 'connections'}
@@ -677,11 +662,6 @@
     font-size: 0.8rem;
     color: var(--accent);
     word-break: break-all;
-  }
-
-  .data-actions {
-    display: flex;
-    gap: 8px;
   }
 
   .data-btn {
