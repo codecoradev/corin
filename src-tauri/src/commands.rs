@@ -3,8 +3,8 @@
 //! Every command is an `async fn` decorated with `#[tauri::command]`.
 //! State is held in [`AppState`] behind `tokio::sync::Mutex`.
 //!
-//! All memory CRUD goes through the HTTP client (`uteke_client::UtekeClient`).
-//! uteke-core is retained only for graph_store() (add_edge) and graph_data().
+//! All operations go through the HTTP client (`uteke_client::UtekeClient`).
+//! Corin is a pure HTTP client — no native uteke-core dependency.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -111,9 +111,7 @@ pub struct AppState {
     /// CorIn SQLite connection for settings only.
     pub conn: Option<rusqlite::Connection>,
     pub data_dir: Option<PathBuf>,
-    /// Uteke-core instance — used only for graph_store() and graph_data().
-    pub uteke: Option<uteke_core::Uteke>,
-    /// HTTP client for uteke-serve (all memory CRUD).
+    /// HTTP client for uteke-serve (all memory CRUD + graph operations).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
 }
@@ -288,59 +286,53 @@ pub async fn get_graph_data(
     namespace: Option<String>,
     limit: Option<usize>,
 ) -> Result<GraphData, CommandError> {
-    let (client, gd) = {
+    let client = {
         let s = state.lock().await;
-        let client = s.uteke_client.clone();
-        let gd = s
-            .uteke
-            .as_ref()
-            .and_then(|u| u.graph_data(namespace.as_deref()).ok());
-        (client, gd)
+        s.uteke_client.clone()
     };
     let Some(client) = client else {
         return Err(CommandError::NotInitialized);
     };
-    let Some(gd) = gd else {
+    if !client.is_available().await {
         return Ok(GraphData {
             nodes: vec![],
             edges: vec![],
         });
-    };
-    let limit = limit.unwrap_or(100);
-
-    // Fetch memory content via HTTP for each graph node
-    let mut nodes: Vec<MemoryEntry> = Vec::new();
-    for n in gd.nodes.into_iter().take(limit) {
-        let mid = match n.memory_id.as_deref() {
-            Some(id) => id,
-            None => continue,
-        };
-        if let Ok(m) = client.get(mid).await {
-            nodes.push(MemoryEntry {
-                id: m.id,
-                content: m.content,
-                tags: m.tags,
-                content_type: Some(m.content_type),
-                importance: Some(m.importance),
-                namespace: Some(m.namespace),
-                created_at: Some(m.created_at),
-                updated_at: Some(m.updated_at),
-            });
-        }
     }
 
-    let node_id_set: std::collections::HashSet<String> =
-        nodes.iter().map(|n| n.id.clone()).collect();
+    let limit = limit.unwrap_or(100);
+    let gd = client
+        .graph(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Map HTTP graph response to frontend types
+    let nodes: Vec<MemoryEntry> = gd
+        .nodes
+        .into_iter()
+        .take(limit)
+        .map(|n| MemoryEntry {
+            id: n.id,
+            content: n.label,
+            tags: vec![],
+            content_type: n.entity_type,
+            importance: None,
+            namespace: None,
+            created_at: None,
+            updated_at: None,
+        })
+        .collect();
 
     let edges: Vec<GraphEdge> = gd
         .edges
         .into_iter()
-        .filter(|e| node_id_set.contains(&e.source_id) && node_id_set.contains(&e.target_id))
-        .map(|e| GraphEdge {
-            id: None,
-            source: e.source_id,
-            target: e.target_id,
-            weight: Some(e.weight as f32),
+        .take(limit)
+        .enumerate()
+        .map(|(i, e)| GraphEdge {
+            id: Some(i as i64),
+            source: e.source,
+            target: e.target,
+            weight: Some(e.weight),
         })
         .collect();
 
@@ -354,29 +346,33 @@ pub async fn get_neighbors(
     depth: Option<usize>,
 ) -> Result<Vec<MemoryEntry>, CommandError> {
     let _depth = depth.unwrap_or(1);
-    let (client, gd) = {
+    let client = {
         let s = state.lock().await;
-        let client = s.uteke_client.clone();
-        let gd = s.uteke.as_ref().and_then(|u| u.graph_data(None).ok());
-        (client, gd)
+        s.uteke_client.clone()
     };
     let Some(client) = client else {
         return Err(CommandError::NotInitialized);
     };
-    let Some(gd) = gd else {
+    if !client.is_available().await {
         return Ok(vec![]);
-    };
+    }
 
-    // Use graph_data to find neighbors via edges
+    // Use HTTP graph endpoint filtered to neighbors of the given node
+    let gd = client
+        .graph_neighbors(&id, None)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+
+    // Collect neighbor node IDs from edges connected to the target node
     let neighbor_ids: std::collections::HashSet<String> = gd
         .edges
         .iter()
-        .filter(|e| e.source_id == id || e.target_id == id)
+        .filter(|e| e.source == id || e.target == id)
         .map(|e| {
-            if e.source_id == id {
-                e.target_id.clone()
+            if e.source == id {
+                e.target.clone()
             } else {
-                e.source_id.clone()
+                e.source.clone()
             }
         })
         .collect();
@@ -431,35 +427,35 @@ pub async fn add_edge(
         return Err(CommandError::NotFound(target));
     }
 
-    // add_edge must run inside the lock — graph_store() returns &Connection
-    // that borrows from the Uteke instance inside Mutex<AppState>.
-    {
-        let s = state.lock().await;
-        let Some(uteke) = s.uteke.as_ref() else {
-            return Err(CommandError::NotInitialized);
-        };
-        let conn = uteke.graph_store();
-        let gs = uteke_core::graph::GraphStore::new(conn);
-        let rel = edge_type.as_deref().unwrap_or("related");
-        let w = weight.unwrap_or(1.0) as f64;
-        gs.add_edge(&source, &target, rel, w)
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    }
+    // HTTP-only edge mutation via uteke-serve (POST /graph/edge).
+    let rel = edge_type.as_deref().unwrap_or("related");
+    client
+        .add_edge(&source, &target, Some(rel), weight)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    Ok(0) // uteke-core edges use string IDs, not auto-increment i64
+    Ok(0)
 }
 
 #[tauri::command]
 pub async fn remove_edge(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    _id: i64,
+    source: String,
+    target: String,
+    relation: Option<String>,
 ) -> Result<(), CommandError> {
-    // Edge removal by numeric ID is no longer supported with uteke-core
-    // (edges use string-based source/target keys). Frontend should
-    // use source+target to identify edges for deletion.
-    // This command is kept for backward compatibility but is a no-op.
-    let _ = state.lock().await;
-    Ok(())
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+
+    client
+        .remove_edge(&source, &target, relation.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -882,57 +878,7 @@ pub async fn uteke_graph(
         }
     }
 
-    // ── Fallback: uteke-core native graph (cosine auto-linked edges) ──
-    // graph_data() still exists on uteke-core, but get_by_id() is removed.
-    // Fetch memory content via HTTP for each graph node.
-    {
-        let (client, gd) = {
-            let s = state.lock().await;
-            let client = s.uteke_client.clone();
-            let gd = s
-                .uteke
-                .as_ref()
-                .and_then(|u| u.graph_data(namespace.as_deref()).ok());
-            (client, gd)
-        };
-
-        if let (Some(client), Some(gd)) = (client, gd) {
-            let mut nodes: Vec<MemoryEntry> = Vec::new();
-            for n in &gd.nodes {
-                let mid = match n.memory_id.as_deref() {
-                    Some(id) => id,
-                    None => continue,
-                };
-                if let Ok(m) = client.get(mid).await {
-                    nodes.push(MemoryEntry {
-                        id: m.id,
-                        content: m.content,
-                        tags: m.tags,
-                        content_type: Some(m.content_type),
-                        importance: Some(m.importance),
-                        namespace: Some(m.namespace),
-                        created_at: Some(m.created_at),
-                        updated_at: Some(m.updated_at),
-                    });
-                }
-            }
-
-            let edges: Vec<GraphEdge> = gd
-                .edges
-                .iter()
-                .enumerate()
-                .map(|(i, e)| GraphEdge {
-                    id: Some(i as i64),
-                    source: e.source_id.clone(),
-                    target: e.target_id.clone(),
-                    weight: Some(e.weight as f32),
-                })
-                .collect();
-
-            return Ok(GraphData { nodes, edges });
-        }
-    }
-
+    // No uteke-serve available — return empty graph
     Ok(GraphData {
         nodes: vec![],
         edges: vec![],
@@ -1386,17 +1332,11 @@ pub async fn init_data_dir(
     )
     .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    // Open uteke-core native store (~/.uteke) with embedding + graph
-    let uteke_home = uteke_core::uteke_home().map_err(|e| CommandError::Io(e.to_string()))?;
-    let uteke_store =
-        uteke_core::Uteke::open(&uteke_home).map_err(|e| CommandError::Uteke(e.to_string()))?;
-
     let corin_dir = crate::config::corin_dir().map_err(|e| CommandError::Io(e.to_string()))?;
 
     s.data_dir = Some(corin_dir.clone());
     s.db_path = Some(db_path);
     s.conn = Some(conn);
-    s.uteke = Some(uteke_store);
 
     Ok(corin_dir.to_string_lossy().to_string())
 }

@@ -4,9 +4,9 @@
 //! [`crate::config::detect_uteke_serve_url`] from `~/.uteke/config.toml`,
 //! falling back to [`DEFAULT_URL`] when the config is missing.
 //!
-//! Falls back to direct DB access (rusqlite) when server is not running.
-//! This gives CorIn semantic search, cosine auto-linking, and graph API
-//! without bundling the full uteke-core library (avoids dep conflicts).
+//! Corin is a pure HTTP client to uteke-serve — no native uteke-core
+//! dependency. All operations (memory CRUD, graph, rooms) go through
+//! the HTTP API.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -82,6 +82,48 @@ pub struct GraphStats {
 pub struct NamespaceCount {
     pub name: String,
     pub count: usize,
+}
+
+/// A tag with its usage count.
+///
+/// Returned by GET /tags.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagInfo {
+    pub name: String,
+    pub count: usize,
+}
+
+/// A single timeline event for a memory.
+///
+/// Returned by GET /timeline?id=...&limit=...
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimelineEvent {
+    pub id: i64,
+    pub memory_id: String,
+    pub event_type: String,
+    pub event_data: Option<String>,
+    pub created_at: String,
+}
+
+/// A single edge between two memories.
+///
+/// Returned as part of EdgeList from GET /edges?id=...
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryEdge {
+    pub source_id: String,
+    pub target_id: String,
+    pub edge_type: String,
+    pub created_at: String,
+}
+
+/// Edge list for a memory (outgoing + incoming).
+///
+/// Returned by GET /edges?id=...
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EdgeList {
+    pub memory_id: String,
+    pub outgoing: Vec<MemoryEdge>,
+    pub incoming: Vec<MemoryEdge>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,6 +351,102 @@ impl UtekeClient {
         resp.json().await.map_err(|e| e.to_string())
     }
 
+    /// Add an edge between two memories (POST /graph/edge).
+    pub async fn add_edge(
+        &self,
+        source: &str,
+        target: &str,
+        relation: Option<&str>,
+        weight: Option<f32>,
+    ) -> Result<(), String> {
+        let mut body = serde_json::json!({
+            "source": source,
+            "target": target,
+        });
+        if let Some(rel) = relation {
+            body["relation"] = serde_json::Value::String(rel.to_string());
+        }
+        if let Some(w) = weight {
+            body["weight"] = serde_json::json!(w);
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/graph/edge", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        // Consume response body.
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Remove an edge (DELETE /graph/edge).
+    pub async fn remove_edge(
+        &self,
+        source: &str,
+        target: &str,
+        relation: Option<&str>,
+    ) -> Result<(), String> {
+        let mut req = self
+            .authed(self.client.delete(format!("{}/graph/edge", self.base_url)))
+            .query(&[("source", source), ("target", target)]);
+        if let Some(rel) = relation {
+            req = req.query(&[("relation", rel)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Get graph data filtered to neighbors of a specific node.
+    ///
+    /// Uses GET /graph with `node_id` filter (uteke-serve returns only
+    /// edges connected to that node).
+    pub async fn graph_neighbors(
+        &self,
+        node_id: &str,
+        namespace: Option<&str>,
+    ) -> Result<GraphResponse, String> {
+        let mut req = self.authed(self.client.get(format!("{}/graph", self.base_url)));
+        req = req.query(&[("node_id", node_id)]);
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Get graph statistics only (no nodes/edges).
+    pub async fn graph_stats(&self) -> Result<GraphStats, String> {
+        let resp = self
+            .authed(self.client.get(format!("{}/graph/stats", self.base_url)))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
     /// List rooms.
     pub async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<UtekeRoom>, String> {
         let mut req = self.authed(self.client.get(format!("{}/room/list", self.base_url)));
@@ -469,5 +607,150 @@ impl UtekeClient {
             .json()
             .await
             .map_err(|e| e.to_string())
+    }
+
+    // ── Tags ─────────────────────────────────────────────────────────────
+
+    /// List tags with usage counts, optionally filtered by namespace.
+    pub async fn list_tags(&self, namespace: Option<&str>) -> Result<Vec<TagInfo>, String> {
+        let mut req = self.authed(self.client.get(format!("{}/tags", self.base_url)));
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Rename a tag across a namespace.
+    pub async fn rename_tag(
+        &self,
+        old: &str,
+        new: &str,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({
+            "old": old,
+            "new": new,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/tags/rename", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Delete a tag from a namespace.
+    pub async fn delete_tag(
+        &self,
+        tag: &str,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({
+            "tag": tag,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/tags/delete", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    // ── Pin ──────────────────────────────────────────────────────────────
+
+    /// Pin a memory by ID.
+    pub async fn pin(&self, id: &str) -> Result<(), String> {
+        let body = serde_json::json!({
+            "id": id,
+        });
+
+        let resp = self
+            .authed(self.client.post(format!("{}/pin", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Unpin a memory by ID.
+    pub async fn unpin(&self, id: &str) -> Result<(), String> {
+        let body = serde_json::json!({
+            "id": id,
+        });
+
+        let resp = self
+            .authed(self.client.post(format!("{}/unpin", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    // ── Timeline ─────────────────────────────────────────────────────────
+
+    /// Get timeline events for a memory.
+    pub async fn timeline(&self, id: &str, limit: usize) -> Result<Vec<TimelineEvent>, String> {
+        let resp = self
+            .authed(self.client.get(format!("{}/timeline", self.base_url)))
+            .query(&[("id", id), ("limit", &limit.to_string())])
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    // ── Edges ────────────────────────────────────────────────────────────
+
+    /// Get edges for a memory (outgoing + incoming).
+    pub async fn edges(&self, id: &str) -> Result<EdgeList, String> {
+        let resp = self
+            .authed(self.client.get(format!("{}/edges", self.base_url)))
+            .query(&[("id", id)])
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
     }
 }
