@@ -1290,14 +1290,14 @@ pub async fn export_data(
                             .join(", ")
                     ));
                 }
-                if let Some(ns) = &m.namespace {
-                    frontmatter.push_str(&format!("namespace: {}\n", ns));
+                if !m.namespace.is_empty() {
+                    frontmatter.push_str(&format!("namespace: {}\n", m.namespace));
                 }
-                if let Some(ct) = &m.created_at {
-                    frontmatter.push_str(&format!("created: {}\n", ct));
+                if !m.created_at.is_empty() {
+                    frontmatter.push_str(&format!("created: {}\n", m.created_at));
                 }
-                if let Some(ut) = &m.updated_at {
-                    frontmatter.push_str(&format!("updated: {}\n", ut));
+                if !m.updated_at.is_empty() {
+                    frontmatter.push_str(&format!("updated: {}\n", m.updated_at));
                 }
                 if m.importance > 0.0 {
                     frontmatter.push_str(&format!("importance: {:.2}\n", m.importance));
@@ -1392,9 +1392,8 @@ pub async fn import_preview(
         "markdown" => {
             // Parse Obsidian-style frontmatter blocks
             let mut count = 0usize;
-            let mut namespaces: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            let mut tags: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let namespaces: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let tags: std::collections::HashSet<String> = std::collections::HashSet::new();
             for block in data.split("<<< FILE:") {
                 let block = block.trim();
                 if block.is_empty() {
