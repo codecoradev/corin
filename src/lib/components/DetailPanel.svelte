@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import type { Snippet } from 'svelte';
 
   interface Props {
     memoryId: string;
     onclose: () => void;
     onneighborclick?: (id: string) => void;
     onedit?: (m: any) => void;
-    children: () => void;
+    children: Snippet;
   }
 
   let { memoryId, onclose, onneighborclick, onedit, children }: Props = $props();
