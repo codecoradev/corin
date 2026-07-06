@@ -2009,7 +2009,7 @@ pub async fn get_dream_history(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     limit: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, CommandError> {
-    let limit = limit.unwrap_or(10);
+    let limit = limit.unwrap_or(10) as i64;
     let s = state.lock().await;
     let conn = s.conn.as_ref().ok_or(CommandError::NotInitialized)?;
 
