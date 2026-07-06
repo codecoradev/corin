@@ -158,6 +158,44 @@ pub struct UtekeRoom {
     pub updated_at: String,
 }
 
+// ── Documents (uteke-serve /doc/*) ───────────────────────────────────
+
+/// A document entry from uteke-serve.
+///
+/// Returned by POST /doc/list and POST /doc/get. The `content` field
+/// is only populated by /doc/get (not /doc/list, which is metadata-only).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UtekeDoc {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub content: Option<String>,
+    pub namespace: Option<String>,
+    pub tags: Vec<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub version: i64,
+    pub content_type: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub parent_id: Option<String>,
+    pub path: Option<Vec<String>>,
+    pub depth: i64,
+    pub sort_order: i64,
+    pub has_children: bool,
+}
+
+/// A single document search result.
+///
+/// Returned by POST /doc/search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocSearchHit {
+    pub document: UtekeDoc,
+    pub chunk_heading: Option<String>,
+    pub chunk_snippet: Option<String>,
+    pub score: f32,
+    pub mode: Option<String>,
+}
+
 /// HTTP client for uteke-serve.
 #[derive(Clone)]
 pub struct UtekeClient {
@@ -852,5 +890,189 @@ impl UtekeClient {
         }
 
         resp.json().await.map_err(|e| e.to_string())
+    }
+
+    // ── Documents (uteke-serve /doc/*) ─────────────────────────────────
+
+    /// List documents via POST /doc/list.
+    ///
+    /// `roots_only` returns only top-level documents (parent_id IS NULL).
+    /// `parent` returns direct children of a specific document.
+    pub async fn doc_list(
+        &self,
+        namespace: Option<&str>,
+        limit: Option<usize>,
+        roots_only: Option<bool>,
+        parent: Option<&str>,
+    ) -> Result<Vec<UtekeDoc>, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(limit) = limit {
+            body["limit"] = serde_json::json!(limit);
+        }
+        if let Some(true) = roots_only {
+            body["roots_only"] = serde_json::json!(true);
+        }
+        if let Some(pid) = parent {
+            body["parent"] = serde_json::Value::String(pid.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/doc/list", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Get a single document via POST /doc/get.
+    ///
+    /// Accepts either `slug` or `id`. Returns full document with content.
+    pub async fn doc_get(
+        &self,
+        slug: Option<&str>,
+        id: Option<&str>,
+        namespace: Option<&str>,
+    ) -> Result<UtekeDoc, String> {
+        let mut body = serde_json::json!({});
+        if let Some(s) = slug {
+            body["slug"] = serde_json::Value::String(s.to_string());
+        }
+        if let Some(i) = id {
+            body["id"] = serde_json::Value::String(i.to_string());
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/doc/get", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Create a document via POST /doc/create.
+    pub async fn doc_create(
+        &self,
+        slug: &str,
+        title: &str,
+        content: &str,
+        namespace: Option<&str>,
+        tags: &[String],
+        parent: Option<&str>,
+    ) -> Result<UtekeDoc, String> {
+        let mut body = serde_json::json!({
+            "slug": slug,
+            "title": title,
+            "content": content,
+            "tags": tags,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(pid) = parent {
+            body["parent"] = serde_json::Value::String(pid.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/doc/create", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Search documents via POST /doc/search (hybrid semantic + FTS).
+    pub async fn doc_search(
+        &self,
+        query: &str,
+        namespace: Option<&str>,
+        limit: Option<usize>,
+        mode: Option<&str>,
+    ) -> Result<Vec<DocSearchHit>, String> {
+        let mut body = serde_json::json!({
+            "query": query,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(limit) = limit {
+            body["limit"] = serde_json::json!(limit);
+        }
+        if let Some(m) = mode {
+            body["mode"] = serde_json::Value::String(m.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/doc/search", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Delete a document via DELETE /doc/delete.
+    ///
+    /// Must provide either `id` or `slug` as query parameter.
+    pub async fn doc_delete(&self, id: Option<&str>, slug: Option<&str>) -> Result<(), String> {
+        let mut req = self.authed(self.client.delete(format!("{}/doc/delete", self.base_url)));
+        if let Some(i) = id {
+            req = req.query(&[("id", i)]);
+        }
+        if let Some(s) = slug {
+            req = req.query(&[("slug", s)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Move/reparent a document via POST /doc/move.
+    pub async fn doc_move(
+        &self,
+        id: Option<&str>,
+        slug: Option<&str>,
+        new_parent: Option<&str>,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({});
+        if let Some(i) = id {
+            body["id"] = serde_json::Value::String(i.to_string());
+        }
+        if let Some(s) = slug {
+            body["slug"] = serde_json::Value::String(s.to_string());
+        }
+        if let Some(np) = new_parent {
+            body["new_parent"] = serde_json::Value::String(np.to_string());
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        self.authed(self.client.post(format!("{}/doc/move", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
     }
 }

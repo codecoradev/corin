@@ -2661,6 +2661,166 @@ pub async fn disconnect_connection(
     Ok(())
 }
 
+// ── Document Engine (uteke-serve /doc/*) ─────────────────────────────
+
+/// List documents via uteke-serve POST /doc/list.
+#[tauri::command]
+pub async fn doc_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+    roots_only: Option<bool>,
+    parent: Option<String>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    if !client.is_available().await {
+        return Err(CommandError::Uteke("uteke-serve not reachable".into()));
+    }
+    let docs = client
+        .doc_list(namespace.as_deref(), limit, roots_only, parent.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(docs
+        .into_iter()
+        .map(|d| serde_json::to_value(d).unwrap_or_default())
+        .collect())
+}
+
+/// Get a single document via uteke-serve POST /doc/get.
+#[tauri::command]
+pub async fn doc_get(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    slug: Option<String>,
+    id: Option<String>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let doc = client
+        .doc_get(slug.as_deref(), id.as_deref(), namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(serde_json::to_value(doc).unwrap_or_default())
+}
+
+/// Create a document via uteke-serve POST /doc/create.
+#[tauri::command]
+pub async fn doc_create(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    slug: String,
+    title: String,
+    content: String,
+    namespace: Option<String>,
+    tags: Option<Vec<String>>,
+    parent: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let tags = tags.unwrap_or_default();
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let doc = client
+        .doc_create(
+            &slug,
+            &title,
+            &content,
+            namespace.as_deref(),
+            &tags,
+            parent.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(serde_json::to_value(doc).unwrap_or_default())
+}
+
+/// Search documents via uteke-serve POST /doc/search.
+#[tauri::command]
+pub async fn doc_search(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    query: String,
+    namespace: Option<String>,
+    limit: Option<usize>,
+    mode: Option<String>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let results = client
+        .doc_search(&query, namespace.as_deref(), limit, mode.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(results
+        .into_iter()
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .collect())
+}
+
+/// Delete a document via uteke-serve DELETE /doc/delete.
+#[tauri::command]
+pub async fn doc_delete(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: Option<String>,
+    slug: Option<String>,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    client
+        .doc_delete(id.as_deref(), slug.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Move/reparent a document via uteke-serve POST /doc/move.
+#[tauri::command]
+pub async fn doc_move(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: Option<String>,
+    slug: Option<String>,
+    new_parent: Option<String>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .doc_move(
+            id.as_deref(),
+            slug.as_deref(),
+            new_parent.as_deref(),
+            namespace.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {
