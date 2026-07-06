@@ -1199,6 +1199,7 @@ pub async fn set_settings(
 pub async fn export_data(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     format: String,
+    namespace: Option<String>,
 ) -> Result<String, CommandError> {
     let client = {
         let s = state.lock().await;
@@ -1208,13 +1209,50 @@ pub async fn export_data(
         return Err(CommandError::NotInitialized);
     };
 
+    let ns = namespace.as_deref();
     let memories = client
-        .list(None, None, 10000, 0)
+        .list(ns, None, 100_000, 0)
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
     match format.as_str() {
         "json" => {
+            // Collect edges for exported memories
+            let memory_ids: Vec<&str> = memories.iter().map(|m| m.id.as_str()).collect();
+            let mut edges_json = Vec::new();
+            let mut rooms_json = Vec::new();
+
+            // Fetch edges per memory (batch)
+            for id in &memory_ids {
+                if let Ok(edge_list) = client.edges(id).await {
+                    for e in edge_list.outgoing {
+                        if memory_ids.contains(&e.target_id.as_str()) {
+                            edges_json.push(serde_json::json!({
+                                "source": e.source_id,
+                                "target": e.target_id,
+                                "type": e.edge_type,
+                                "created_at": e.created_at,
+                            }));
+                        }
+                    }
+                }
+            }
+
+            // Fetch rooms in namespace
+            if let Ok(rooms) = client.rooms(ns).await {
+                for r in rooms {
+                    rooms_json.push(serde_json::json!({
+                        "id": r.id,
+                        "title": r.title,
+                        "namespace": r.namespace,
+                        "memory_count": r.memory_count,
+                        "participant_count": r.participant_count,
+                        "created_at": r.created_at,
+                        "updated_at": r.updated_at,
+                    }));
+                }
+            }
+
             let export = serde_json::json!({
                 "version": "2.0",
                 "exported_at": chrono::Utc::now().to_rfc3339(),
@@ -1223,28 +1261,152 @@ pub async fn export_data(
                     "content": m.content,
                     "tags": m.tags,
                     "namespace": m.namespace,
+                    "importance": m.importance,
+                    "memory_type": m.memory_type,
+                    "content_type": m.content_type,
+                    "pinned": m.pinned,
                     "created_at": m.created_at,
                     "updated_at": m.updated_at,
                 })).collect::<Vec<_>>(),
+                "edges": edges_json,
+                "rooms": rooms_json,
             });
             Ok(serde_json::to_string_pretty(&export).unwrap_or_default())
         }
         "markdown" => {
-            let mut doc = String::from("# CorIn Export\n\n");
+            // Obsidian-compatible: each memory is a separate .md file
+            // We return a single string with file boundaries so the frontend
+            // can split and save individual files.
+            let mut parts = Vec::new();
             for m in &memories {
-                doc.push_str(&format!(
-                    "## {}\n\n{}\n\n**Tags:** {}\n**Namespace:** {}\n**Created:** {}\n\n---\n\n",
+                let safe_id = m.id.replace(['/', '\\', ':'], "-");
+                let mut frontmatter = String::from("---\n");
+                frontmatter.push_str(&format!("id: {}\n", m.id));
+                if !m.tags.is_empty() {
+                    frontmatter.push_str(&format!("tags: [{}]\n", m.tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", ")));
+                }
+                if let Some(ns) = &m.namespace {
+                    frontmatter.push_str(&format!("namespace: {}\n", ns));
+                }
+                if let Some(ct) = &m.created_at {
+                    frontmatter.push_str(&format!("created: {}\n", ct));
+                }
+                if let Some(ut) = &m.updated_at {
+                    frontmatter.push_str(&format!("updated: {}\n", ut));
+                }
+                if m.importance > 0.0 {
+                    frontmatter.push_str(&format!("importance: {:.2}\n", m.importance));
+                }
+                if m.pinned {
+                    frontmatter.push_str("pinned: true\n");
+                }
+                frontmatter.push_str("---\n\n");
+                parts.push(format!("<<< FILE:{} >>>\n{}{}\n", safe_id, frontmatter, m.content));
+            }
+            Ok(parts.join("\n"))
+        }
+        "csv" => {
+            // Flat table: id, content, tags, namespace, importance, type, pinned, created_at
+            let mut csv = String::from("id,content,tags,namespace,importance,memory_type,content_type,pinned,created_at,updated_at\n");
+            for m in &memories {
+                let content = m.content.replace('"', "\"\"");
+                let tags = m.tags.join(";").replace('"', "\"\"");
+                let ns = m.namespace.as_deref().unwrap_or("");
+                csv.push_str(&format!(
+                    "\"{}\",\"{}\",\"{}\",\"{}\",{:.2},\"{}\",\"{}\",{},\"{}\",\"{}\"\n",
                     m.id,
-                    m.content,
-                    m.tags.join(", "),
-                    m.namespace,
-                    m.created_at,
+                    content,
+                    tags,
+                    ns,
+                    m.importance,
+                    m.memory_type,
+                    m.content_type,
+                    m.pinned,
+                    m.created_at.as_deref().unwrap_or(""),
+                    m.updated_at.as_deref().unwrap_or(""),
                 ));
             }
-            Ok(doc)
+            Ok(csv)
         }
         _ => Err(CommandError::Uteke(format!(
-            "unsupported export format: {} (use 'json' or 'markdown')",
+            "unsupported export format: {} (use 'json', 'markdown', or 'csv')",
+            format
+        ))),
+    }
+}
+
+#[tauri::command]
+pub async fn import_preview(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    format: String,
+    data: String,
+) -> Result<serde_json::Value, CommandError> {
+    match format.as_str() {
+        "json" => {
+            let parsed: serde_json::Value =
+                serde_json::from_str(&data).map_err(|e| CommandError::Uteke(e.to_string()))?;
+            let memories = parsed
+                .get("memories")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let edges = parsed
+                .get("edges")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let rooms = parsed
+                .get("rooms")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            // Extract unique namespaces from memories
+            let mut namespaces = std::collections::HashSet::new();
+            if let Some(arr) = parsed.get("memories").and_then(|v| v.as_array()) {
+                for m in arr {
+                    if let Some(ns) = m.get("namespace").and_then(|v| v.as_str()) {
+                        if !ns.is_empty() {
+                            namespaces.insert(ns.to_string());
+                        }
+                    }
+                }
+            }
+            Ok(serde_json::json!({
+                "format": "json",
+                "memories": memories,
+                "edges": edges,
+                "rooms": rooms,
+                "namespaces": namespaces.into_iter().collect::<Vec<_>>(),
+            }))
+        }
+        "markdown" => {
+            // Parse Obsidian-style frontmatter blocks
+            let mut count = 0usize;
+            let mut namespaces = std::collections::HashSet::new();
+            let mut tags = std::collections::HashSet::new();
+            for block in data.split("<<< FILE:") {
+                let block = block.trim();
+                if block.is_empty() {
+                    continue;
+                }
+                // Find frontmatter between --- delimiters
+                if let Some(rest) = block.strip_prefix("---\n") {
+                    if let Some(_fm_end) = rest.find("\n---\n") {
+                        count += 1;
+                    }
+                }
+            }
+            Ok(serde_json::json!({
+                "format": "markdown",
+                "memories": count,
+                "edges": 0,
+                "rooms": 0,
+                "namespaces": namespaces.into_iter().collect::<Vec<_>>(),
+                "tags": tags.into_iter().collect::<Vec<_>>(),
+            }))
+        }
+        _ => Err(CommandError::Uteke(format!(
+            "unsupported import format: {}",
             format
         ))),
     }
@@ -1253,6 +1415,7 @@ pub async fn export_data(
 #[tauri::command]
 pub async fn import_data(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    format: String,
     data: String,
 ) -> Result<usize, CommandError> {
     let client = {
@@ -1263,44 +1426,141 @@ pub async fn import_data(
         return Err(CommandError::NotInitialized);
     };
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(&data).map_err(|e| CommandError::Uteke(e.to_string()))?;
+    match format.as_str() {
+        "json" => {
+            let parsed: serde_json::Value =
+                serde_json::from_str(&data).map_err(|e| CommandError::Uteke(e.to_string()))?;
 
-    let memories = parsed
-        .get("memories")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| {
-            CommandError::Uteke("invalid import: missing 'memories' array".to_string())
-        })?;
+            let memories = parsed
+                .get("memories")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| {
+                    CommandError::Uteke("invalid import: missing 'memories' array".to_string())
+                })?;
 
-    let mut count = 0usize;
-    for m in memories {
-        let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
-        if content.is_empty() {
-            continue;
+            let mut count = 0usize;
+            for m in memories {
+                let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                if content.is_empty() {
+                    continue;
+                }
+                let tags: Vec<String> = m
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let namespace = m
+                    .get("namespace")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+
+                client
+                    .remember(content, &tags, namespace.as_deref())
+                    .await
+                    .map_err(|e| CommandError::Uteke(e.to_string()))?;
+                count += 1;
+            }
+
+            // Import edges after memories
+            if let Some(edges) = parsed.get("edges").and_then(|v| v.as_array()) {
+                for e in edges {
+                    let source = e.get("source").and_then(|v| v.as_str()).unwrap_or("");
+                    let target = e.get("target").and_then(|v| v.as_str()).unwrap_or("");
+                    if source.is_empty() || target.is_empty() {
+                        continue;
+                    }
+                    let relation = e.get("type").and_then(|v| v.as_str());
+                    let weight = e.get("weight").and_then(|v| v.as_f64()).map(|w| w as f32);
+                    let _ = client
+                        .add_edge(source, target, relation, weight)
+                        .await;
+                }
+            }
+
+            // Import rooms after memories
+            if let Some(rooms) = parsed.get("rooms").and_then(|v| v.as_array()) {
+                for r in rooms {
+                    let id = r.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let title = r.get("title").and_then(|v| v.as_str());
+                    let ns = r.get("namespace").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+                    if id.is_empty() {
+                        continue;
+                    }
+                    let _ = client.room_create(id, title, ns).await;
+                }
+            }
+
+            Ok(count)
         }
-        let tags: Vec<String> = m
-            .get("tags")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let namespace = m
-            .get("namespace")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        "markdown" => {
+            // Parse Obsidian-style markdown with YAML frontmatter
+            let mut count = 0usize;
+            for block in data.split("<<< FILE:") {
+                let block = block.trim();
+                if block.is_empty() {
+                    continue;
+                }
+                // Split at frontmatter end
+                if let Some(rest) = block.strip_prefix("---\n") {
+                    if let Some(idx) = rest.find("\n---\n") {
+                        let fm = &rest[..idx];
+                        let body = rest[idx + 5..].trim();
 
-        client
-            .remember(content, &tags, namespace.as_deref())
-            .await
-            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-        count += 1;
+                        if body.is_empty() {
+                            continue;
+                        }
+
+                        // Parse frontmatter fields
+                        let mut tags = Vec::new();
+                        let mut namespace: Option<String> = None;
+                        for line in fm.lines() {
+                            if let Some(rest) = line.strip_prefix("tags:") {
+                                // Parse [tag1, "tag2"] or tag1, tag2
+                                let cleaned = rest.trim();
+                                if cleaned.starts_with('[') && cleaned.ends_with(']') {
+                                    let inner = &cleaned[1..cleaned.len() - 1];
+                                    for tag in inner.split(',') {
+                                        let t = tag.trim().trim_matches('"').trim();
+                                        if !t.is_empty() {
+                                            tags.push(t.to_string());
+                                        }
+                                    }
+                                } else {
+                                    for tag in cleaned.split(',') {
+                                        let t = tag.trim().trim_matches('"').trim();
+                                        if !t.is_empty() {
+                                            tags.push(t.to_string());
+                                        }
+                                    }
+                                }
+                            } else if let Some(rest) = line.strip_prefix("namespace:") {
+                                let ns = rest.trim().trim_matches('"');
+                                if !ns.is_empty() {
+                                    namespace = Some(ns.to_string());
+                                }
+                            }
+                        }
+
+                        client
+                            .remember(body, &tags, namespace.as_deref())
+                            .await
+                            .map_err(|e| CommandError::Uteke(e.to_string()))?;
+                        count += 1;
+                    }
+                }
+            }
+            Ok(count)
+        }
+        _ => Err(CommandError::Uteke(format!(
+            "unsupported import format: {}",
+            format
+        ))),
     }
-
-    Ok(count)
 }
 
 #[tauri::command]

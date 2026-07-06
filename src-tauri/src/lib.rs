@@ -300,6 +300,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(Arc::new(Mutex::new(AppState::default())))
         .invoke_handler(tauri::generate_handler![
             // Memory
@@ -327,6 +329,7 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::export_data,
+            commands::import_preview,
             commands::import_data,
             commands::init_data_dir,
             // AI Agent Integration (#55)
