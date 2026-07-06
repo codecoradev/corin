@@ -172,7 +172,31 @@ export const utekeServer = {
 export const agents = {
   detect: () => invoke<Array<{ name: string; config_path: string; found: boolean }>>('detect_agents'),
   generateAgentMd: (projectDir?: string) => invoke<string>('generate_agent_md', { projectDir: projectDir ?? null }),
-  runDream: () => invoke<{ success: boolean; result: unknown; hint?: string }>('run_dream_cycle'),
+  runDream: (opts?: { namespace?: string; dryRun?: boolean }) =>
+    invoke<{
+      success: boolean;
+      phases: Array<{ phase: string; status: string; summary: string; changes: number; warnings: number }>;
+      total_changes: number;
+      total_warnings: number;
+      total_errors: number;
+      dry_run: boolean;
+      duration_ms: number;
+      hint?: string;
+    }>('run_dream_cycle', {
+      namespace: opts?.namespace ?? null,
+      dryRun: opts?.dryRun ?? null,
+    }),
+  getDreamHistory: (limit?: number) =>
+    invoke<Array<{
+      id: number;
+      ran_at: string;
+      success: boolean;
+      total_changes: number;
+      total_warnings: number;
+      total_errors: number;
+      duration_ms: number;
+      phases: Array<{ phase: string; status: string; summary: string; changes: number; warnings: number }>;
+    }>>('get_dream_history', { limit: limit ?? null }),
 };
 
 // Ecosystem health check (#19 — multi-product dashboard)
