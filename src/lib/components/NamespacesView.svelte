@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { uteke, system, memory as memoryApi } from '../ts/ipc';
-  import { getNamespaces, invalidateNamespaces } from '../stores/cache.svelte';
+  import { uteke } from '../ts/ipc';
   import { createPager } from '../stores/pagination.svelte';
   import type { MemoryEntry } from '../ts/types';
 
@@ -10,7 +9,7 @@
 
   let { onmemoryclick }: Props = $props();
 
-  let namespaces = $state<{ name: string; count: number | null; source: string }[]>([]);
+  let namespaces = $state<{ name: string; count: number }[]>([]);
   let loading = $state(true);
   let selectedNs = $state<string | null>(null);
 
@@ -20,41 +19,11 @@
   async function loadNamespaces() {
     loading = true;
     try {
-      const hubNs = await system.listNamespaces().catch(() => []);
-      const utekeOk = await uteke.available().catch(() => false);
-
-      // Fetch uteke namespace counts in a single call (uteke >= #527).
-      let utekeCounts: Map<string, number> = new Map();
-      if (utekeOk) {
-        try {
-          const counted = await uteke.namespacesWithCounts();
-          for (const item of counted) utekeCounts.set(item.name, item.count);
-        } catch {
-          // Fallback: no counts available on this server version.
-        }
-      }
-
-      const result: { name: string; count: number | null; source: string }[] = [];
-      for (const ns of hubNs) result.push({ name: ns, count: null, source: 'hub' });
-
-      if (utekeOk) {
-        const utekeNs = await getNamespaces().catch(() => []);
-        for (const ns of utekeNs) {
-          const existing = result.find((r) => r.name === ns);
-          if (existing) existing.source = 'both';
-          else result.push({ name: ns, count: utekeCounts.get(ns) ?? null, source: 'uteke' });
-          // Also backfill count for hub entries that match.
-          const hubMatch = result.find((r) => r.name === ns);
-          if (hubMatch && hubMatch.source === 'hub') hubMatch.count = utekeCounts.get(ns) ?? null;
-        }
-        // Backfill counts for 'both' entries.
-        for (const r of result) {
-          if (r.source === 'both' && r.count === null) {
-            r.count = utekeCounts.get(r.name) ?? null;
-          }
-        }
-      }
-      namespaces = result.sort((a, b) => a.name.localeCompare(b.name));
+      // Single call: namespace names + memory counts (uteke >= #527).
+      const counted = await uteke.namespacesWithCounts();
+      namespaces = counted
+        .map((item) => ({ name: item.name, count: item.count }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     } catch {
       namespaces = [];
     } finally {
@@ -68,8 +37,7 @@
 
   async function selectNs(ns: string) {
     selectedNs = ns;
-    const utekeOk = await uteke.available().catch(() => false);
-    detailPager = createPager({ namespace: ns, pageSize: 20, useUteke: utekeOk });
+    detailPager = createPager({ namespace: ns, pageSize: 20, useUteke: true });
     await detailPager.loadInitial();
   }
 </script>
@@ -92,10 +60,7 @@
             onclick={() => selectNs(ns.name)}
           >
             <div class="ns-name">{ns.name}</div>
-            <div class="ns-meta">
-              <span class="count">{ns.count === null ? '—' : String(ns.count)}</span>
-              <span class="src src-{ns.source}">{ns.source}</span>
-            </div>
+            <span class="count">{ns.count}</span>
           </button>
         {/each}
       </div>
@@ -155,12 +120,7 @@
   .ns-card:hover { border-color: var(--accent); }
   .ns-card.active { border-color: var(--accent); color: var(--accent); }
   .ns-name { font-weight: 500; }
-  .ns-meta { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
-  .ns-meta .count { color: var(--text-muted); }
-  .src { padding: 1px 6px; border-radius: 3px; font-size: 0.65rem; text-transform: uppercase; }
-  .src-uteke { background: rgba(148,226,213,0.15); color: var(--teal); }
-  .src-hub { background: var(--bg-hover); color: var(--text-muted); }
-  .src-both { background: rgba(245,194,231,0.15); color: var(--pink); }
+  .count { color: var(--text-muted); font-size: 0.75rem; }
 
   .ns-detail { flex: 1; min-width: 0; }
   .ns-detail h3 { font-size: 1rem; margin: 0 0 12px; }
