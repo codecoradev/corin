@@ -1883,29 +1883,29 @@ pub async fn run_dream_cycle(
     };
 
     // ── Path A: HTTP (preferred) ──
-    if let Some(ref client) = client {
-        if client.is_available().await {
-            let report = client
-                .dream(namespace.as_deref(), dry_run.unwrap_or(false))
-                .await
-                .map_err(CommandError::Uteke)?;
+    if let Some(ref client) = client
+        && client.is_available().await
+    {
+        let report = client
+            .dream(namespace.as_deref(), dry_run.unwrap_or(false))
+            .await
+            .map_err(CommandError::Uteke)?;
 
-            // Persist run to history.
-            let s = state.lock().await;
-            if let Some(conn) = s.conn.as_ref() {
-                let _ = save_dream_run(conn, &report);
-            }
-
-            return Ok(serde_json::json!({
-                "success": report.total_errors == 0,
-                "phases": report.phases,
-                "total_changes": report.total_changes,
-                "total_warnings": report.total_warnings,
-                "total_errors": report.total_errors,
-                "dry_run": report.dry_run,
-                "duration_ms": report.duration_ms,
-            }));
+        // Persist run to history.
+        let s = state.lock().await;
+        if let Some(conn) = s.conn.as_ref() {
+            let _ = save_dream_run(conn, &report);
         }
+
+        return Ok(serde_json::json!({
+            "success": report.total_errors == 0,
+            "phases": report.phases,
+            "total_changes": report.total_changes,
+            "total_warnings": report.total_warnings,
+            "total_errors": report.total_errors,
+            "dry_run": report.dry_run,
+            "duration_ms": report.duration_ms,
+        }));
     }
 
     // ── Path B: CLI fallback ──
