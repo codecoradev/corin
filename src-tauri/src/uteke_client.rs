@@ -557,6 +557,47 @@ impl UtekeClient {
             .map_err(|e| e.to_string())
     }
 
+    /// Chronological room memory listing (uteke >= 0.6.7, #569).
+    ///
+    /// Returns memories in a room ordered chronologically.
+    /// Optional `author` filter restricts to memories from a specific namespace.
+    pub async fn room_memories(
+        &self,
+        room_id: &str,
+        limit: usize,
+        author: Option<&str>,
+    ) -> Result<Vec<UtekeMemory>, String> {
+        let mut req = self.authed(self.client.get(format!("{}/room/memories", self.base_url)));
+        req = req.query(&[("room_id", room_id), ("limit", &limit.to_string())]);
+        if let Some(a) = author {
+            req = req.query(&[("author", a)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Room stats — memory count, participant count, and more.
+    pub async fn room_stats(&self, room_id: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "room_id": room_id,
+        });
+
+        self.authed(self.client.post(format!("{}/room/stats", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     /// Room summary — topic clustering + structured overview.
     pub async fn room_summary(&self, room_id: &str) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({

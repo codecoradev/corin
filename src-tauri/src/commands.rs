@@ -930,6 +930,10 @@ pub async fn uteke_namespaces_with_counts(
 }
 
 /// List rooms via HTTP.
+///
+/// Enriches each room with `memory_count` and `participant_count` via
+/// `POST /room/stats` (uteke >= 0.2.1). Falls back to `0` on older
+/// servers that lack the endpoint.
 #[tauri::command]
 pub async fn uteke_rooms(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -949,20 +953,43 @@ pub async fn uteke_rooms(
         .rooms(namespace.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    Ok(rooms
-        .into_iter()
-        .map(|r| {
-            serde_json::json!({
-                "id": r.id,
-                "title": r.title,
-                "namespace": r.namespace,
-                "memory_count": 0,
-                "participant_count": 0,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
-            })
-        })
-        .collect())
+
+    // Enrich each room with memory_count and participant_count.
+    // Fan-out is fine for a desktop app (rooms are typically < 50).
+    let mut enriched = Vec::with_capacity(rooms.len());
+    for r in rooms {
+        let (mem_count, part_count) = match client.room_stats(&r.id).await {
+            Ok(stats) => {
+                let mc = stats
+                    .get("memory_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                // participant_count: try as u64 first, then as array length
+                let pc = stats
+                    .get("participant_count")
+                    .and_then(|v| v.as_u64())
+                    .or_else(|| {
+                        stats
+                            .get("participant_namespaces")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len() as u64)
+                    })
+                    .unwrap_or(0) as usize;
+                (mc, pc)
+            }
+            Err(_) => (0, 0), // older server without /room/stats
+        };
+        enriched.push(serde_json::json!({
+            "id": r.id,
+            "title": r.title,
+            "namespace": r.namespace,
+            "memory_count": mem_count,
+            "participant_count": part_count,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+        }));
+    }
+    Ok(enriched)
 }
 
 /// Find neighbors via semantic recall (query with memory content).
@@ -1048,6 +1075,96 @@ pub async fn uteke_room_recall(
             updated_at: Some(r.memory.updated_at),
         })
         .collect())
+}
+
+/// Room stats via HTTP (POST /room/stats).
+///
+/// Returns authoritative memory_count and participant_count for a room.
+#[tauri::command]
+pub async fn uteke_room_stats(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(serde_json::json!({"memory_count": 0, "participant_count": 0}));
+    };
+    if !client.is_available().await {
+        return Ok(serde_json::json!({"memory_count": 0, "participant_count": 0}));
+    }
+    client
+        .room_stats(&room_id)
+        .await
+        .map_err(CommandError::Uteke)
+}
+
+/// Chronological room memories via HTTP (uteke >= 0.6.7, GET /room/memories).
+///
+/// Returns memories in a room ordered chronologically (newest first).
+/// Optional `author` filter restricts to memories from a specific namespace/agent.
+/// Falls back to `room_recall` with empty query on older servers that lack the endpoint.
+#[tauri::command]
+pub async fn uteke_room_memories(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    limit: Option<usize>,
+    author: Option<String>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let limit = limit.unwrap_or(50);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+
+    // Try GET /room/memories first (uteke >= 0.6.7). Falls back to
+    // POST /room/recall with empty query on older servers.
+    match client
+        .room_memories(&room_id, limit, author.as_deref())
+        .await
+    {
+        Ok(memories) => Ok(memories
+            .into_iter()
+            .map(|m| MemoryEntry {
+                id: m.id,
+                content: m.content,
+                tags: m.tags,
+                content_type: Some(m.content_type),
+                importance: Some(m.importance),
+                namespace: Some(m.namespace),
+                created_at: Some(m.created_at),
+                updated_at: Some(m.updated_at),
+            })
+            .collect()),
+        Err(_) => {
+            // Fallback: use room_recall with empty query
+            let results = client
+                .room_recall(&room_id, limit)
+                .await
+                .map_err(|e| CommandError::Uteke(e.to_string()))?;
+            Ok(results
+                .into_iter()
+                .map(|r| MemoryEntry {
+                    id: r.memory.id,
+                    content: r.memory.content,
+                    tags: r.memory.tags,
+                    content_type: Some(r.memory.content_type),
+                    importance: Some(r.memory.importance),
+                    namespace: Some(r.memory.namespace),
+                    created_at: Some(r.memory.created_at),
+                    updated_at: Some(r.memory.updated_at),
+                })
+                .collect())
+        }
+    }
 }
 
 /// Stats via HTTP (always fresh).
