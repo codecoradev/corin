@@ -1520,49 +1520,49 @@ pub async fn import_data(
                 if let Some(rest) = block.strip_prefix("---\n")
                     && let Some(idx) = rest.find("\n---\n")
                 {
-                        let fm = &rest[..idx];
-                        let body = rest[idx + 5..].trim();
+                    let fm = &rest[..idx];
+                    let body = rest[idx + 5..].trim();
 
-                        if body.is_empty() {
-                            continue;
-                        }
+                    if body.is_empty() {
+                        continue;
+                    }
 
-                        // Parse frontmatter fields
-                        let mut tags = Vec::new();
-                        let mut namespace: Option<String> = None;
-                        for line in fm.lines() {
-                            if let Some(rest) = line.strip_prefix("tags:") {
-                                // Parse [tag1, "tag2"] or tag1, tag2
-                                let cleaned = rest.trim();
-                                if cleaned.starts_with('[') && cleaned.ends_with(']') {
-                                    let inner = &cleaned[1..cleaned.len() - 1];
-                                    for tag in inner.split(',') {
-                                        let t = tag.trim().trim_matches('"').trim();
-                                        if !t.is_empty() {
-                                            tags.push(t.to_string());
-                                        }
-                                    }
-                                } else {
-                                    for tag in cleaned.split(',') {
-                                        let t = tag.trim().trim_matches('"').trim();
-                                        if !t.is_empty() {
-                                            tags.push(t.to_string());
-                                        }
+                    // Parse frontmatter fields
+                    let mut tags = Vec::new();
+                    let mut namespace: Option<String> = None;
+                    for line in fm.lines() {
+                        if let Some(rest) = line.strip_prefix("tags:") {
+                            // Parse [tag1, "tag2"] or tag1, tag2
+                            let cleaned = rest.trim();
+                            if cleaned.starts_with('[') && cleaned.ends_with(']') {
+                                let inner = &cleaned[1..cleaned.len() - 1];
+                                for tag in inner.split(',') {
+                                    let t = tag.trim().trim_matches('"').trim();
+                                    if !t.is_empty() {
+                                        tags.push(t.to_string());
                                     }
                                 }
-                            } else if let Some(rest) = line.strip_prefix("namespace:") {
-                                let ns = rest.trim().trim_matches('"');
-                                if !ns.is_empty() {
-                                    namespace = Some(ns.to_string());
+                            } else {
+                                for tag in cleaned.split(',') {
+                                    let t = tag.trim().trim_matches('"').trim();
+                                    if !t.is_empty() {
+                                        tags.push(t.to_string());
+                                    }
                                 }
                             }
+                        } else if let Some(rest) = line.strip_prefix("namespace:") {
+                            let ns = rest.trim().trim_matches('"');
+                            if !ns.is_empty() {
+                                namespace = Some(ns.to_string());
+                            }
                         }
+                    }
 
-                        client
-                            .remember(body, &tags, namespace.as_deref())
-                            .await
-                            .map_err(|e| CommandError::Uteke(e.to_string()))?;
-                        count += 1;
+                    client
+                        .remember(body, &tags, namespace.as_deref())
+                        .await
+                        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+                    count += 1;
                 }
             }
             Ok(count)
