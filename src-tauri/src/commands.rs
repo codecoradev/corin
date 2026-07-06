@@ -1283,7 +1283,14 @@ pub async fn export_data(
                 let mut frontmatter = String::from("---\n");
                 frontmatter.push_str(&format!("id: {}\n", m.id));
                 if !m.tags.is_empty() {
-                    frontmatter.push_str(&format!("tags: [{}]\n", m.tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", ")));
+                    frontmatter.push_str(&format!(
+                        "tags: [{}]\n",
+                        m.tags
+                            .iter()
+                            .map(|t| format!("\"{}\"", t))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
                 }
                 if let Some(ns) = &m.namespace {
                     frontmatter.push_str(&format!("namespace: {}\n", ns));
@@ -1301,13 +1308,18 @@ pub async fn export_data(
                     frontmatter.push_str("pinned: true\n");
                 }
                 frontmatter.push_str("---\n\n");
-                parts.push(format!("<<< FILE:{} >>>\n{}{}\n", safe_id, frontmatter, m.content));
+                parts.push(format!(
+                    "<<< FILE:{} >>>\n{}{}\n",
+                    safe_id, frontmatter, m.content
+                ));
             }
             Ok(parts.join("\n"))
         }
         "csv" => {
             // Flat table: id, content, tags, namespace, importance, type, pinned, created_at
-            let mut csv = String::from("id,content,tags,namespace,importance,memory_type,content_type,pinned,created_at,updated_at\n");
+            let mut csv = String::from(
+                "id,content,tags,namespace,importance,memory_type,content_type,pinned,created_at,updated_at\n",
+            );
             for m in &memories {
                 let content = m.content.replace('"', "\"\"");
                 let tags = m.tags.join(";").replace('"', "\"\"");
@@ -1476,9 +1488,7 @@ pub async fn import_data(
                     }
                     let relation = e.get("type").and_then(|v| v.as_str());
                     let weight = e.get("weight").and_then(|v| v.as_f64()).map(|w| w as f32);
-                    let _ = client
-                        .add_edge(source, target, relation, weight)
-                        .await;
+                    let _ = client.add_edge(source, target, relation, weight).await;
                 }
             }
 
@@ -1487,7 +1497,10 @@ pub async fn import_data(
                 for r in rooms {
                     let id = r.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     let title = r.get("title").and_then(|v| v.as_str());
-                    let ns = r.get("namespace").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+                    let ns = r
+                        .get("namespace")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty());
                     if id.is_empty() {
                         continue;
                     }
