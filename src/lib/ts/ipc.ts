@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
-  RoomEntry, StatsResponse,
+  RoomEntry, StatsResponse, ProductHealth,
 } from './types';
 
 export const memory = {
@@ -173,6 +173,15 @@ export const agents = {
   detect: () => invoke<Array<{ name: string; config_path: string; found: boolean }>>('detect_agents'),
   generateAgentMd: (projectDir?: string) => invoke<string>('generate_agent_md', { projectDir: projectDir ?? null }),
   runDream: () => invoke<{ success: boolean; result: unknown; hint?: string }>('run_dream_cycle'),
+};
+
+// Ecosystem health check (#19 — multi-product dashboard)
+export const ecosystem = {
+  checkHealth: (url: string, healthPath: string) =>
+    invoke<ProductHealth>('check_product_health', {
+      url,
+      healthPath,
+    }),
 };
 
 // Connection Manager (#37)
