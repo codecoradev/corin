@@ -99,6 +99,12 @@ export const uteke = {
     }),
   roomRecall: (roomId: string, limit?: number) =>
     invoke<MemoryEntry[]>('uteke_room_recall', { roomId, limit: limit ?? null }),
+  roomMemories: (roomId: string, opts?: { limit?: number; author?: string }) =>
+    invoke<MemoryEntry[]>('uteke_room_memories', {
+      roomId,
+      limit: opts?.limit ?? null,
+      author: opts?.author ?? null,
+    }),
   list: (opts?: { namespace?: string; namespaces?: string[]; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,

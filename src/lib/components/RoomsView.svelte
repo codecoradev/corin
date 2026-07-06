@@ -105,7 +105,12 @@
     documentLoaded = false;
     roomDocument = '';
     if (utekeReady) {
-      roomMemories = await uteke.roomRecall(roomId, 50).catch(() => []);
+      // Use chronological room_memories (uteke >= 0.6.7) with fallback to recall
+      try {
+        roomMemories = await uteke.roomMemories(roomId, { limit: 50 });
+      } catch {
+        roomMemories = await uteke.roomRecall(roomId, 50).catch(() => []);
+      }
     }
   }
 
@@ -376,15 +381,16 @@
                 {#each participants as p (p.namespace)}
                   <div class="participant-card">
                     <div class="participant-info">
-                      <span class="participant-ns">{p.namespace}</span>
-                      <span class="participant-count">{p.count} memories</span>
+                      <span class="participant-avatar">{'🤖'}</span>
+                      <div class="participant-detail">
+                        <span class="participant-ns">{p.namespace}</span>
+                        <span class="participant-count">{p.count} {p.count === 1 ? 'memory' : 'memories'}</span>
+                      </div>
                     </div>
                   </div>
                 {/each}
-                <div class="invite-section">
-                  <button class="btn-invite" disabled title="Coming soon">
-                    👤 Invite Agent (coming soon)
-                  </button>
+                <div class="participant-summary">
+                  <span>{participants.length} {participants.length === 1 ? 'participant' : 'participants'} · {roomMemories.length} total memories</span>
                 </div>
               </div>
             {/if}
@@ -480,11 +486,12 @@
   /* Participants */
   .participant-list { display: flex; flex-direction: column; gap: 8px; }
   .participant-card { padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; }
-  .participant-info { display: flex; justify-content: space-between; align-items: center; }
+  .participant-info { display: flex; align-items: center; gap: 10px; }
+  .participant-avatar { font-size: 1.2rem; }
+  .participant-detail { display: flex; flex-direction: column; gap: 2px; }
   .participant-ns { font-size: 0.9rem; color: var(--accent); font-family: var(--font-mono); }
   .participant-count { font-size: 0.75rem; color: var(--text-muted); }
-  .invite-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-  .btn-invite { font-size: 0.8rem; padding: 6px 14px; background: var(--bg-hover); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px; cursor: not-allowed; width: 100%; }
+  .participant-summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-align: center; }
 
   /* General */
   .msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; gap: 8px; }
