@@ -1245,8 +1245,6 @@ pub async fn export_data(
                         "id": r.id,
                         "title": r.title,
                         "namespace": r.namespace,
-                        "memory_count": r.memory_count,
-                        "participant_count": r.participant_count,
                         "created_at": r.created_at,
                         "updated_at": r.updated_at,
                     }));
@@ -1323,19 +1321,18 @@ pub async fn export_data(
             for m in &memories {
                 let content = m.content.replace('"', "\"\"");
                 let tags = m.tags.join(";").replace('"', "\"\"");
-                let ns = m.namespace.as_deref().unwrap_or("");
                 csv.push_str(&format!(
                     "\"{}\",\"{}\",\"{}\",\"{}\",{:.2},\"{}\",\"{}\",{},\"{}\",\"{}\"\n",
                     m.id,
                     content,
                     tags,
-                    ns,
+                    m.namespace,
                     m.importance,
                     m.memory_type,
                     m.content_type,
                     m.pinned,
-                    m.created_at.as_deref().unwrap_or(""),
-                    m.updated_at.as_deref().unwrap_or(""),
+                    m.created_at,
+                    m.updated_at,
                 ));
             }
             Ok(csv)
@@ -1373,7 +1370,8 @@ pub async fn import_preview(
                 .map(|a| a.len())
                 .unwrap_or(0);
             // Extract unique namespaces from memories
-            let mut namespaces = std::collections::HashSet::new();
+            let mut namespaces: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
             if let Some(arr) = parsed.get("memories").and_then(|v| v.as_array()) {
                 for m in arr {
                     if let Some(ns) = m.get("namespace").and_then(|v| v.as_str()) {
@@ -1394,8 +1392,9 @@ pub async fn import_preview(
         "markdown" => {
             // Parse Obsidian-style frontmatter blocks
             let mut count = 0usize;
-            let mut namespaces = std::collections::HashSet::new();
-            let mut tags = std::collections::HashSet::new();
+            let mut namespaces: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut tags: std::collections::HashSet<String> = std::collections::HashSet::new();
             for block in data.split("<<< FILE:") {
                 let block = block.trim();
                 if block.is_empty() {

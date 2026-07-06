@@ -1,7 +1,7 @@
 <script lang="ts">
   import { system } from '../ts/ipc';
   import { open, save } from '@tauri-apps/plugin-dialog';
-  import { readTextFile } from '@tauri-apps/api/fs';
+  import { readTextFile } from '@tauri-apps/plugin-fs';
 
   interface Props {
     namespaces: string[];
