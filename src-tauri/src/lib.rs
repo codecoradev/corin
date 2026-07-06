@@ -342,6 +342,7 @@ pub fn run() {
             commands::uteke_get,
             commands::uteke_graph,
             commands::uteke_list,
+            commands::uteke_recent,
             commands::uteke_neighbors,
             commands::uteke_namespaces,
             commands::uteke_namespaces_with_counts,

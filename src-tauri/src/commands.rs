@@ -764,6 +764,19 @@ async fn list_multi_namespace(
         .collect())
 }
 
+/// List recent memories (newest first) — thin wrapper over uteke_list
+/// with a sensible default limit for dashboard widgets.
+#[tauri::command]
+pub async fn uteke_recent(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let limit = limit.unwrap_or(10);
+    // Reuse uteke_list which already sorts newest-first.
+    uteke_list(state, namespace, None, None, Some(limit), Some(0)).await
+}
+
 /// Get a single memory by ID via HTTP.
 #[tauri::command]
 pub async fn uteke_get(
