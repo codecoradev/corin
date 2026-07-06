@@ -1,7 +1,7 @@
 // View type for navigation
 export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'settings';
 
-// Memory entry from uteke-core
+// Memory entry from uteke-serve (HTTP API)
 export interface MemoryEntry {
   id: string;
   content: string;
