@@ -18,6 +18,8 @@
     Columns2,
     Eye,
     ChevronDown,
+    ChevronRight,
+    FileText,
     Save,
     Download,
     Trash2,
@@ -320,31 +322,52 @@
   async function saveDoc() {
     if (!editorSlug.trim()) {
       showError('Slug is required');
-      return;
+    return;
     }
     saving = true;
     try {
       const tags = editorTags.split(',').map(t => t.trim()).filter(Boolean);
+      const ns = namespace ?? undefined;
       if (selectedDoc && !showNewDoc) {
-        // Existing document → update via /doc/update
-        const updated = await docs.update({
-          id: selectedDoc.id,
-          title: editorTitle || editorSlug,
-          content: editorContent,
-          tags,
-          namespace: selectedDoc.namespace ?? namespace ?? undefined,
-        });
-        selectedDoc = updated;
+        // Existing document → update
+        try {
+          // Try /doc/update first (available in uteke 0.6.7+)
+          const updated = await docs.update({
+            id: selectedDoc.id,
+            title: editorTitle || editorSlug,
+            content: editorContent,
+            tags,
+            namespace: selectedDoc.namespace ?? ns,
+          });
+          selectedDoc = updated;
+        } catch (e: any) {
+          if (e.toString().includes('404')) {
+            // Fallback: server doesn't have /doc/update route.
+            // Use /doc/create (which is an upsert) + re-fetch full doc.
+            await docs.create(
+              editorSlug,
+              editorTitle || editorSlug,
+              editorContent,
+              { namespace: selectedDoc.namespace ?? ns, tags },
+            );
+            // create returns only {id, slug} — re-fetch for full state
+            const full = await docs.get({ id: selectedDoc.id });
+            selectedDoc = full;
+          } else {
+            throw e;
+          }
+        }
       } else {
         // New document → create via /doc/create
-        // Parent is the currently-selected doc (if any), not its parent_id.
         const parent = selectedDoc?.id ?? undefined;
-        const created = await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
-          namespace: namespace ?? undefined,
+        await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
+          namespace: ns,
           tags,
           parent,
         });
-        selectedDoc = created;
+        // create returns only {id, slug} — re-fetch for full state
+        const full = await docs.get({ slug: editorSlug });
+        selectedDoc = full;
         showNewDoc = false;
       }
       await loadRootDocs();
@@ -758,22 +781,27 @@
 
 {#snippet treeNode(doc: DocEntry)}
   <div class="tree-node">
-    <button
-      class="doc-card"
-      class:active={selectedDoc?.id === doc.id}
-      onclick={() => selectDoc(doc)}
-    >
-      <span class="tree-toggle" class:has-children={doc.has_children} class:expanded={expandedIds.has(doc.id)}
+    <div class="tree-row" class:active={selectedDoc?.id === doc.id}>
+      <button
+        class="tree-toggle"
+        class:has-children={doc.has_children}
         onclick={(e: MouseEvent) => { e.stopPropagation(); if (doc.has_children) toggleNode(doc); }}
-        role="button"
+        tabindex={doc.has_children ? 0 : -1}
+        aria-label={doc.has_children ? 'Toggle children' : ''}
       >
-        {doc.has_children ? (expandedIds.has(doc.id) ? '▾' : '▸') : '·'}
-      </span>
-      <span class="doc-info">
-        <div class="doc-title">{doc.title}</div>
-        <div class="doc-slug">/{doc.slug}</div>
-      </span>
-    </button>
+        {#if doc.has_children}
+          {#if expandedIds.has(doc.id)}
+            <ChevronDown size={14} strokeWidth={2} />
+          {:else}
+            <ChevronRight size={14} strokeWidth={2} />
+          {/if}
+        {/if}
+      </button>
+      <button class="tree-label" onclick={() => selectDoc(doc)}>
+        <FileText size={13} strokeWidth={1.75} class="tree-doc-icon" />
+        <span class="tree-title" title={doc.title}>{doc.title || doc.slug}</span>
+      </button>
+    </div>
     {#if expandedIds.has(doc.id) && childrenCache.has(doc.id)}
       <div class="tree-children">
         {#each childrenCache.get(doc.id) ?? [] as child (child.id)}
@@ -892,54 +920,90 @@
   }
   .search-clear:hover { color: var(--text-primary); }
 
-  .doc-tree { flex: 1; overflow-y: auto; padding: 2px 0; }
+  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
 
   .tree-node { user-select: none; }
-  .tree-children { padding-left: 12px; }
+  .tree-children { padding-left: 14px; }
+
+  .tree-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 6px 0 0;
+    border-left: 2px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+    min-height: 28px;
+  }
+  .tree-row:hover { background: var(--bg-hover); }
+  .tree-row.active {
+    background: var(--bg-hover);
+    border-left-color: var(--accent);
+  }
+  .tree-row.active .tree-title { color: var(--accent); }
+  .tree-row.active .tree-doc-icon { color: var(--accent); }
 
   .tree-toggle {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    font-size: 0.6rem;
-    color: var(--text-muted);
+    width: 20px;
+    height: 28px;
     flex-shrink: 0;
     background: none;
     border: none;
+    color: var(--text-muted);
     cursor: default;
     padding: 0;
-    line-height: 1;
   }
   .tree-toggle.has-children { cursor: pointer; }
-  .tree-toggle:hover { color: var(--text-primary); }
+  .tree-toggle.has-children:hover { color: var(--text-primary); }
 
+  .tree-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+    padding: 4px 4px 4px 0;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.3;
+  }
+  .tree-label:hover { color: var(--text-primary); }
+  .tree-doc-icon { color: var(--text-muted); flex-shrink: 0; }
+  .tree-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .doc-snippet { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .doc-score { font-size: 0.6rem; color: var(--accent); font-weight: 600; margin-top: 2px; }
+
+  /* Search result cards */
   .doc-card {
     display: flex;
-    align-items: flex-start;
-    gap: 4px;
-    padding: 5px 10px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
     width: 100%;
     background: transparent;
     border: none;
     border-left: 2px solid transparent;
     color: var(--text-secondary);
-    font-size: 0.8rem;
     cursor: pointer;
     transition: background 0.1s, border-color 0.1s;
     text-align: left;
-    line-height: 1.4;
   }
   .doc-card:hover { background: var(--bg-hover); }
-  .doc-card.active { background: var(--bg-hover); color: var(--accent); border-left-color: var(--accent); }
-  .doc-card.search-hit { padding: 8px 10px; }
-  .doc-info { min-width: 0; }
-  .doc-title { font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .doc-slug { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .doc-snippet { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .doc-score { font-size: 0.6rem; color: var(--accent); font-weight: 600; margin-top: 2px; }
+  .doc-card.active { background: var(--bg-hover); border-left-color: var(--accent); }
+  .doc-card .doc-title { font-size: 0.8rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-card .doc-slug { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .search-results { overflow-y: auto; }
+  .search-results { overflow-y: auto; padding: 4px 0; }
 
   .msg {
     padding: 20px 12px;
