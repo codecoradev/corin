@@ -13,6 +13,8 @@
   import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
   import DocumentsView from './lib/components/DocumentsView.svelte';
+  import { Notification } from './lib/ui';
+  import { toastStore } from './lib/ui';
   import DetailPanel from './lib/components/DetailPanel.svelte';
 
   // App state
@@ -188,6 +190,9 @@
     onclose={closeEditor}
   />
 {/if}
+
+<!-- Global toast notifications -->
+<Notification toasts={toastStore.list} ondismiss={toastStore.dismiss} />
 
 <style>
   .app-layout {
