@@ -3,6 +3,7 @@
   import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
   import type { GraphData } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
+  import { pickColor, buildTagEdges, NODE_COLORS as COLORS } from './graph/graph-utils.ts';
 
   interface Props {
     onmemoryclick: (id: string) => void;
@@ -54,74 +55,6 @@
 
   const INITIAL_SEED = 30;
   const EXPAND_LIMIT = 5;
-  const COLORS = ['#89b4fa', '#a6e3a1', '#f9e2af', '#f38ba8', '#fab387', '#cba6f7', '#94e2d5', '#f5c2e7', '#89dceb', '#eba0ac'];
-
-  function pickColor(tags: string[]): string {
-    if (!tags?.length) return '#6c7086';
-    return COLORS[(tags[0].charCodeAt(0) || 0) % COLORS.length];
-  }
-
-  // ── Client-side edge generation from shared tags ───────────────
-  // Groups memories by tag and links every pair that shares a tag.
-  // Caps per-tag connections to avoid clutter.
-  function buildTagEdges(
-    mems: { id: string; content: string; tags: string[] }[],
-    maxPerTag: number,
-  ): { source: string; target: string; weight: number }[] {
-    const result: { source: string; target: string; weight: number }[] = [];
-    const seen = new Set<string>();
-
-    // Index: tag → list of memory ids that have it
-    const tagMap = new Map<string, string[]>();
-    for (const m of mems) {
-      for (const t of m.tags ?? []) {
-        const key = t.toLowerCase();
-        if (!tagMap.has(key)) tagMap.set(key, []);
-        tagMap.get(key)!.push(m.id);
-      }
-    }
-
-    // For each tag with 2+ memories, connect pairs
-    for (const [, ids] of tagMap) {
-      if (ids.length < 2) continue;
-      let count = 0;
-      // Shuffle-ish: connect adjacent in array for determinism
-      for (let i = 0; i < ids.length - 1 && count < maxPerTag; i++) {
-        const a = ids[i];
-        const b = ids[i + 1];
-        const ek = a < b ? `${a}|${b}` : `${b}|${a}`;
-        if (seen.has(ek)) continue;
-        seen.add(ek);
-        result.push({ source: a, target: b, weight: 0.6 });
-        count++;
-      }
-    }
-
-    // Fallback: if tags didn't produce enough edges (e.g. some memories
-    // have no tags), link unconnected nodes to the nearest connected one
-    // or into a chain so the graph is never fully disconnected.
-    if (result.length < mems.length / 3 && mems.length > 1) {
-      const connected = new Set<string>();
-      for (const e of result) { connected.add(e.source); connected.add(e.target); }
-      const unconnected = mems.filter(m => !connected.has(m.id));
-      for (const m of unconnected) {
-        // Link to a random connected node, or chain to previous unconnected
-        const target = connected.size > 0
-          ? [...connected][Math.floor(Math.random() * connected.size)]
-          : mems[mems.indexOf(m) - 1]?.id;
-        if (target && target !== m.id) {
-          const ek = m.id < target ? `${m.id}|${target}` : `${target}|${m.id}`;
-          if (!seen.has(ek)) {
-            seen.add(ek);
-            result.push({ source: m.id, target, weight: 0.3 });
-          }
-        }
-      }
-    }
-
-    return result;
-  }
-
   // ─── Initial seed: fetch recent memories ───────────────────────────
   async function loadSeed() {
     loading = true;
@@ -661,7 +594,7 @@
 </div>
 
 <style>
-  .graph-view { height: 100%; display: flex; flex-direction: column; }
+  .graph-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); }
   .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }

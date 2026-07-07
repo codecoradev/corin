@@ -158,9 +158,9 @@
       <h3>Format</h3>
       <div class="format-grid">
         {#each [
-          { key: 'json', label: 'JSON', desc: formatInfo.json },
-          { key: 'markdown', label: 'Markdown', desc: formatInfo.markdown },
-          { key: 'csv', label: 'CSV', desc: formatInfo.csv },
+          { key: 'json' as const, label: 'JSON', desc: formatInfo.json },
+          { key: 'markdown' as const, label: 'Markdown', desc: formatInfo.markdown },
+          { key: 'csv' as const, label: 'CSV', desc: formatInfo.csv },
         ] as fmt}
           <button
             class="format-card"

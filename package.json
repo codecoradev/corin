@@ -1,7 +1,7 @@
 {
   "name": "corin",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -29,13 +29,19 @@
     "@types/d3": "^7.4.3",
     "d3": "^7.9.0",
     "dompurify": "^3.4.2",
+    "lucide-svelte": "^1.0.1",
     "marked": "^18.0.3"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5",
+    "@tailwindcss/vite": "^4.3.2",
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@testing-library/user-event": "^14.6.1",
     "jsdom": "^29.1.1",
     "svelte": "^5",
+    "tailwindcss": "^4.3.2",
     "typescript": "^6.0",
     "vite": "^6",
     "vitest": "^4.1.5"

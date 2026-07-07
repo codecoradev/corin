@@ -12,6 +12,11 @@
   import RoomsView from './lib/components/RoomsView.svelte';
   import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
+  import DocumentsView from './lib/components/DocumentsView.svelte';
+  import { Notification } from './lib/ui';
+  import { toastStore } from './lib/ui';
+  import { fadeQuick } from './lib/transitions';
+  import { fade, fly } from 'svelte/transition';
   import DetailPanel from './lib/components/DetailPanel.svelte';
 
   // App state
@@ -142,49 +147,64 @@
       refreshKey forces re-fetch after editor save.
     -->
     <main class="main-content">
-      {#if activeView === 'dashboard'}
-        {#key refreshKey}
-          <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} />
-        {/key}
-      {:else if activeView === 'memories'}
-        {#key refreshKey}
-          <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} />
-        {/key}
-      {:else if activeView === 'namespaces'}
-        <NamespacesView onmemoryclick={openDetail} />
-      {:else if activeView === 'graph'}
-        <GraphView onmemoryclick={openDetail} />
-      {:else if activeView === 'rooms'}
-        <RoomsView {namespace} onmemoryclick={openDetail} />
-      {/if}
+      {#key activeView}
+        <div class="view-container" transition:fadeQuick>
+          {#if activeView === 'dashboard'}
+            {#key refreshKey}
+              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} />
+            {/key}
+          {:else if activeView === 'memories'}
+            {#key refreshKey}
+              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} />
+            {/key}
+          {:else if activeView === 'namespaces'}
+            <NamespacesView onmemoryclick={openDetail} />
+          {:else if activeView === 'graph'}
+            <GraphView onmemoryclick={openDetail} />
+          {:else if activeView === 'rooms'}
+            <RoomsView {namespace} onmemoryclick={openDetail} />
+          {:else if activeView === 'documents'}
+            <DocumentsView {namespace} />
+          {/if}
+        </div>
+      {/key}
     </main>
   </div>
 {/if}
 
 <!-- Universal slide-in detail panel (used by all views) -->
 {#if detailId}
-  <DetailPanel memoryId={detailId} onclose={closeDetail} onneighborclick={detailNavigate} onedit={editMemory}>
-    <MemoryDetail
-      memoryId={detailId}
-      onback={closeDetail}
-      onneighborclick={detailNavigate}
-      onedit={editMemory}
-    />
-  </DetailPanel>
+  <div transition:fade={{ duration: 150 }}>
+    <DetailPanel memoryId={detailId} onclose={closeDetail} onneighborclick={detailNavigate} onedit={editMemory}>
+      <MemoryDetail
+        memoryId={detailId}
+        onback={closeDetail}
+        onneighborclick={detailNavigate}
+        onedit={editMemory}
+      />
+    </DetailPanel>
+  </div>
 {/if}
 
 {#if showSettings}
-  <SettingsModal onclose={closeSettings} />
+  <div transition:fade={{ duration: 150 }}>
+    <SettingsModal onclose={closeSettings} />
+  </div>
 {/if}
 
 {#if showEditor}
-  <MemoryEditor
-    memory={editorMemory}
-    {namespace}
-    onsave={handleSave}
-    onclose={closeEditor}
-  />
+  <div transition:fly={{ duration: 200, y: 20, opacity: 0 }}>
+    <MemoryEditor
+      memory={editorMemory}
+      {namespace}
+      onsave={handleSave}
+      onclose={closeEditor}
+    />
+  </div>
 {/if}
+
+<!-- Global toast notifications -->
+<Notification toasts={toastStore.list} ondismiss={toastStore.dismiss} />
 
 <style>
   .app-layout {
@@ -196,8 +216,14 @@
 
   .main-content {
     flex: 1;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--bg-primary);
+    position: relative;
+  }
+
+  .view-container {
+    position: absolute;
+    inset: 0;
   }
 
   .welcome-screen {

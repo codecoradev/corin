@@ -158,6 +158,63 @@ pub struct UtekeRoom {
     pub updated_at: String,
 }
 
+// ── Documents (uteke-serve /doc/*) ───────────────────────────────────
+
+/// A document entry from uteke-serve.
+///
+/// Used for both `/doc/list` (returns `DocumentSummary`, metadata-only) and
+/// `/doc/get` (returns full `Document` with content). Fields that are absent
+/// in the list variant use `#[serde(default)]` so deserialization succeeds
+/// for both response shapes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UtekeDoc {
+    pub id: String,
+    pub slug: String,
+    #[serde(default)]
+    pub title: String,
+    /// Full markdown content — only populated by /doc/get.
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub version: i64,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// Materialized path string (e.g. "/uuid/uuid/") from uteke-core.
+    /// Corin splits this into a Vec for the frontend breadcrumb.
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub depth: i64,
+    #[serde(default)]
+    pub sort_order: i64,
+    #[serde(default)]
+    pub has_children: bool,
+}
+
+/// A single document search result.
+///
+/// Returned by POST /doc/search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocSearchHit {
+    pub document: UtekeDoc,
+    pub chunk_heading: Option<String>,
+    pub chunk_snippet: Option<String>,
+    pub score: f32,
+    pub mode: Option<String>,
+}
+
 /// HTTP client for uteke-serve.
 #[derive(Clone)]
 pub struct UtekeClient {
@@ -201,6 +258,25 @@ impl UtekeClient {
         }
     }
 
+    /// Send a request, check for HTTP errors, then deserialize the JSON body.
+    ///
+    /// If the server returns a non-2xx status, the response body is consumed
+    /// and included in the error message (instead of the opaque
+    /// "error decoding response body" from reqwest).
+    async fn json_checked<T: serde::de::DeserializeOwned>(
+        resp: reqwest::Response,
+        endpoint: &str,
+    ) -> Result<T, String> {
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("{endpoint}: server returned {status}: {body}"));
+        }
+        resp.json()
+            .await
+            .map_err(|e| format!("{endpoint}: error decoding response body: {e}"))
+    }
+
     /// Check if uteke-serve is reachable.
     pub async fn is_available(&self) -> bool {
         self.authed(self.client.get(format!("{}/health", self.base_url)))
@@ -225,14 +301,13 @@ impl UtekeClient {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
-        self.authed(self.client.post(format!("{}/recall", self.base_url)))
+        let resp = self
+            .authed(self.client.post(format!("{}/recall", self.base_url)))
             .json(&body)
             .send()
             .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/recall").await
     }
 
     /// Keyword search (FTS5 only, faster than recall).
@@ -250,14 +325,13 @@ impl UtekeClient {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
-        self.authed(self.client.post(format!("{}/search", self.base_url)))
+        let resp = self
+            .authed(self.client.post(format!("{}/search", self.base_url)))
             .json(&body)
             .send()
             .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/search").await
     }
 
     /// List memories with optional filters.
@@ -279,14 +353,13 @@ impl UtekeClient {
             body["tag"] = serde_json::Value::String(t.to_string());
         }
 
-        self.authed(self.client.post(format!("{}/list", self.base_url)))
+        let resp = self
+            .authed(self.client.post(format!("{}/list", self.base_url)))
             .json(&body)
             .send()
             .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/list").await
     }
 
     /// Get a single memory by ID.
@@ -557,6 +630,47 @@ impl UtekeClient {
             .map_err(|e| e.to_string())
     }
 
+    /// Chronological room memory listing (uteke >= 0.6.7, #569).
+    ///
+    /// Returns memories in a room ordered chronologically.
+    /// Optional `author` filter restricts to memories from a specific namespace.
+    pub async fn room_memories(
+        &self,
+        room_id: &str,
+        limit: usize,
+        author: Option<&str>,
+    ) -> Result<Vec<UtekeMemory>, String> {
+        let mut req = self.authed(self.client.get(format!("{}/room/memories", self.base_url)));
+        req = req.query(&[("room_id", room_id), ("limit", &limit.to_string())]);
+        if let Some(a) = author {
+            req = req.query(&[("author", a)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Room stats — memory count, participant count, and more.
+    pub async fn room_stats(&self, room_id: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "room_id": room_id,
+        });
+
+        self.authed(self.client.post(format!("{}/room/stats", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     /// Room summary — topic clustering + structured overview.
     pub async fn room_summary(&self, room_id: &str) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({
@@ -811,5 +925,230 @@ impl UtekeClient {
         }
 
         resp.json().await.map_err(|e| e.to_string())
+    }
+
+    // ── Documents (uteke-serve /doc/*) ─────────────────────────────────
+
+    /// List documents via POST /doc/list.
+    ///
+    /// `roots_only` returns only top-level documents (parent_id IS NULL).
+    /// `parent` returns direct children of a specific document.
+    pub async fn doc_list(
+        &self,
+        namespace: Option<&str>,
+        limit: Option<usize>,
+        roots_only: Option<bool>,
+        parent: Option<&str>,
+    ) -> Result<Vec<UtekeDoc>, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(limit) = limit {
+            body["limit"] = serde_json::json!(limit);
+        }
+        if let Some(true) = roots_only {
+            body["roots_only"] = serde_json::json!(true);
+        }
+        if let Some(pid) = parent {
+            body["parent"] = serde_json::Value::String(pid.to_string());
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/list", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/doc/list").await
+    }
+
+    /// Get a single document via POST /doc/get.
+    ///
+    /// Accepts either `slug` or `id`. Returns full document with content.
+    pub async fn doc_get(
+        &self,
+        slug: Option<&str>,
+        id: Option<&str>,
+        namespace: Option<&str>,
+    ) -> Result<UtekeDoc, String> {
+        let mut body = serde_json::json!({});
+        if let Some(s) = slug {
+            body["slug"] = serde_json::Value::String(s.to_string());
+        }
+        if let Some(i) = id {
+            body["id"] = serde_json::Value::String(i.to_string());
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/get", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/doc/get").await
+    }
+
+    /// Create a document via POST /doc/create.
+    pub async fn doc_create(
+        &self,
+        slug: &str,
+        title: &str,
+        content: &str,
+        namespace: Option<&str>,
+        tags: &[String],
+        parent: Option<&str>,
+    ) -> Result<UtekeDoc, String> {
+        let mut body = serde_json::json!({
+            "slug": slug,
+            "title": title,
+            "content": content,
+            "tags": tags,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(pid) = parent {
+            body["parent"] = serde_json::Value::String(pid.to_string());
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/create", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/doc/create").await
+    }
+
+    /// Update an existing document via POST /doc/update.
+    pub async fn doc_update(
+        &self,
+        id_or_slug: &str,
+        namespace: Option<&str>,
+        title: Option<&str>,
+        content: Option<&str>,
+        tags: Option<&[String]>,
+        metadata: Option<&serde_json::Value>,
+    ) -> Result<UtekeDoc, String> {
+        let mut body = serde_json::json!({});
+        // UUID (36 chars, hex+dashes) → id; otherwise → slug.
+        let is_uuid = id_or_slug.len() == 36
+            && id_or_slug.as_bytes().iter().enumerate().all(|(i, b)| {
+                b == &b'-' && (i == 8 || i == 13 || i == 18 || i == 23) || b.is_ascii_hexdigit()
+            });
+        if is_uuid {
+            body["id"] = serde_json::Value::String(id_or_slug.to_string());
+        } else {
+            body["slug"] = serde_json::Value::String(id_or_slug.to_string());
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(t) = title {
+            body["title"] = serde_json::Value::String(t.to_string());
+        }
+        if let Some(c) = content {
+            body["content"] = serde_json::Value::String(c.to_string());
+        }
+        if let Some(tg) = tags {
+            body["tags"] = serde_json::json!(tg);
+        }
+        if let Some(md) = metadata {
+            body["metadata"] = md.clone();
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/update", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/doc/update").await
+    }
+
+    /// Search documents via POST /doc/search (hybrid semantic + FTS).
+    pub async fn doc_search(
+        &self,
+        query: &str,
+        namespace: Option<&str>,
+        limit: Option<usize>,
+        mode: Option<&str>,
+    ) -> Result<Vec<DocSearchHit>, String> {
+        let mut body = serde_json::json!({
+            "query": query,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(limit) = limit {
+            body["limit"] = serde_json::json!(limit);
+        }
+        if let Some(m) = mode {
+            body["mode"] = serde_json::Value::String(m.to_string());
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/search", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/doc/search").await
+    }
+
+    /// Delete a document via DELETE /doc/delete.
+    ///
+    /// Must provide either `id` or `slug` as query parameter.
+    pub async fn doc_delete(&self, id: Option<&str>, slug: Option<&str>) -> Result<(), String> {
+        let mut req = self.authed(self.client.delete(format!("{}/doc/delete", self.base_url)));
+        if let Some(i) = id {
+            req = req.query(&[("id", i)]);
+        }
+        if let Some(s) = slug {
+            req = req.query(&[("slug", s)]);
+        }
+
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+
+        let _ = resp.text().await;
+        Ok(())
+    }
+
+    /// Move/reparent a document via POST /doc/move.
+    pub async fn doc_move(
+        &self,
+        id: Option<&str>,
+        slug: Option<&str>,
+        new_parent: Option<&str>,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({});
+        if let Some(i) = id {
+            body["id"] = serde_json::Value::String(i.to_string());
+        }
+        if let Some(s) = slug {
+            body["slug"] = serde_json::Value::String(s.to_string());
+        }
+        if let Some(np) = new_parent {
+            body["new_parent"] = serde_json::Value::String(np.to_string());
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/move", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/doc/move").await
     }
 }

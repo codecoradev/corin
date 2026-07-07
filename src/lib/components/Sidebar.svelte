@@ -1,6 +1,18 @@
 <script lang="ts">
   import type { View } from '../ts/types';
   import { utekeServer } from '../ts/ipc';
+  import {
+    LayoutDashboard,
+    Brain,
+    Boxes,
+    Share2,
+    MessagesSquare,
+    FileText,
+    Settings,
+    PanelLeftClose,
+    PanelLeftOpen,
+    Plus,
+  } from 'lucide-svelte';
 
   interface Props {
     activeView: View;
@@ -34,17 +46,21 @@
     return () => clearInterval(interval);
   });
 
-  const navItems: { view: View; label: string; icon: string }[] = [
-    { view: 'dashboard', label: 'Dashboard', icon: '◧' },
-    { view: 'memories', label: 'Memories', icon: '☰' },
-    { view: 'namespaces', label: 'Namespaces', icon: '◫' },
-    { view: 'graph', label: 'Graph', icon: '◉' },
-    { view: 'rooms', label: 'Rooms', icon: '▣' },
+  const navItems: { view: View; label: string; icon: IconComp }[] = [
+    { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { view: 'memories', label: 'Memories', icon: Brain },
+    { view: 'namespaces', label: 'Namespaces', icon: Boxes },
+    { view: 'graph', label: 'Graph', icon: Share2 },
+    { view: 'rooms', label: 'Rooms', icon: MessagesSquare },
+    { view: 'documents', label: 'Documents', icon: FileText },
   ];
 
-  const bottomItems: { view: View; label: string; icon: string }[] = [
-    { view: 'settings', label: 'Settings', icon: '⚙' },
+  const bottomItems: { view: View; label: string; icon: IconComp }[] = [
+    { view: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  type IconComp = typeof LayoutDashboard;
+  const iconSize = 18;
 </script>
 
 <aside class="sidebar" class:collapsed>
@@ -57,21 +73,23 @@
     </div>
 
     <button class="new-memory-btn" onclick={onnewmemory}>
-      <span class="btn-icon">+</span>
+      <Plus size={16} strokeWidth={2.5} />
       <span>New Memory</span>
       <kbd>Ctrl+N</kbd>
     </button>
   {/if}
 
   <nav class="nav">
-    {#each navItems as item}
+    {#each navItems as item (item.view)}
       <button
         class="nav-item"
         class:active={activeView === item.view}
         onclick={() => onnavigate(item.view)}
         title={collapsed ? item.label : ''}
       >
-        <span class="nav-icon">{item.icon}</span>
+        <span class="nav-icon">
+          <item.icon size={iconSize} strokeWidth={1.75} />
+        </span>
         {#if !collapsed}
           <span class="nav-label">{item.label}</span>
         {/if}
@@ -97,14 +115,16 @@
       </div>
     {/if}
 
-    {#each bottomItems as item}
+    {#each bottomItems as item (item.view)}
       <button
         class="nav-item"
         class:active={activeView === item.view}
         onclick={() => onnavigate(item.view)}
         title={collapsed ? item.label : ''}
       >
-        <span class="nav-icon">{item.icon}</span>
+        <span class="nav-icon">
+          <item.icon size={iconSize} strokeWidth={1.75} />
+        </span>
         {#if !collapsed}
           <span class="nav-label">{item.label}</span>
         {/if}
@@ -114,7 +134,11 @@
 
   <div class="sidebar-footer">
     <button class="collapse-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'}>
-      {collapsed ? '▶' : '◀'}
+      {#if collapsed}
+        <PanelLeftOpen size={16} strokeWidth={1.75} />
+      {:else}
+        <PanelLeftClose size={16} strokeWidth={1.75} />
+      {/if}
     </button>
   </div>
 </aside>
@@ -158,7 +182,6 @@
     transition: opacity 0.15s;
   }
   .new-memory-btn:hover { opacity: 0.85; }
-  .btn-icon { font-size: 1.1rem; line-height: 1; }
   kbd {
     margin-left: auto;
     font-size: 0.7rem;
@@ -180,13 +203,26 @@
     color: var(--text-secondary);
     font-size: 0.9rem;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.1s, color 0.1s;
     text-align: left;
     width: 100%;
   }
-  .nav-item:hover { background: var(--bg-hover); }
-  .nav-item.active { background: var(--bg-hover); color: var(--accent); border-left: 2px solid var(--accent); }
-  .nav-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+  .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .nav-item.active {
+    background: var(--bg-hover);
+    color: var(--accent);
+    border-left: 2px solid var(--accent);
+    padding-left: 14px;
+  }
+  .nav-item.active :global(svg) { stroke: var(--accent); }
+  .nav-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
   .nav-label { white-space: nowrap; flex: 1; }
 
   .sidebar-footer { padding: 8px 16px; border-top: 1px solid var(--border); }
@@ -225,17 +261,16 @@
     50% { opacity: 0.4; }
   }
 
-  .nav-bottom .nav-item { /* same styling as main nav */ }
-
   .collapse-btn {
     width: 100%;
-    padding: 4px 8px;
+    padding: 6px 8px;
     background: transparent;
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 0.8rem;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 4px;
     transition: background 0.1s;
   }
@@ -243,6 +278,7 @@
 
   .sidebar.collapsed .sidebar-header,
   .sidebar.collapsed .new-memory-btn { display: none; }
-  .sidebar.collapsed .nav-item { justify-content: center; padding: 8px; }
-  .sidebar.collapsed .nav-bottom .nav-item { justify-content: center; padding: 8px; }
+  .sidebar.collapsed .nav-item { justify-content: center; padding: 10px; }
+  .sidebar.collapsed .nav-bottom .nav-item { justify-content: center; padding: 10px; }
+  .sidebar.collapsed .nav-item.active { padding-left: 10px; }
 </style>

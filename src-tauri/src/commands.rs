@@ -764,6 +764,19 @@ async fn list_multi_namespace(
         .collect())
 }
 
+/// List recent memories (newest first) — thin wrapper over uteke_list
+/// with a sensible default limit for dashboard widgets.
+#[tauri::command]
+pub async fn uteke_recent(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let limit = limit.unwrap_or(10);
+    // Reuse uteke_list which already sorts newest-first.
+    uteke_list(state, namespace, None, None, Some(limit), Some(0)).await
+}
+
 /// Get a single memory by ID via HTTP.
 #[tauri::command]
 pub async fn uteke_get(
@@ -930,6 +943,10 @@ pub async fn uteke_namespaces_with_counts(
 }
 
 /// List rooms via HTTP.
+///
+/// Enriches each room with `memory_count` and `participant_count` via
+/// `POST /room/stats` (uteke >= 0.2.1). Falls back to `0` on older
+/// servers that lack the endpoint.
 #[tauri::command]
 pub async fn uteke_rooms(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -949,20 +966,43 @@ pub async fn uteke_rooms(
         .rooms(namespace.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
-    Ok(rooms
-        .into_iter()
-        .map(|r| {
-            serde_json::json!({
-                "id": r.id,
-                "title": r.title,
-                "namespace": r.namespace,
-                "memory_count": 0,
-                "participant_count": 0,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
-            })
-        })
-        .collect())
+
+    // Enrich each room with memory_count and participant_count.
+    // Fan-out is fine for a desktop app (rooms are typically < 50).
+    let mut enriched = Vec::with_capacity(rooms.len());
+    for r in rooms {
+        let (mem_count, part_count) = match client.room_stats(&r.id).await {
+            Ok(stats) => {
+                let mc = stats
+                    .get("memory_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                // participant_count: try as u64 first, then as array length
+                let pc = stats
+                    .get("participant_count")
+                    .and_then(|v| v.as_u64())
+                    .or_else(|| {
+                        stats
+                            .get("participant_namespaces")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len() as u64)
+                    })
+                    .unwrap_or(0) as usize;
+                (mc, pc)
+            }
+            Err(_) => (0, 0), // older server without /room/stats
+        };
+        enriched.push(serde_json::json!({
+            "id": r.id,
+            "title": r.title,
+            "namespace": r.namespace,
+            "memory_count": mem_count,
+            "participant_count": part_count,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+        }));
+    }
+    Ok(enriched)
 }
 
 /// Find neighbors via semantic recall (query with memory content).
@@ -1048,6 +1088,96 @@ pub async fn uteke_room_recall(
             updated_at: Some(r.memory.updated_at),
         })
         .collect())
+}
+
+/// Room stats via HTTP (POST /room/stats).
+///
+/// Returns authoritative memory_count and participant_count for a room.
+#[tauri::command]
+pub async fn uteke_room_stats(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(serde_json::json!({"memory_count": 0, "participant_count": 0}));
+    };
+    if !client.is_available().await {
+        return Ok(serde_json::json!({"memory_count": 0, "participant_count": 0}));
+    }
+    client
+        .room_stats(&room_id)
+        .await
+        .map_err(CommandError::Uteke)
+}
+
+/// Chronological room memories via HTTP (uteke >= 0.6.7, GET /room/memories).
+///
+/// Returns memories in a room ordered chronologically (newest first).
+/// Optional `author` filter restricts to memories from a specific namespace/agent.
+/// Falls back to `room_recall` with empty query on older servers that lack the endpoint.
+#[tauri::command]
+pub async fn uteke_room_memories(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    limit: Option<usize>,
+    author: Option<String>,
+) -> Result<Vec<MemoryEntry>, CommandError> {
+    let limit = limit.unwrap_or(50);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+
+    // Try GET /room/memories first (uteke >= 0.6.7). Falls back to
+    // POST /room/recall with empty query on older servers.
+    match client
+        .room_memories(&room_id, limit, author.as_deref())
+        .await
+    {
+        Ok(memories) => Ok(memories
+            .into_iter()
+            .map(|m| MemoryEntry {
+                id: m.id,
+                content: m.content,
+                tags: m.tags,
+                content_type: Some(m.content_type),
+                importance: Some(m.importance),
+                namespace: Some(m.namespace),
+                created_at: Some(m.created_at),
+                updated_at: Some(m.updated_at),
+            })
+            .collect()),
+        Err(_) => {
+            // Fallback: use room_recall with empty query
+            let results = client
+                .room_recall(&room_id, limit)
+                .await
+                .map_err(|e| CommandError::Uteke(e.to_string()))?;
+            Ok(results
+                .into_iter()
+                .map(|r| MemoryEntry {
+                    id: r.memory.id,
+                    content: r.memory.content,
+                    tags: r.memory.tags,
+                    content_type: Some(r.memory.content_type),
+                    importance: Some(r.memory.importance),
+                    namespace: Some(r.memory.namespace),
+                    created_at: Some(r.memory.created_at),
+                    updated_at: Some(r.memory.updated_at),
+                })
+                .collect())
+        }
+    }
 }
 
 /// Stats via HTTP (always fresh).
@@ -2315,75 +2445,6 @@ pub async fn get_dream_history(
 }
 
 // ---------------------------------------------------------------------------
-// Commands: Ecosystem health check (#19 — multi-product dashboard)
-// ---------------------------------------------------------------------------
-
-/// Health check result for an ecosystem product.
-#[derive(Debug, Clone, Serialize)]
-pub struct ProductHealth {
-    pub id: String,
-    pub available: bool,
-    pub latency_ms: u64,
-    pub version: Option<String>,
-    pub error: Option<String>,
-}
-
-/// Perform a lightweight HTTP GET health check against any CodeCora product.
-///
-/// Sends GET to `{url}{health_path}` with a 3s timeout. Returns
-/// availability, latency, version (parsed from JSON if present), and error.
-/// Used by the Dashboard to show multi-product status cards.
-#[tauri::command]
-pub async fn check_product_health(
-    url: String,
-    health_path: String,
-) -> Result<ProductHealth, CommandError> {
-    let full_url = format!("{}{}", url.trim_end_matches('/'), health_path);
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .map_err(|e| CommandError::Uteke(e.to_string()))?;
-
-    let start = std::time::Instant::now();
-    let result = client.get(&full_url).send().await;
-
-    let latency_ms = start.elapsed().as_millis() as u64;
-
-    match result {
-        Ok(resp) if resp.status().is_success() => {
-            // Try to parse version from JSON body.
-            let version = resp
-                .json::<serde_json::Value>()
-                .await
-                .ok()
-                .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(String::from));
-            Ok(ProductHealth {
-                id: url.clone(),
-                available: true,
-                latency_ms,
-                version,
-                error: None,
-            })
-        }
-        Ok(resp) => Ok(ProductHealth {
-            id: url,
-            available: false,
-            latency_ms,
-            version: None,
-            error: Some(format!("HTTP {}", resp.status())),
-        }),
-        Err(e) => Ok(ProductHealth {
-            id: url,
-            available: false,
-            latency_ms,
-            version: None,
-            error: Some(e.to_string()),
-        }),
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Connection commands (Phase 4)
 // ---------------------------------------------------------------------------
 
@@ -2598,6 +2659,201 @@ pub async fn disconnect_connection(
     }
     eprintln!("CorIn: disconnected active memory backend");
     Ok(())
+}
+
+// ── Document Engine (uteke-serve /doc/*) ─────────────────────────────
+
+/// List documents via uteke-serve POST /doc/list.
+#[tauri::command]
+pub async fn doc_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+    roots_only: Option<bool>,
+    parent: Option<String>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    if !client.is_available().await {
+        return Err(CommandError::Uteke("uteke-serve not reachable".into()));
+    }
+    let docs = client
+        .doc_list(namespace.as_deref(), limit, roots_only, parent.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(docs
+        .into_iter()
+        .map(|d| serde_json::to_value(d).unwrap_or_default())
+        .collect())
+}
+
+/// Get a single document via uteke-serve POST /doc/get.
+#[tauri::command]
+pub async fn doc_get(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    slug: Option<String>,
+    id: Option<String>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let doc = client
+        .doc_get(slug.as_deref(), id.as_deref(), namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(serde_json::to_value(doc).unwrap_or_default())
+}
+
+/// Create a document via uteke-serve POST /doc/create.
+#[tauri::command]
+pub async fn doc_create(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    slug: String,
+    title: String,
+    content: String,
+    namespace: Option<String>,
+    tags: Option<Vec<String>>,
+    parent: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let tags = tags.unwrap_or_default();
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let doc = client
+        .doc_create(
+            &slug,
+            &title,
+            &content,
+            namespace.as_deref(),
+            &tags,
+            parent.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(serde_json::to_value(doc).unwrap_or_default())
+}
+
+/// Update an existing document via uteke-serve POST /doc/update.
+#[tauri::command]
+pub async fn doc_update(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: Option<String>,
+    slug: Option<String>,
+    title: Option<String>,
+    content: Option<String>,
+    tags: Option<Vec<String>>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let id_or_slug = id
+        .or(slug)
+        .ok_or_else(|| CommandError::Uteke("provide either 'id' or 'slug'".into()))?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let doc = client
+        .doc_update(
+            &id_or_slug,
+            namespace.as_deref(),
+            title.as_deref(),
+            content.as_deref(),
+            tags.as_deref(),
+            None,
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(serde_json::to_value(doc).unwrap_or_default())
+}
+
+/// Search documents via uteke-serve POST /doc/search.
+#[tauri::command]
+pub async fn doc_search(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    query: String,
+    namespace: Option<String>,
+    limit: Option<usize>,
+    mode: Option<String>,
+) -> Result<Vec<serde_json::Value>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let results = client
+        .doc_search(&query, namespace.as_deref(), limit, mode.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(results
+        .into_iter()
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .collect())
+}
+
+/// Delete a document via uteke-serve DELETE /doc/delete.
+#[tauri::command]
+pub async fn doc_delete(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: Option<String>,
+    slug: Option<String>,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    client
+        .doc_delete(id.as_deref(), slug.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Move/reparent a document via uteke-serve POST /doc/move.
+#[tauri::command]
+pub async fn doc_move(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: Option<String>,
+    slug: Option<String>,
+    new_parent: Option<String>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .doc_move(
+            id.as_deref(),
+            slug.as_deref(),
+            new_parent.as_deref(),
+            namespace.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
 }
 
 /// Mask an auth token for safe logging.

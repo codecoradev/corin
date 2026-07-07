@@ -1,6 +1,9 @@
 <script lang="ts">
   import { uteke, room } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
+  import { relativeTime } from '../utils/format';
+  import { renderMarkdown } from '../utils/markdown';
+  import RoomCreateForm from './rooms/RoomCreateForm.svelte';
 
   interface UtekeRoom {
     id: string;
@@ -30,11 +33,7 @@
   let roomMemories = $state<MemoryEntry[]>([]);
   let utekeReady = $state(false);
 
-  // Create room form state
   let showCreateForm = $state(false);
-  let newName = $state('');
-  let newNamespace = $state('');
-  let creating = $state(false);
 
   // Tab state
   let activeTab = $state<'summary' | 'timeline' | 'participants'>('summary');
@@ -47,35 +46,9 @@
   // Confirm delete state
   let showDeleteConfirm = $state(false);
 
-  function relativeTime(dateStr: string): string {
-    if (!dateStr) return '';
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diffMs = now - then;
-    const diffSec = Math.floor(diffMs / 1000);
-    if (diffSec < 60) return 'just now';
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    if (diffDay < 30) return `${diffDay}d ago`;
-    const diffMo = Math.floor(diffDay / 30);
-    if (diffMo < 12) return `${diffMo}mo ago`;
-    const diffYr = Math.floor(diffMo / 12);
-    return `${diffYr}y ago`;
-  }
-
-  function getParticipants(): Participant[] {
-    const counts: Record<string, number> = {};
-    for (const m of roomMemories) {
-      const ns = m.namespace ?? 'default';
-      counts[ns] = (counts[ns] ?? 0) + 1;
-    }
-    return Object.entries(counts)
-      .map(([namespace, count]) => ({ namespace, count }))
-      .sort((a, b) => b.count - a.count);
-  }
+  // Participants state (authoritative from server)
+  let roomStatsData = $state<{ memory_count: number; participant_count: number; participant_namespaces?: string[] } | null>(null);
+  let participantsLoading = $state(false);
 
   async function loadRooms() {
     loading = true;
@@ -104,9 +77,55 @@
     activeTab = 'summary';
     documentLoaded = false;
     roomDocument = '';
+    roomStatsData = null;
     if (utekeReady) {
-      roomMemories = await uteke.roomRecall(roomId, 50).catch(() => []);
+      // Use chronological room_memories (uteke >= 0.6.7) with fallback to recall
+      try {
+        roomMemories = await uteke.roomMemories(roomId, { limit: 50 });
+      } catch {
+        roomMemories = await uteke.roomRecall(roomId, 50).catch(() => []);
+      }
     }
+  }
+
+  /** Load participants from server stats (authoritative) */
+  async function loadParticipants() {
+    if (!selectedRoom || !utekeReady) return;
+    participantsLoading = true;
+    try {
+      roomStatsData = await uteke.roomStats(selectedRoom);
+    } catch {
+      roomStatsData = null;
+    }
+    participantsLoading = false;
+  }
+
+  /**
+   * Get participants — authoritative from server stats when available,
+   * falls back to client-side grouping from roomMemories.
+   */
+  function getParticipants(): Participant[] {
+    // Prefer server-provided participant_namespaces list
+    if (roomStatsData?.participant_namespaces?.length) {
+      const memCounts: Record<string, number> = {};
+      for (const m of roomMemories) {
+        const ns = m.namespace ?? 'default';
+        memCounts[ns] = (memCounts[ns] ?? 0) + 1;
+      }
+      return roomStatsData.participant_namespaces
+        .map((ns) => ({ namespace: ns, count: memCounts[ns] ?? 0 }))
+        .sort((a, b) => b.count - a.count);
+    }
+
+    // Fallback: derive from roomMemories (may undercount if limit truncates)
+    const counts: Record<string, number> = {};
+    for (const m of roomMemories) {
+      const ns = m.namespace ?? 'default';
+      counts[ns] = (counts[ns] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([namespace, count]) => ({ namespace, count }))
+      .sort((a, b) => b.count - a.count);
   }
 
   async function loadDocument(roomId: string) {
@@ -128,10 +147,14 @@
     }
   });
 
+  $effect(() => {
+    if (selectedRoom && activeTab === 'participants') {
+      loadParticipants();
+    }
+  });
+
   function toggleCreateForm() {
     showCreateForm = !showCreateForm;
-    newName = '';
-    newNamespace = '';
   }
 
   // ─── Error helper: every CRUD op surfaces failures clearly ───
@@ -144,21 +167,9 @@
     setTimeout(() => { lastError = null; }, 5000);
   }
 
-  async function createRoom() {
-    if (!newName.trim()) return;
-    creating = true;
-    try {
-      await room.create(newName.trim(), {
-        namespace: newNamespace.trim() || undefined,
-      });
-      showCreateForm = false;
-      newName = '';
-      newNamespace = '';
-      await loadRooms();
-    } catch (e) {
-      reportError('Create room', e);
-    }
-    creating = false;
+  async function createRoomCallback() {
+    showCreateForm = false;
+    await loadRooms();
   }
 
   async function deleteRoom() {
@@ -175,29 +186,6 @@
     }
   }
 
-  function handleCreateKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      createRoom();
-    } else if (e.key === 'Escape') {
-      showCreateForm = false;
-    }
-  }
-
-  // Basic markdown-ish formatting for room documents
-  function formatMarkdown(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/\n/g, '<br>');
-  }
 </script>
 
 <div class="rooms-view">
@@ -236,31 +224,8 @@
   {:else}
     <div class="layout">
       <div class="room-list">
-        <!-- Create room form (inline at top of list) -->
         {#if showCreateForm}
-          <div class="create-form">
-            <input
-              type="text"
-              class="input"
-              placeholder="Room name"
-              bind:value={newName}
-              onkeydown={handleCreateKeydown}
-              autofocus
-            />
-            <input
-              type="text"
-              class="input"
-              placeholder="Namespace (optional)"
-              bind:value={newNamespace}
-              onkeydown={handleCreateKeydown}
-            />
-            <div class="create-actions">
-              <button class="btn-create" onclick={createRoom} disabled={!newName.trim() || creating}>
-                {creating ? 'Creating…' : 'Create'}
-              </button>
-              <button class="btn-cancel" onclick={toggleCreateForm}>Cancel</button>
-            </div>
-          </div>
+          <RoomCreateForm oncreated={createRoomCallback} oncancel={() => showCreateForm = false} onerror={reportError} />
         {/if}
 
         {#each rooms as room (room.id)}
@@ -323,7 +288,7 @@
             {#if documentLoading}
               <div class="tab-loading">Loading document…</div>
             {:else if roomDocument}
-              <div class="room-document">{@html formatMarkdown(roomDocument)}</div>
+              <div class="room-document">{@html renderMarkdown(roomDocument)}</div>
             {:else}
               <div class="tab-empty">
                 <p>No summary available yet.</p>
@@ -366,7 +331,10 @@
           <!-- Tab: Participants -->
           {#if activeTab === 'participants'}
             {@const participants = getParticipants()}
-            {#if participants.length === 0}
+            {@const serverParticipantCount = roomStatsData?.participant_count ?? currentRoom?.participant_count ?? 0}
+            {#if participantsLoading}
+              <div class="tab-loading">Loading participants…</div>
+            {:else if participants.length === 0}
               <div class="tab-empty">
                 <p>No participants yet.</p>
                 <p class="sub">Agents will appear here when they contribute memories to this room.</p>
@@ -376,15 +344,16 @@
                 {#each participants as p (p.namespace)}
                   <div class="participant-card">
                     <div class="participant-info">
-                      <span class="participant-ns">{p.namespace}</span>
-                      <span class="participant-count">{p.count} memories</span>
+                      <span class="participant-avatar">{'🤖'}</span>
+                      <div class="participant-detail">
+                        <span class="participant-ns">{p.namespace}</span>
+                        <span class="participant-count">{p.count} {p.count === 1 ? 'memory' : 'memories'}</span>
+                      </div>
                     </div>
                   </div>
                 {/each}
-                <div class="invite-section">
-                  <button class="btn-invite" disabled title="Coming soon">
-                    👤 Invite Agent (coming soon)
-                  </button>
+                <div class="participant-summary">
+                  <span>{participants.length} {participants.length === 1 ? 'participant' : 'participants'} · {serverParticipantCount > participants.length ? `(server reports ${serverParticipantCount} total)` : ''} · {roomMemories.length} memories loaded</span>
                 </div>
               </div>
             {/if}
@@ -396,7 +365,7 @@
 </div>
 
 <style>
-  .rooms-view { height: 100%; display: flex; flex-direction: column; }
+  .rooms-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
   .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: rgba(230,69,83,0.12); color: #e64553; font-size: 0.8rem; border-bottom: 1px solid rgba(230,69,83,0.3); }
   .error-dismiss { background: none; border: none; color: inherit; font-size: 1.1rem; cursor: pointer; padding: 0 4px; line-height: 1; }
   .rooms-header { padding: 16px 24px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }
@@ -480,11 +449,12 @@
   /* Participants */
   .participant-list { display: flex; flex-direction: column; gap: 8px; }
   .participant-card { padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; }
-  .participant-info { display: flex; justify-content: space-between; align-items: center; }
+  .participant-info { display: flex; align-items: center; gap: 10px; }
+  .participant-avatar { font-size: 1.2rem; }
+  .participant-detail { display: flex; flex-direction: column; gap: 2px; }
   .participant-ns { font-size: 0.9rem; color: var(--accent); font-family: var(--font-mono); }
   .participant-count { font-size: 0.75rem; color: var(--text-muted); }
-  .invite-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-  .btn-invite { font-size: 0.8rem; padding: 6px 14px; background: var(--bg-hover); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px; cursor: not-allowed; width: 100%; }
+  .participant-summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-align: center; }
 
   /* General */
   .msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; gap: 8px; }

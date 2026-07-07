@@ -342,11 +342,14 @@ pub fn run() {
             commands::uteke_get,
             commands::uteke_graph,
             commands::uteke_list,
+            commands::uteke_recent,
             commands::uteke_neighbors,
             commands::uteke_namespaces,
             commands::uteke_namespaces_with_counts,
             commands::uteke_rooms,
             commands::uteke_room_recall,
+            commands::uteke_room_memories,
+            commands::uteke_room_stats,
             commands::uteke_search,
             commands::uteke_stats,
             // Uteke Server Integration (HTTP)
@@ -365,8 +368,14 @@ pub fn run() {
             commands::set_primary_connection,
             commands::reconnect_connection,
             commands::disconnect_connection,
-            // Ecosystem health (#19 — multi-product dashboard)
-            commands::check_product_health,
+            // Document Engine (#137)
+            commands::doc_list,
+            commands::doc_get,
+            commands::doc_create,
+            commands::doc_update,
+            commands::doc_search,
+            commands::doc_delete,
+            commands::doc_move,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

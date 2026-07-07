@@ -1,7 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
-  RoomEntry, StatsResponse, ProductHealth,
+  RoomEntry, StatsResponse, DocEntry, DocSearchResult,
 } from './types';
 
 export const memory = {
@@ -99,6 +101,14 @@ export const uteke = {
     }),
   roomRecall: (roomId: string, limit?: number) =>
     invoke<MemoryEntry[]>('uteke_room_recall', { roomId, limit: limit ?? null }),
+  roomMemories: (roomId: string, opts?: { limit?: number; author?: string }) =>
+    invoke<MemoryEntry[]>('uteke_room_memories', {
+      roomId,
+      limit: opts?.limit ?? null,
+      author: opts?.author ?? null,
+    }),
+  roomStats: (roomId: string) =>
+    invoke<{ memory_count: number; participant_count: number; participant_namespaces?: string[] }>('uteke_room_stats', { roomId }),
   list: (opts?: { namespace?: string; namespaces?: string[]; tag?: string; limit?: number; offset?: number }) =>
     invoke<MemoryEntry[]>('uteke_list', {
       namespace: opts?.namespace ?? null,
@@ -200,15 +210,6 @@ export const agents = {
     }>>('get_dream_history', { limit: limit ?? null }),
 };
 
-// Ecosystem health check (#19 — multi-product dashboard)
-export const ecosystem = {
-  checkHealth: (url: string, healthPath: string) =>
-    invoke<ProductHealth>('check_product_health', {
-      url,
-      healthPath,
-    }),
-};
-
 // Connection Manager (#37)
 export interface ConnectionInfo {
   id: string;
@@ -251,4 +252,84 @@ export const connection = {
   setPrimary: (id: string) => invoke<void>('set_primary_connection', { id }),
   reconnect: (id: string) => invoke<HealthInfo>('reconnect_connection', { id }),
   disconnect: () => invoke<void>('disconnect_connection'),
+};
+
+// Document Engine (#137) — uteke-serve /doc/* API
+export const docs = {
+  list: (opts?: { namespace?: string; limit?: number; roots_only?: boolean; parent?: string }) =>
+    invoke<DocEntry[]>('doc_list', {
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+      roots_only: opts?.roots_only ?? null,
+      parent: opts?.parent ?? null,
+    }),
+
+  get: (opts: { slug?: string; id?: string; namespace?: string }) =>
+    invoke<DocEntry>('doc_get', {
+      slug: opts.slug ?? null,
+      id: opts.id ?? null,
+      namespace: opts.namespace ?? null,
+    }),
+
+  create: (slug: string, title: string, content: string, opts?: { namespace?: string; tags?: string[]; parent?: string }) =>
+    invoke<DocEntry>('doc_create', {
+      slug,
+      title,
+      content,
+      namespace: opts?.namespace ?? null,
+      tags: opts?.tags ?? null,
+      parent: opts?.parent ?? null,
+    }),
+
+  /** Update an existing document (by id or slug). */
+  update: (opts: {
+    id?: string;
+    slug?: string;
+    title?: string;
+    content?: string;
+    tags?: string[];
+    namespace?: string;
+  }) =>
+    invoke<DocEntry>('doc_update', {
+      id: opts.id ?? null,
+      slug: opts.slug ?? null,
+      title: opts.title ?? null,
+      content: opts.content ?? null,
+      tags: opts.tags ?? null,
+      namespace: opts.namespace ?? null,
+    }),
+
+  search: (query: string, opts?: { namespace?: string; limit?: number; mode?: string }) =>
+    invoke<DocSearchResult[]>('doc_search', {
+      query,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+      mode: opts?.mode ?? null,
+    }),
+
+  delete: (opts: { id?: string; slug?: string }) =>
+    invoke<void>('doc_delete', {
+      id: opts.id ?? null,
+      slug: opts.slug ?? null,
+    }),
+
+  move: (opts: { id?: string; slug?: string; new_parent?: string; namespace?: string }) =>
+    invoke<unknown>('doc_move', {
+      id: opts.id ?? null,
+      slug: opts.slug ?? null,
+      new_parent: opts.new_parent ?? null,
+      namespace: opts.namespace ?? null,
+    }),
+
+  /** Export document content as a downloadable .md file via native save dialog. */
+  exportFile: async (doc: DocEntry) => {
+    const content = doc.content ?? '';
+    const filename = `${doc.slug || doc.title || 'document'}.md`;
+    const filePath = await save({
+      defaultPath: filename,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (!filePath) return; // user cancelled
+    await writeTextFile(filePath, content);
+  },
 };
