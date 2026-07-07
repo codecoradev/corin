@@ -26,6 +26,7 @@
     Plus,
   } from 'lucide-svelte';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
+  import { slide } from 'svelte/transition';
 
   // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
   const catppuccinDarkTheme = EditorView.theme({
@@ -811,16 +812,13 @@
       <button
         class="tree-toggle"
         class:has-children={doc.has_children}
+        class:expanded={expandedIds.has(doc.id)}
         onclick={(e: MouseEvent) => { e.stopPropagation(); if (doc.has_children) toggleNode(doc); }}
         tabindex={doc.has_children ? 0 : -1}
         aria-label={doc.has_children ? 'Toggle children' : ''}
       >
         {#if doc.has_children}
-          {#if expandedIds.has(doc.id)}
-            <ChevronDown size={14} strokeWidth={2} />
-          {:else}
-            <ChevronRight size={14} strokeWidth={2} />
-          {/if}
+          <ChevronDown size={14} strokeWidth={2} class="chevron-icon" />
         {/if}
       </button>
       <button class="tree-label" onclick={() => selectDoc(doc)}>
@@ -829,7 +827,7 @@
       </button>
     </div>
     {#if expandedIds.has(doc.id) && childrenCache.has(doc.id)}
-      <div class="tree-children">
+      <div class="tree-children" transition:slide={{ duration: 180 }}>
         {#each childrenCache.get(doc.id) ?? [] as child (child.id)}
           {@render treeNode(child)}
         {/each}
@@ -978,7 +976,7 @@
     gap: 0;
     padding: 0 6px 0 0;
     border-left: 2px solid transparent;
-    transition: background 0.1s, border-color 0.1s;
+    transition: background 0.12s, border-color 0.12s;
     min-height: 28px;
   }
   .tree-row:hover { background: var(--bg-hover); }
@@ -1001,6 +999,12 @@
     color: var(--text-muted);
     cursor: default;
     padding: 0;
+  }
+  .tree-toggle .chevron-icon {
+    transition: transform 0.18s ease;
+  }
+  .tree-toggle:not(.expanded) .chevron-icon {
+    transform: rotate(-90deg);
   }
   .tree-toggle.has-children { cursor: pointer; }
   .tree-toggle.has-children:hover { color: var(--text-primary); }
@@ -1045,7 +1049,7 @@
     transition: background 0.1s, border-color 0.1s;
     text-align: left;
   }
-  .doc-card:hover { background: var(--bg-hover); }
+  .doc-card:hover { background: var(--bg-hover); transform: translateY(-1px); transition: transform 0.12s ease, background 0.12s; }
   .doc-card.active { background: var(--bg-hover); border-left-color: var(--accent); }
   .doc-card .doc-title { font-size: 0.8rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .doc-card .doc-slug { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
