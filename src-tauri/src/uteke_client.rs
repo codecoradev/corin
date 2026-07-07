@@ -170,6 +170,7 @@ pub struct UtekeRoom {
 pub struct UtekeDoc {
     pub id: String,
     pub slug: String,
+    #[serde(default)]
     pub title: String,
     /// Full markdown content — only populated by /doc/get.
     #[serde(default)]
