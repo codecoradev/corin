@@ -105,6 +105,8 @@
   let deleteTarget = $state<DocEntry | null>(null);
   let error = $state('');
   let errorTimeout: ReturnType<typeof setTimeout> | null = null;
+  let success = $state('');
+  let successTimeout: ReturnType<typeof setTimeout> | null = null;
   let editorView = $state<EditorView | null>(null);
   let showProps = $state(false);
 
@@ -153,8 +155,19 @@
   // ─── Show error with auto-dismiss ───────────────────────────────────
   function showError(msg: string) {
     error = msg;
+    success = '';
+    if (successTimeout) clearTimeout(successTimeout);
     if (errorTimeout) clearTimeout(errorTimeout);
     errorTimeout = setTimeout(() => { error = ''; }, 8000);
+  }
+
+  // ─── Show success with auto-dismiss ─────────────────────────────────
+  function showSuccess(msg: string) {
+    success = msg;
+    error = '';
+    if (errorTimeout) clearTimeout(errorTimeout);
+    if (successTimeout) clearTimeout(successTimeout);
+    successTimeout = setTimeout(() => { success = ''; }, 3000);
   }
 
   // ─── Load root documents ──────────────────────────────────────────
@@ -371,6 +384,7 @@
         showNewDoc = false;
       }
       await loadRootDocs();
+      showSuccess(selectedDoc && !showNewDoc ? 'Document updated' : 'Document saved');
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -575,6 +589,12 @@
     <div class="error-bar">
       <span class="error-text">{error}</span>
       <button class="dismiss-btn" onclick={() => (error = '')}>✕</button>
+    </div>
+  {/if}
+  {#if success}
+    <div class="success-bar">
+      <span class="success-text">{success}</span>
+      <button class="dismiss-btn success-dismiss" onclick={() => (success = '')}>✕</button>
     </div>
   {/if}
 
@@ -854,10 +874,30 @@
     flex-shrink: 0;
     animation: slideDown 0.15s ease;
   }
+  .success-bar {
+    padding: 8px 20px;
+    background: rgba(166, 227, 161, 0.1);
+    border-bottom: 1px solid rgba(166, 227, 161, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    animation: slideDown 0.15s ease;
+  }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } }
   .error-text {
     color: #f38ba8;
     font-size: 0.8rem;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .success-text {
+    color: #a6e3a1;
+    font-size: 0.8rem;
+    font-weight: 500;
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -872,6 +912,7 @@
     padding: 0 2px;
     flex-shrink: 0;
   }
+  .dismiss-btn.success-dismiss { color: #a6e3a1; }
 
   /* ═══════════════════════════════════════════════════════════════════
      Left Panel — Tree
