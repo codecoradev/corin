@@ -23,6 +23,7 @@
     Trash2,
     Plus,
   } from 'lucide-svelte';
+  import { open as shellOpen } from '@tauri-apps/plugin-shell';
 
   // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
   const catppuccinDarkTheme = EditorView.theme({
@@ -112,7 +113,8 @@
   // ─── Markdown rendering ────────────────────────────────────────────
   let renderedHtml = $state('');
 
-  // ─── Render markdown with external links opening in system browser ─
+  // ─── Render markdown: GFM + breaks enabled (single \n → <br>) ───────
+  // External links get target="_blank" for system browser handling.
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
     const url = href ?? '';
@@ -122,11 +124,15 @@
     return `<a href="${url}">${text}</a>`;
   };
 
-  marked.setOptions({ renderer, gfm: true, breaks: true });
-
   function renderMarkdown(md: string) {
     try {
-      const html = marked.parse(md) as string;
+      // Pass options directly to parse() so they can't be reset by HMR
+      const html = marked.parse(md, {
+        renderer,
+        gfm: true,
+        breaks: true,
+        async: false,
+      }) as string;
       renderedHtml = DOMPurify.sanitize(html, {
         ADD_ATTR: ['target', 'rel'],
       });
@@ -458,24 +464,32 @@
 
   // ─── Handle clicks in markdown preview ─────────────────────────────
   // Internal document links → navigate in-app.
-  // External links → open in system browser.
+  // External links → open in system browser via Tauri shell plugin.
+  //   (Tauri's webview does NOT auto-open external links on click —
+  //    we must explicitly call shell.open() and prevent default nav.)
   function handlePreviewClick(e: MouseEvent) {
     const anchor = (e.target as HTMLElement).closest('a');
     if (!anchor) return;
     const href = anchor.getAttribute('href');
     if (!href) return;
 
-    const isExternal = href.startsWith('http://') || href.startsWith('https://');
+    // Always prevent default — Tauri webview would otherwise try to
+    // navigate internally and fail.
+    e.preventDefault();
+    e.stopPropagation();
 
-    // External links: let browser handle it (target="_blank" via marked renderer)
-    if (isExternal) return;
+    const isExternal = href.startsWith('http://') || href.startsWith('https://')
+      || href.startsWith('mailto:') || href.startsWith('tel:');
+
+    if (isExternal) {
+      // Open in system default browser
+      shellOpen(href).catch((err) => showError(`Cannot open link: ${err}`));
+      return;
+    }
 
     // Internal link: extract slug and navigate in-app
     const slug = href.replace(/^\.\/+/, '').replace(/^\/+/, '').split(/[?#]/)[0].trim();
     if (!slug) return;
-
-    e.preventDefault();
-    e.stopPropagation();
     navigateToSlug(slug);
   }
 
