@@ -105,12 +105,40 @@
 </div>
 
 <style>
-  .ns-view { padding: 16px 24px; max-width: 1000px; margin: 0 auto; }
-  .ns-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .ns-view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .ns-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
   .ns-header h2 { font-size: 1.1rem; margin: 0; flex: 1; }
   .ns-header .count { font-size: 0.8rem; color: var(--text-muted); }
-  .layout { display: flex; gap: 16px; }
-  .ns-list { width: 240px; display: flex; flex-direction: column; gap: 4px; max-height: 70vh; overflow-y: auto; }
+  .layout {
+    flex: 1;
+    display: flex;
+    gap: 0;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .ns-list {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    padding: 8px 12px;
+    border-right: 1px solid var(--border);
+  }
   .ns-card {
     display: flex; justify-content: space-between; align-items: center;
     padding: 8px 12px; text-align: left; cursor: pointer;
@@ -122,7 +150,12 @@
   .ns-name { font-weight: 500; }
   .count { color: var(--text-muted); font-size: 0.75rem; }
 
-  .ns-detail { flex: 1; min-width: 0; }
+  .ns-detail {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 16px 24px;
+  }
   .ns-detail h3 { font-size: 1rem; margin: 0 0 12px; }
   .mem-list { display: flex; flex-direction: column; gap: 8px; }
   .mem-card {
