@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse, DocEntry, DocSearchResult,
@@ -319,16 +321,15 @@ export const docs = {
       namespace: opts.namespace ?? null,
     }),
 
-  /** Export document content as a downloadable .md file. */
-  exportFile: (doc: DocEntry) => {
+  /** Export document content as a downloadable .md file via native save dialog. */
+  exportFile: async (doc: DocEntry) => {
     const content = doc.content ?? '';
     const filename = `${doc.slug || doc.title || 'document'}.md`;
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    const filePath = await save({
+      defaultPath: filename,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (!filePath) return; // user cancelled
+    await writeTextFile(filePath, content);
   },
 };
