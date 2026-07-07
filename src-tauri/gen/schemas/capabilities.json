@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default permissions for CorIn","local":true,"windows":["main"],"permissions":["core:default","updater:default","process:default","dialog:default","fs:default","fs:allow-read-text-file","shell:default"]}}
+{"default":{"identifier":"default","description":"Default permissions for CorIn","local":true,"windows":["main"],"permissions":["core:default","updater:default","process:default","dialog:default","fs:default","fs:allow-read-text-file","fs:allow-write-text-file","shell:default"]}}

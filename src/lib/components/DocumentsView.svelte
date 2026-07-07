@@ -415,8 +415,14 @@
   }
 
   // ─── Export ──────────────────────────────────────────────────────
-  function exportDoc() {
-    if (selectedDoc) docs.exportFile(selectedDoc);
+  async function exportDoc() {
+    if (!selectedDoc) return;
+    try {
+      await docs.exportFile(selectedDoc);
+      showSuccess('Document exported');
+    } catch (e: any) {
+      showError(`Export failed: ${e}`);
+    }
   }
 
   // ─── CodeMirror ─────────────────────────────────────────────────
