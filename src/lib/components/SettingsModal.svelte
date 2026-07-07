@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { getVersion } from '@tauri-apps/api/app';
   import { system } from '../ts/ipc';
   import ImportExport from './ImportExport.svelte';
   import AgentsSection from './settings/AgentsSection.svelte';
@@ -26,6 +27,7 @@
   // Data dir
   let dataDir = $state<string | null>(null);
   let namespaces = $state<string[]>([]);
+  let appVersion = $state('...');
 
   async function loadSettings() {
     loading = true;
@@ -43,9 +45,10 @@
     try { namespaces = await system.listNamespaces(); } catch { namespaces = []; }
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadSettings();
     loadDataDir();
+    try { appVersion = await getVersion(); } catch { appVersion = 'dev'; }
   });
 
   async function handleSave() {
@@ -91,7 +94,7 @@
       {/each}
       <div class="sidebar-separator"></div>
       <div class="sidebar-info">
-        <p class="version">CorIn v0.1.1</p>
+        <p class="version">CorIn v{appVersion}</p>
         <p class="powered">codecora.dev</p>
       </div>
     </aside>

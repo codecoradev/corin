@@ -6,8 +6,19 @@
   let installingUpdate = $state(false);
   let updateStatus = $state<string | null>(null);
   let pendingUpdate: Update | null = $state(null);
+  let autoChecked = $state(false);
 
-  async function checkForUpdates() {
+  // Auto-check for updates on mount (silently, after 3s delay)
+  $effect(() => {
+    if (!autoChecked) {
+      autoChecked = true;
+      setTimeout(() => {
+        checkForUpdates(true);
+      }, 3000);
+    }
+  });
+
+  async function checkForUpdates(silent = false) {
     checkingUpdates = true;
     updateStatus = null;
     pendingUpdate = null;
@@ -15,12 +26,12 @@
       const update = await updater.check();
       if (update) {
         pendingUpdate = update;
-        updateStatus = `Update available: v${update.version}`;
-      } else {
+        updateStatus = `Update available: v${update.version} — click Install below`;
+      } else if (!silent) {
         updateStatus = 'Up to date ✅';
       }
     } catch (e: unknown) {
-      updateStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      if (!silent) updateStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
       checkingUpdates = false;
     }
@@ -46,7 +57,7 @@
 <section class="content-section">
   <h3>Updates</h3>
   <div class="update-section">
-    <button class="data-btn" onclick={checkForUpdates} disabled={checkingUpdates}>
+    <button class="data-btn" onclick={() => checkForUpdates(false)} disabled={checkingUpdates}>
       {checkingUpdates ? 'Checking...' : '↻ Check for Updates'}
     </button>
     {#if updateStatus}

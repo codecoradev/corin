@@ -40,9 +40,20 @@ Local-first desktop app for managing memories, knowledge graphs, rooms, and docu
 - [x] Auto-updater (signed platform updates)
 - [x] AI agent detection — detect and generate agent metadata
 
-### Pipeline (v0.3.0)
+### UI/UX Overhaul (v0.3.0)
 
-- [ ] `POST /doc/update` endpoint for document editing
+- [x] **Design system** — 11 reusable components (`src/lib/ui/`): Button, Card, Modal, Badge, Input, Spinner, EmptyState, ConfirmDialog, Notification + toastStore
+- [x] **Animation system** — 8 transition presets, view cross-fades, tree slide-expand, micro-interactions (press-scale, hover-lift, chevron-rotate)
+- [x] **Tailwind CSS v4** — CSS-first config with Catppuccin Mocha theme mapping
+- [x] **Component refactoring** — monoliths split (SettingsModal 828→233, RoomsView, GraphView, DocumentsView)
+- [x] **Shared utils** — `format.ts` + `markdown.ts` with 29 unit tests
+- [x] **Documents page** — 3-mode toggle (Edit/Split/Preview), markdown rendering with GFM breaks, internal/external link navigation, tree auto-expand, native `.md` export
+- [x] **Auto-update** — silent check on startup, one-click download + install
+- [x] **Dynamic version** — reads app version at runtime
+- [x] **Lucide icons** — consistent icon system across all views
+
+### Pipeline (next)
+
 - [ ] Complete Uteke client coverage (tags, pin, timeline, edges UI)
 - [ ] Kanban integration (via Hermes dashboard REST API)
 
