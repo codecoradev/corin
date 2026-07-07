@@ -1,6 +1,9 @@
 <script lang="ts">
   import { uteke, room } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
+  import { relativeTime } from '../utils/format';
+  import { renderMarkdown } from '../utils/markdown';
+  import RoomCreateForm from './rooms/RoomCreateForm.svelte';
 
   interface UtekeRoom {
     id: string;
@@ -30,11 +33,7 @@
   let roomMemories = $state<MemoryEntry[]>([]);
   let utekeReady = $state(false);
 
-  // Create room form state
   let showCreateForm = $state(false);
-  let newName = $state('');
-  let newNamespace = $state('');
-  let creating = $state(false);
 
   // Tab state
   let activeTab = $state<'summary' | 'timeline' | 'participants'>('summary');
@@ -50,25 +49,6 @@
   // Participants state (authoritative from server)
   let roomStatsData = $state<{ memory_count: number; participant_count: number; participant_namespaces?: string[] } | null>(null);
   let participantsLoading = $state(false);
-
-  function relativeTime(dateStr: string): string {
-    if (!dateStr) return '';
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diffMs = now - then;
-    const diffSec = Math.floor(diffMs / 1000);
-    if (diffSec < 60) return 'just now';
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    if (diffDay < 30) return `${diffDay}d ago`;
-    const diffMo = Math.floor(diffDay / 30);
-    if (diffMo < 12) return `${diffMo}mo ago`;
-    const diffYr = Math.floor(diffMo / 12);
-    return `${diffYr}y ago`;
-  }
 
   async function loadRooms() {
     loading = true;
@@ -175,8 +155,6 @@
 
   function toggleCreateForm() {
     showCreateForm = !showCreateForm;
-    newName = '';
-    newNamespace = '';
   }
 
   // ─── Error helper: every CRUD op surfaces failures clearly ───
@@ -189,21 +167,9 @@
     setTimeout(() => { lastError = null; }, 5000);
   }
 
-  async function createRoom() {
-    if (!newName.trim()) return;
-    creating = true;
-    try {
-      await room.create(newName.trim(), {
-        namespace: newNamespace.trim() || undefined,
-      });
-      showCreateForm = false;
-      newName = '';
-      newNamespace = '';
-      await loadRooms();
-    } catch (e) {
-      reportError('Create room', e);
-    }
-    creating = false;
+  async function createRoomCallback() {
+    showCreateForm = false;
+    await loadRooms();
   }
 
   async function deleteRoom() {
@@ -220,29 +186,6 @@
     }
   }
 
-  function handleCreateKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      createRoom();
-    } else if (e.key === 'Escape') {
-      showCreateForm = false;
-    }
-  }
-
-  // Basic markdown-ish formatting for room documents
-  function formatMarkdown(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/\n/g, '<br>');
-  }
 </script>
 
 <div class="rooms-view">
@@ -281,31 +224,8 @@
   {:else}
     <div class="layout">
       <div class="room-list">
-        <!-- Create room form (inline at top of list) -->
         {#if showCreateForm}
-          <div class="create-form">
-            <input
-              type="text"
-              class="input"
-              placeholder="Room name"
-              bind:value={newName}
-              onkeydown={handleCreateKeydown}
-              autofocus
-            />
-            <input
-              type="text"
-              class="input"
-              placeholder="Namespace (optional)"
-              bind:value={newNamespace}
-              onkeydown={handleCreateKeydown}
-            />
-            <div class="create-actions">
-              <button class="btn-create" onclick={createRoom} disabled={!newName.trim() || creating}>
-                {creating ? 'Creating…' : 'Create'}
-              </button>
-              <button class="btn-cancel" onclick={toggleCreateForm}>Cancel</button>
-            </div>
-          </div>
+          <RoomCreateForm oncreated={createRoomCallback} oncancel={() => showCreateForm = false} onerror={reportError} />
         {/if}
 
         {#each rooms as room (room.id)}
@@ -368,7 +288,7 @@
             {#if documentLoading}
               <div class="tab-loading">Loading document…</div>
             {:else if roomDocument}
-              <div class="room-document">{@html formatMarkdown(roomDocument)}</div>
+              <div class="room-document">{@html renderMarkdown(roomDocument)}</div>
             {:else}
               <div class="tab-empty">
                 <p>No summary available yet.</p>
