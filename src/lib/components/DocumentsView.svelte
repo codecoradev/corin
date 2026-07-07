@@ -242,6 +242,8 @@
       editorTags = (full.tags ?? []).join(', ');
       showSearchResults = false;
       showNewDoc = false;
+      // Default to preview mode when opening an existing document
+      viewMode = 'preview';
       // Auto-load and expand children of this document in the tree
       if (full.has_children) {
         expandedIds.add(full.id);
