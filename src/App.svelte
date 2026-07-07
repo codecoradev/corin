@@ -199,8 +199,9 @@
 
   .main-content {
     flex: 1;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--bg-primary);
+    position: relative;
   }
 
   .welcome-screen {

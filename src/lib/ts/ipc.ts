@@ -279,6 +279,24 @@ export const docs = {
       parent: opts?.parent ?? null,
     }),
 
+  /** Update an existing document (by id or slug). */
+  update: (opts: {
+    id?: string;
+    slug?: string;
+    title?: string;
+    content?: string;
+    tags?: string[];
+    namespace?: string;
+  }) =>
+    invoke<DocEntry>('doc_update', {
+      id: opts.id ?? null,
+      slug: opts.slug ?? null,
+      title: opts.title ?? null,
+      content: opts.content ?? null,
+      tags: opts.tags ?? null,
+      namespace: opts.namespace ?? null,
+    }),
+
   search: (query: string, opts?: { namespace?: string; limit?: number; mode?: string }) =>
     invoke<DocSearchResult[]>('doc_search', {
       query,

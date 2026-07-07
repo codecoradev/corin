@@ -372,6 +372,7 @@ pub fn run() {
             commands::doc_list,
             commands::doc_get,
             commands::doc_create,
+            commands::doc_update,
             commands::doc_search,
             commands::doc_delete,
             commands::doc_move,

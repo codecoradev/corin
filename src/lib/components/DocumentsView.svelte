@@ -10,8 +10,21 @@
   import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
   import { tags } from '@lezer/highlight';
+  import { marked } from 'marked';
+  import DOMPurify from 'dompurify';
+  import {
+    Search,
+    SquarePen,
+    Columns2,
+    Eye,
+    ChevronDown,
+    Save,
+    Download,
+    Trash2,
+    Plus,
+  } from 'lucide-svelte';
 
-  // Catppuccin Mocha theme
+  // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
   const catppuccinDarkTheme = EditorView.theme({
     '&': { color: '#cdd6f4', backgroundColor: '#1e1e2e', height: '100%' },
     '.cm-content': { caretColor: '#f5e0dc' },
@@ -58,13 +71,18 @@
     { tag: tags.list, color: '#89b4fa' },
   ]);
 
+  // ─── Props ─────────────────────────────────────────────────────────
   interface Props {
     namespace: string | null;
   }
 
   let { namespace }: Props = $props();
 
-  // ─── State ──────────────────────────────────────────────────────────
+  // ─── Editor / Preview mode ─────────────────────────────────────────
+  type ViewMode = 'edit' | 'preview' | 'split';
+  let viewMode = $state<ViewMode>('edit');
+
+  // ─── State ─────────────────────────────────────────────────────────
   let rootDocs = $state<DocEntry[]>([]);
   let expandedIds = $state<Set<string>>(new Set());
   let childrenCache = $state<Map<string, DocEntry[]>>(new Map());
@@ -83,16 +101,71 @@
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<DocEntry | null>(null);
   let error = $state('');
+  let errorTimeout: ReturnType<typeof setTimeout> | null = null;
   let editorView = $state<EditorView | null>(null);
+  let showProps = $state(false);
+
+  // ─── Bound DOM elements for scroll reset ───────────────────────────
+  let editorContainer: HTMLElement | null = null;
+  let previewContainer: HTMLElement | null = null;
+
+  // ─── Markdown rendering ────────────────────────────────────────────
+  let renderedHtml = $state('');
+
+  // ─── Render markdown with external links opening in system browser ─
+  const renderer = new marked.Renderer();
+  renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
+    const url = href ?? '';
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    }
+    return `<a href="${url}">${text}</a>`;
+  };
+
+  marked.setOptions({ renderer, gfm: true, breaks: true });
+
+  function renderMarkdown(md: string) {
+    try {
+      const html = marked.parse(md) as string;
+      renderedHtml = DOMPurify.sanitize(html, {
+        ADD_ATTR: ['target', 'rel'],
+      });
+    } catch {
+      renderedHtml = DOMPurify.sanitize(md);
+    }
+  }
+
+  // Re-render when content changes
+  $effect(() => {
+    if (viewMode !== 'edit') {
+      renderMarkdown(editorContent);
+    }
+  });
+
+  // ─── Show error with auto-dismiss ───────────────────────────────────
+  function showError(msg: string) {
+    error = msg;
+    if (errorTimeout) clearTimeout(errorTimeout);
+    errorTimeout = setTimeout(() => { error = ''; }, 8000);
+  }
 
   // ─── Load root documents ──────────────────────────────────────────
   async function loadRootDocs() {
     loading = true;
-    error = '';
     try {
       rootDocs = await docs.list({ roots_only: true, namespace: namespace ?? undefined });
+      // Auto-expand root nodes that have children
+      for (const doc of rootDocs) {
+        if (doc.has_children) {
+          expandedIds.add(doc.id);
+          loadChildren(doc.id);
+        }
+      }
+      if (rootDocs.some(d => d.has_children)) {
+        expandedIds = expandedIds;
+      }
     } catch (e: any) {
-      error = e.toString();
+      showError(e.toString());
     } finally {
       loading = false;
     }
@@ -104,8 +177,38 @@
     try {
       const children = await docs.list({ parent: docId, namespace: namespace ?? undefined });
       childrenCache.set(docId, children);
-      childrenCache = childrenCache; // trigger reactivity
-    } catch { /* ignore */ }
+      childrenCache = childrenCache;
+    } catch (e: any) {
+      showError(`Failed to load children: ${e}`);
+    }
+  }
+
+  // ─── Load all descendants (for selected doc's tree path) ─────────
+  async function expandPathToDoc(docId: string) {
+    // Load root children first
+    for (const root of rootDocs) {
+      if (root.has_children && !childrenCache.has(root.id)) {
+        await loadChildren(root.id);
+      }
+    }
+    // Recursively expand down the path to find and expand the target
+    function searchLevel(entries: DocEntry[]): boolean {
+      for (const entry of entries) {
+        if (entry.id === docId) return true;
+        if (entry.has_children) {
+          if (childrenCache.has(entry.id)) {
+            const kids = childrenCache.get(entry.id) ?? [];
+            if (!expandedIds.has(entry.id)) {
+              expandedIds.add(entry.id);
+              expandedIds = expandedIds;
+            }
+            if (searchLevel(kids)) return true;
+          }
+        }
+      }
+      return false;
+    }
+    searchLevel(rootDocs);
   }
 
   // ─── Toggle tree node ─────────────────────────────────────────────
@@ -133,18 +236,37 @@
       editorTags = (full.tags ?? []).join(', ');
       showSearchResults = false;
       showNewDoc = false;
+      // Auto-load and expand children of this document in the tree
+      if (full.has_children) {
+        expandedIds.add(full.id);
+        expandedIds = expandedIds;
+        await loadChildren(full.id);
+      }
+      // Auto-expand tree path to this document
+      await expandPathToDoc(full.id);
+      // Reset scroll positions to top for the new document
+      requestAnimationFrame(() => {
+        if (previewContainer) previewContainer.scrollTop = 0;
+        if (editorContainer) {
+          const scroller = editorContainer.querySelector('.cm-scroller');
+          if (scroller) scroller.scrollTop = 0;
+        }
+      });
     } catch (e: any) {
-      error = e.toString();
+      showError(e.toString());
     } finally {
       loading = false;
     }
   }
 
-  // ─── Navigate breadcrumb ──────────────────────────────────────────
-  async function navigateToPath(docId: string) {
-    const doc = rootDocs.find(d => d.id === docId) ||
-      [...childrenCache.values()].flat().find(d => d.id === docId);
-    if (doc) await selectDoc(doc);
+  // ─── Navigate to document by slug (from markdown links) ─────────
+  async function navigateToSlug(slug: string) {
+    try {
+      const doc = await docs.get({ slug });
+      await selectDoc(doc);
+    } catch (e: any) {
+      showError(`Document not found: ${slug}`);
+    }
   }
 
   // ─── Search ────────────────────────────────────────────────────────
@@ -168,13 +290,13 @@
     try {
       searchResults = await docs.search(searchQuery, { namespace: namespace ?? undefined, limit: 20 });
     } catch (e: any) {
-      error = e.toString();
+      showError(e.toString());
     } finally {
       searching = false;
     }
   }
 
-  // ─── New doc ────────────────────────────────────────────────────────
+  // ─── New doc ──────────────────────────────────────────────────────
   function newDoc() {
     showNewDoc = true;
     selectedDoc = null;
@@ -183,35 +305,49 @@
     editorContent = '# New Document\n\n';
     editorTags = '';
     showSearchResults = false;
+    viewMode = 'edit';
   }
 
-  // ─── Save ──────────────────────────────────────────────────────────
+  // ─── Save (with Ctrl/Cmd+S shortcut) ─────────────────────────────
   async function saveDoc() {
     if (!editorSlug.trim()) {
-      error = 'Slug is required';
+      showError('Slug is required');
       return;
     }
     saving = true;
-    error = '';
     try {
       const tags = editorTags.split(',').map(t => t.trim()).filter(Boolean);
-      const parent = selectedDoc?.parent_id ?? undefined;
-      const created = await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
-        namespace: namespace ?? undefined,
-        tags,
-        parent,
-      });
-      selectedDoc = created;
-      showNewDoc = false;
+      if (selectedDoc && !showNewDoc) {
+        // Existing document → update via /doc/update
+        const updated = await docs.update({
+          id: selectedDoc.id,
+          title: editorTitle || editorSlug,
+          content: editorContent,
+          tags,
+          namespace: selectedDoc.namespace ?? namespace ?? undefined,
+        });
+        selectedDoc = updated;
+      } else {
+        // New document → create via /doc/create
+        // Parent is the currently-selected doc (if any), not its parent_id.
+        const parent = selectedDoc?.id ?? undefined;
+        const created = await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
+          namespace: namespace ?? undefined,
+          tags,
+          parent,
+        });
+        selectedDoc = created;
+        showNewDoc = false;
+      }
       await loadRootDocs();
     } catch (e: any) {
-      error = e.toString();
+      showError(e.toString());
     } finally {
       saving = false;
     }
   }
 
-  // ─── Delete ───────────────────────────────────────────────────────
+  // ─── Delete ──────────────────────────────────────────────────────
   function confirmDelete(doc: DocEntry) {
     deleteTarget = doc;
     showDeleteConfirm = true;
@@ -227,18 +363,18 @@
       }
       await loadRootDocs();
     } catch (e: any) {
-      error = e.toString();
+      showError(e.toString());
     }
     showDeleteConfirm = false;
     deleteTarget = null;
   }
 
-  // ─── Export ───────────────────────────────────────────────────────
+  // ─── Export ──────────────────────────────────────────────────────
   function exportDoc() {
     if (selectedDoc) docs.exportFile(selectedDoc);
   }
 
-  // ─── CodeMirror ──────────────────────────────────────────────────
+  // ─── CodeMirror ─────────────────────────────────────────────────
   function createEditor(container: HTMLElement, content: string) {
     const state = EditorState.create({
       doc: content,
@@ -300,7 +436,7 @@
     }
   }
 
-  // ─── Formatted date ───────────────────────────────────────────────
+  // ─── Formatted date ──────────────────────────────────────────────
   function formatDate(iso: string | null | undefined): string {
     if (!iso) return '';
     try {
@@ -310,7 +446,7 @@
     }
   }
 
-  // Watch editorContent changes from outside (e.g. load new doc)
+  // Watch editorContent changes from outside
   $effect(() => {
     if (editorView && (selectedDoc || showNewDoc)) {
       const current = editorView.state.doc.toString();
@@ -320,14 +456,47 @@
     }
   });
 
+  // ─── Handle clicks in markdown preview ─────────────────────────────
+  // Internal document links → navigate in-app.
+  // External links → open in system browser.
+  function handlePreviewClick(e: MouseEvent) {
+    const anchor = (e.target as HTMLElement).closest('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (!href) return;
+
+    const isExternal = href.startsWith('http://') || href.startsWith('https://');
+
+    // External links: let browser handle it (target="_blank" via marked renderer)
+    if (isExternal) return;
+
+    // Internal link: extract slug and navigate in-app
+    const slug = href.replace(/^\.\/+/, '').replace(/^\/+/, '').split(/[?#]/)[0].trim();
+    if (!slug) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    navigateToSlug(slug);
+  }
+
   // ─── Build breadcrumb path ────────────────────────────────────────
   function getBreadcrumb(): string[] {
     if (!selectedDoc) return [];
-    const parts: string[] = [];
     if (selectedDoc.path && selectedDoc.path.length > 0) {
-      parts.push(...selectedDoc.path);
+      const parts = selectedDoc.path.split('/').filter(Boolean);
+      return parts.length > 0 ? parts : [];
     }
-    return parts;
+    return [];
+  }
+
+  // ─── Word count & reading time ────────────────────────────────────
+  function getWordCount(text: string): number {
+    return text.trim() ? text.trim().split(/\s+/).length : 0;
+  }
+
+  function getReadingTime(words: number): string {
+    const mins = Math.max(1, Math.ceil(words / 200));
+    return words === 0 ? '' : `${mins} min read`;
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────
@@ -343,18 +512,29 @@
   });
 </script>
 
+<svelte:window
+  onkeydown={(e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveDoc();
+    }
+  }}
+/>
+
 <div class="docs-view">
   <div class="docs-header">
     <h2>Documents</h2>
     <span class="count">{rootDocs.length} root docs</span>
     <div class="header-actions">
-      <button class="action-btn new-btn" onclick={newDoc}>+ New</button>
+      <button class="action-btn new-btn" onclick={newDoc}>
+        <Plus size={14} strokeWidth={2.5} /> New
+      </button>
     </div>
   </div>
 
   {#if error}
     <div class="error-bar">
-      {error}
+      <span class="error-text">{error}</span>
       <button class="dismiss-btn" onclick={() => (error = '')}>✕</button>
     </div>
   {/if}
@@ -363,16 +543,20 @@
     <!-- ─── Left Panel: Tree + Search ─────────────────────────── -->
     <div class="doc-tree-panel">
       <div class="search-bar">
+        <Search size={14} strokeWidth={2} class="search-icon" />
         <input
           type="text"
           placeholder="Search documents..."
           value={searchQuery}
           oninput={onSearchInput}
         />
+        {#if searchQuery}
+          <button class="search-clear" onclick={() => { searchQuery = ''; showSearchResults = false; searchResults = []; }}>✕</button>
+        {/if}
       </div>
 
       {#if searching}
-        <div class="msg">Searching...</div>
+        <div class="msg"><span class="spinner"></span> Searching...</div>
       {:else if showSearchResults && searchResults.length > 0}
         <div class="search-results">
           {#each searchResults as result (result.document.id)}
@@ -393,11 +577,12 @@
       {:else if showSearchResults}
         <div class="msg">No results for "{searchQuery}"</div>
       {:else if loading}
-        <div class="msg">Loading...</div>
+        <div class="msg"><span class="spinner"></span> Loading...</div>
       {:else if rootDocs.length === 0}
-        <div class="msg">
-          <p>No documents yet.</p>
-          <p class="sub">Create your first document with the + New button.</p>
+        <div class="empty-tree">
+          <div class="empty-tree-icon">📄</div>
+          <p>No documents yet</p>
+          <button class="action-btn new-btn small" onclick={newDoc}><Plus size={12} strokeWidth={2.5} /> Create first doc</button>
         </div>
       {:else}
         <div class="doc-tree">
@@ -408,72 +593,132 @@
       {/if}
     </div>
 
-    <!-- ─── Right Panel: Editor ─────────────────────────────────── -->
+    <!-- ─── Right Panel: Editor/Preview ─────────────────────────── -->
     <div class="editor-panel">
       {#if selectedDoc || showNewDoc}
-        <!-- Breadcrumb -->
-        {#if selectedDoc && !showNewDoc}
+        <!-- Top bar: breadcrumb + mode toggle -->
+        <div class="top-bar">
           <div class="breadcrumb">
-            <button class="crumb-link" onclick={() => { selectedDoc = null; showNewDoc = false; }}>Documents</button>
-            {#each getBreadcrumb() as part, i}
+            {#if selectedDoc && !showNewDoc}
+              <button class="crumb-link" onclick={() => { selectedDoc = null; showNewDoc = false; }}>Documents</button>
+              {#each getBreadcrumb() as part, i}
+                <span class="crumb-sep">/</span>
+                <button class="crumb-link">{part.slice(0, 8)}</button>
+              {/each}
               <span class="crumb-sep">/</span>
-              <button class="crumb-link">{part}</button>
-            {/each}
-            <span class="crumb-sep">/</span>
-            <span class="crumb-current">{selectedDoc.title}</span>
+              <span class="crumb-current">{selectedDoc.title}</span>
+            {:else}
+              <span class="crumb-current">New Document</span>
+            {/if}
+          </div>
+
+          <!-- View mode toggle -->
+          <div class="mode-toggle">
+            <button
+              class="mode-btn"
+              class:active={viewMode === 'edit'}
+              onclick={() => (viewMode = 'edit')}
+              title="Edit (E)"
+            >
+              <SquarePen size={14} strokeWidth={2} />
+              Edit
+            </button>
+            <button
+              class="mode-btn"
+              class:active={viewMode === 'split'}
+              onclick={() => (viewMode = 'split')}
+              title="Split view (S)"
+            >
+              <Columns2 size={14} strokeWidth={2} />
+              Split
+            </button>
+            <button
+              class="mode-btn"
+              class:active={viewMode === 'preview'}
+              onclick={() => (viewMode = 'preview')}
+              title="Preview (P)"
+            >
+              <Eye size={14} strokeWidth={2} />
+              Preview
+            </button>
+          </div>
+        </div>
+
+        <!-- Properties row: title, slug, tags -->
+        {#if showProps}
+          <div class="props-row">
+            <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} />
+            <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
+            <input type="text" class="prop-input tags-input" placeholder="tag1, tag2" bind:value={editorTags} />
           </div>
         {/if}
 
-        <div class="editor-toolbar">
-          <div class="editor-meta">
-            <input
-              type="text"
-              class="title-input"
-              placeholder="Document title..."
-              bind:value={editorTitle}
-            />
-            <input
-              type="text"
-              class="slug-input"
-              placeholder="slug-name"
-              bind:value={editorSlug}
-            />
-            <input
-              type="text"
-              class="tags-input"
-              placeholder="tag1, tag2"
-              bind:value={editorTags}
-            />
-          </div>
-          <div class="editor-actions">
-            <button class="action-btn" onclick={saveDoc} disabled={saving}>
-              {saving ? 'Saving...' : '💾 Save'}
+        <!-- Meta bar: version, date, namespace + actions -->
+        <div class="meta-bar">
+          <div class="meta-left">
+            <button class="props-toggle" onclick={() => (showProps = !showProps)}>
+              <ChevronDown size={12} strokeWidth={2} />
+              Properties
             </button>
-            <button class="action-btn" onclick={exportDoc}>📥 Export</button>
+            {#if selectedDoc && !showNewDoc}
+              <span class="meta-item">v{selectedDoc.version ?? 1}</span>
+              {#if selectedDoc.updated_at}
+                <span class="meta-item">{formatDate(selectedDoc.updated_at)}</span>
+              {/if}
+              {#if selectedDoc.namespace}
+                <span class="ns-badge">{selectedDoc.namespace}</span>
+              {/if}
+            {:else}
+              <span class="meta-item">New draft</span>
+            {/if}
+            <span class="meta-item meta-dim">{getWordCount(editorContent)} words{getReadingTime(getWordCount(editorContent)) ? ` · ${getReadingTime(getWordCount(editorContent))}` : ''}</span>
+          </div>
+          <div class="meta-actions">
+            <button class="icon-btn" onclick={saveDoc} disabled={saving} title="Save (Ctrl+S)">
+              {#if saving}
+                <span class="spinner small"></span>
+              {:else}
+                <Save size={15} strokeWidth={2} />
+              {/if}
+            </button>
+            <button class="icon-btn" onclick={exportDoc} title="Export .md">
+              <Download size={15} strokeWidth={2} />
+            </button>
             {#if selectedDoc}
-              <button class="action-btn danger" onclick={() => selectedDoc && confirmDelete(selectedDoc)}>🗑</button>
+              <button class="icon-btn danger" onclick={() => selectedDoc && confirmDelete(selectedDoc)} title="Delete">
+                <Trash2 size={15} strokeWidth={2} />
+              </button>
             {/if}
           </div>
         </div>
 
-        {#if selectedDoc && !showNewDoc}
-          <div class="doc-meta-bar">
-            <span class="meta-item">v{selectedDoc.version ?? 1}</span>
-            {#if selectedDoc.updated_at}
-              <span class="meta-item">{formatDate(selectedDoc.updated_at)}</span>
-            {/if}
-            {#if selectedDoc.namespace}
-              <span class="meta-item ns-badge">{selectedDoc.namespace}</span>
+        <!-- Editor / Preview area -->
+        <div class="content-area" class:split-mode={viewMode === 'split'}>
+          {#if viewMode === 'edit' || viewMode === 'split'}
+            <div class="editor-pane">
+              <div class="editor-container" bind:this={editorContainer} use:editorMount></div>
+            </div>
+          {/if}
+          {#if viewMode === 'preview' || viewMode === 'split'}
+            <div class="preview-pane">
+              {#if viewMode === 'split'}
+                <div class="pane-label">Preview</div>
+              {/if}
+              <div class="markdown-body" bind:this={previewContainer} onclick={(e) => handlePreviewClick(e)}>
+            {#if editorContent.trim()}
+              {@html renderedHtml}
+            {:else}
+              <p class="preview-empty">Nothing to preview</p>
             {/if}
           </div>
-        {/if}
-
-        <div class="editor-container" use:editorMount></div>
+            </div>
+          {/if}
+        </div>
       {:else}
         <div class="empty-state">
           <div class="empty-icon">📄</div>
-          <p>Select a document to view</p>
-          <p class="sub">or create a new one with + New</p>
+          <p class="empty-title">Select a document to view</p>
+          <p class="empty-sub">or create a new one with <strong>+ New</strong></p>
         </div>
       {/if}
     </div>
@@ -506,7 +751,7 @@
         onclick={(e: MouseEvent) => { e.stopPropagation(); if (doc.has_children) toggleNode(doc); }}
         role="button"
       >
-        {doc.has_children ? (expandedIds.has(doc.id) ? '▼' : '▶') : '•'}
+        {doc.has_children ? (expandedIds.has(doc.id) ? '▾' : '▸') : '·'}
       </span>
       <span class="doc-info">
         <div class="doc-title">{doc.title}</div>
@@ -524,65 +769,131 @@
 {/snippet}
 
 <style>
-  .docs-view { height: 100%; display: flex; flex-direction: column; }
-  .docs-header { padding: 16px 24px 8px; display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--border); }
-  h2 { font-size: 1.1rem; }
-  .count { font-size: 0.8rem; color: var(--text-muted); }
+  /* ═══════════════════════════════════════════════════════════════════
+     Layout
+     ═══════════════════════════════════════════════════════════════════ */
+  .docs-view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .layout { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     Header
+     ═══════════════════════════════════════════════════════════════════ */
+  .docs-header {
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+  .count { font-size: 0.75rem; color: var(--text-muted); }
   .header-actions { margin-left: auto; }
 
+  /* ═══════════════════════════════════════════════════════════════════
+     Error Bar
+     ═══════════════════════════════════════════════════════════════════ */
   .error-bar {
-    padding: 8px 24px;
-    background: rgba(243, 139, 168, 0.15);
-    color: #f38ba8;
-    font-size: 0.8rem;
+    padding: 8px 20px;
+    background: rgba(243, 139, 168, 0.1);
+    border-bottom: 1px solid rgba(243, 139, 168, 0.25);
     display: flex;
     align-items: center;
     gap: 8px;
-    border-bottom: 1px solid rgba(243, 139, 168, 0.3);
+    flex-shrink: 0;
+    animation: slideDown 0.15s ease;
   }
-  .dismiss-btn { background: none; border: none; color: #f38ba8; cursor: pointer; padding: 0 4px; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } }
+  .error-text {
+    color: #f38ba8;
+    font-size: 0.8rem;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dismiss-btn {
+    background: none;
+    border: none;
+    color: #f38ba8;
+    cursor: pointer;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
 
-  .layout { flex: 1; display: flex; overflow: hidden; }
-
-  /* ─── Left Panel (Tree) ─── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Left Panel — Tree
+     ═══════════════════════════════════════════════════════════════════ */
   .doc-tree-panel {
-    width: 300px;
+    width: 280px;
     min-width: 200px;
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--border);
     overflow: hidden;
+    flex-shrink: 0;
   }
 
-  .search-bar { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .search-bar {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+  }
+  .search-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
   .search-bar input {
-    width: 100%;
-    padding: 6px 10px;
+    flex: 1;
+    padding: 5px 8px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     color: var(--text-primary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    min-width: 0;
   }
   .search-bar input:focus { outline: none; border-color: var(--accent); }
+  .search-clear {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+  .search-clear:hover { color: var(--text-primary); }
 
-  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .doc-tree { flex: 1; overflow-y: auto; padding: 2px 0; }
 
   .tree-node { user-select: none; }
-  .tree-children { padding-left: 16px; }
+  .tree-children { padding-left: 12px; }
 
   .tree-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    font-size: 0.65rem;
+    width: 14px;
+    font-size: 0.6rem;
     color: var(--text-muted);
     flex-shrink: 0;
     background: none;
     border: none;
-    cursor: pointer;
+    cursor: default;
     padding: 0;
+    line-height: 1;
   }
   .tree-toggle.has-children { cursor: pointer; }
   .tree-toggle:hover { color: var(--text-primary); }
@@ -590,105 +901,160 @@
   .doc-card {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: 4px;
+    padding: 5px 10px;
     width: 100%;
     background: transparent;
     border: none;
+    border-left: 2px solid transparent;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.1s, border-color 0.1s;
     text-align: left;
+    line-height: 1.4;
   }
   .doc-card:hover { background: var(--bg-hover); }
-  .doc-card.active { background: var(--bg-hover); color: var(--accent); border-left: 2px solid var(--accent); }
-  .doc-card.search-hit { padding: 10px 12px; border-left: 3px solid transparent; }
-  .doc-card.search-hit.active { border-left-color: var(--accent); }
+  .doc-card.active { background: var(--bg-hover); color: var(--accent); border-left-color: var(--accent); }
+  .doc-card.search-hit { padding: 8px 10px; }
   .doc-info { min-width: 0; }
-  .doc-title { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .doc-slug { font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .doc-snippet { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; line-height: 1.3; }
-  .doc-score { font-size: 0.65rem; color: var(--accent); font-weight: 600; margin-top: 2px; }
-
-  .doc-meta { display: flex; gap: 8px; font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
-  .doc-meta .ns { color: var(--accent); }
+  .doc-title { font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-slug { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-snippet { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .doc-score { font-size: 0.6rem; color: var(--accent); font-weight: 600; margin-top: 2px; }
 
   .search-results { overflow-y: auto; }
 
-  .msg { padding: 20px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
-  .msg .sub { font-size: 0.75rem; margin-top: 4px; }
+  .msg {
+    padding: 20px 12px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
 
-  /* ─── Right Panel (Editor) ─── */
-  .editor-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .empty-tree {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .empty-tree-icon { font-size: 2rem; opacity: 0.25; margin-bottom: 8px; }
+  .empty-tree p { margin: 4px 0; font-size: 0.8rem; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     Right Panel — Editor/Preview
+     ═══════════════════════════════════════════════════════════════════ */
+  .editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  /* ── Top bar: breadcrumb + mode toggle ── */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    min-height: 32px;
+    gap: 8px;
+  }
 
   .breadcrumb {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 6px 16px;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
     overflow-x: auto;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+    padding: 5px 0;
   }
-  .crumb-link { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 4px; font-size: 0.75rem; }
+  .crumb-link { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 3px; font-size: 0.72rem; }
   .crumb-link:hover { color: var(--accent); }
-  .crumb-sep { color: var(--text-muted); opacity: 0.5; }
-  .crumb-current { color: var(--text-primary); font-weight: 600; padding: 2px 4px; }
+  .crumb-sep { color: var(--text-muted); opacity: 0.4; }
+  .crumb-current { color: var(--text-primary); font-weight: 600; padding: 2px 3px; }
 
-  .editor-toolbar {
+  /* ── Mode toggle ── */
+  .mode-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-primary);
+    border-radius: var(--radius);
+    padding: 2px;
+    flex-shrink: 0;
+  }
+  .mode-btn {
     display: flex;
     align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: transparent;
+    border: none;
+    border-radius: calc(var(--radius) - 2px);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mode-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+  .mode-btn.active { color: var(--accent); background: var(--bg-tertiary); }
+  .mode-btn svg { flex-shrink: 0; }
+
+  /* ── Properties row (collapsible) ── */
+  .props-row {
+    display: flex;
     gap: 8px;
     padding: 8px 16px;
     border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
+    flex-shrink: 0;
+    animation: slideDown 0.12s ease;
   }
-  .editor-meta { display: flex; gap: 8px; flex: 1; min-width: 0; }
-  .title-input {
-    flex: 1;
-    min-width: 120px;
+  .prop-input {
     padding: 4px 8px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .slug-input {
-    width: 160px;
-    padding: 4px 8px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     color: var(--text-primary);
     font-size: 0.8rem;
-    font-family: var(--font-mono);
+    min-width: 0;
   }
-  .tags-input {
-    width: 140px;
-    padding: 4px 8px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 0.8rem;
-  }
-  .title-input:focus, .slug-input:focus, .tags-input:focus { outline: none; border-color: var(--accent); }
+  .prop-input:focus { outline: none; border-color: var(--accent); }
+  .prop-input.title-input { flex: 1; font-weight: 600; }
+  .prop-input.slug-input { width: 150px; font-family: var(--font-mono); font-size: 0.75rem; }
+  .prop-input.tags-input { width: 130px; font-size: 0.75rem; }
 
-  .editor-actions { display: flex; gap: 6px; }
-
-  .doc-meta-bar {
+  /* ── Meta bar ── */
+  .meta-bar {
     display: flex;
-    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
     padding: 4px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  .meta-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     font-size: 0.7rem;
     color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
   }
+  .meta-item { white-space: nowrap; flex-shrink: 0; }
+  .meta-dim { opacity: 0.6; }
   .ns-badge {
     padding: 1px 6px;
     background: var(--bg-tertiary);
@@ -697,9 +1063,184 @@
     font-size: 0.65rem;
     font-family: var(--font-mono);
   }
+  .props-toggle {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 2px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .props-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
 
+  .meta-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* ── Icon buttons ── */
+  .icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .icon-btn:hover { background: var(--bg-hover); border-color: var(--border); color: var(--text-primary); }
+  .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .icon-btn.danger:hover { color: #f38ba8; background: rgba(243,139,168,0.1); }
+
+  /* ── Content area ── */
+  .content-area {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  .content-area.split-mode .editor-pane,
+  .content-area.split-mode .preview-pane {
+    flex: 1;
+    min-width: 0;
+  }
+  .content-area.split-mode .editor-pane {
+    border-right: 1px solid var(--border);
+  }
+
+  .editor-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
   .editor-container { flex: 1; overflow: hidden; }
   .editor-container :global(.cm-editor) { height: 100%; }
+
+  .preview-pane {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .pane-label {
+    padding: 4px 16px;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     Markdown Preview Styles (Catppuccin Mocha)
+     ═══════════════════════════════════════════════════════════════════ */
+  .markdown-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    color: var(--text-primary);
+    line-height: 1.65;
+    font-size: 0.9rem;
+  }
+  .markdown-body :global(h1) { color: #cba6f7; font-size: 1.6em; font-weight: 700; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .markdown-body :global(h2) { color: #cba6f7; font-size: 1.3em; font-weight: 600; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(49,50,68,0.5); }
+  .markdown-body :global(h3) { color: #cba6f7; font-size: 1.1em; font-weight: 600; margin: 20px 0 6px; }
+  .markdown-body :global(h4), .markdown-body :global(h5), .markdown-body :global(h6) { color: #cba6f7; font-weight: 600; margin: 16px 0 4px; }
+  .markdown-body :global(p) { margin: 0 0 10px; }
+  .markdown-body :global(a) { color: #89b4fa; text-decoration: none; }
+  .markdown-body :global(a:hover) { text-decoration: underline; }
+  .markdown-body :global(a[data-internal]) { color: var(--mauve); cursor: pointer; }
+  .markdown-body :global(a[data-internal]:hover) { text-decoration: underline; }
+  .markdown-body :global(strong) { color: #fab387; font-weight: 600; }
+  .markdown-body :global(em) { color: #f9e2af; }
+  .markdown-body :global(code) {
+    color: #a6e3a1;
+    background: rgba(30,30,46,0.8);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+  .markdown-body :global(pre) {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  .markdown-body :global(pre code) {
+    background: transparent;
+    padding: 0;
+    font-size: 0.82em;
+    line-height: 1.5;
+  }
+  .markdown-body :global(blockquote) {
+    border-left: 3px solid var(--accent);
+    margin: 12px 0;
+    padding: 4px 16px;
+    color: var(--text-secondary);
+    background: rgba(137,180,250,0.04);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .markdown-body :global(ul), .markdown-body :global(ol) { padding-left: 24px; margin: 8px 0; }
+  .markdown-body :global(li) { margin: 3px 0; }
+  .markdown-body :global(li::marker) { color: var(--text-muted); }
+  .markdown-body :global(hr) { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .markdown-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.85rem;
+  }
+  .markdown-body :global(th), .markdown-body :global(td) {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    text-align: left;
+  }
+  .markdown-body :global(th) { background: var(--bg-tertiary); font-weight: 600; color: var(--text-primary); }
+  .markdown-body :global(td) { color: var(--text-secondary); }
+  .markdown-body :global(img) { max-width: 100%; border-radius: var(--radius); }
+  .preview-empty { color: var(--text-muted); font-style: italic; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     Shared
+     ═══════════════════════════════════════════════════════════════════ */
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  .action-btn:hover { background: var(--bg-tertiary); border-color: var(--text-muted); }
+  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .action-btn.danger { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
+  .action-btn.danger:hover { background: rgba(243,139,168,0.12); }
+  .action-btn.small { padding: 4px 10px; font-size: 0.72rem; }
+  .new-btn { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
+  .new-btn:hover { opacity: 0.85; border-color: var(--accent); }
+  .btn-icon { font-size: 1rem; font-weight: 700; }
 
   .empty-state {
     display: flex;
@@ -708,31 +1249,26 @@
     justify-content: center;
     height: 100%;
     color: var(--text-muted);
-    gap: 8px;
+    gap: 4px;
   }
-  .empty-icon { font-size: 3rem; opacity: 0.3; }
-  .empty-state p { margin: 0; }
-  .empty-state .sub { font-size: 0.8rem; }
+  .empty-icon { font-size: 3rem; opacity: 0.2; }
+  .empty-title { font-size: 0.9rem; margin: 8px 0 0; }
+  .empty-sub { font-size: 0.75rem; opacity: 0.7; }
 
-  /* ─── Shared Buttons ─── */
-  .action-btn {
-    padding: 6px 12px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+  /* ── Spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
   }
-  .action-btn:hover { background: var(--bg-tertiary); border-color: var(--text-muted); }
-  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .action-btn.danger { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
-  .action-btn.danger:hover { background: rgba(243,139,168,0.15); }
-  .new-btn { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
-  .new-btn:hover { opacity: 0.85; }
+  .spinner.small { width: 10px; height: 10px; border-width: 1.5px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ─── Dialog ─── */
+  /* ── Dialog ── */
   .overlay {
     position: fixed;
     inset: 0;
@@ -751,7 +1287,7 @@
     width: 90%;
   }
   .confirm-dialog h3 { margin: 0 0 12px; }
-  .confirm-dialog p { margin: 0; font-size: 0.9rem; }
-  .confirm-dialog .sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+  .confirm-dialog p { margin: 0; font-size: 0.85rem; }
+  .confirm-dialog .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
   .confirm-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 </style>
