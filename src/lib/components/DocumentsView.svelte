@@ -10,15 +10,12 @@
   import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
   import { tags } from '@lezer/highlight';
-  import { marked } from 'marked';
-  import DOMPurify from 'dompurify';
   import {
     Search,
     SquarePen,
     Columns2,
     Eye,
     ChevronDown,
-    ChevronRight,
     FileText,
     Save,
     Download,
@@ -27,6 +24,8 @@
   } from 'lucide-svelte';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { slide } from 'svelte/transition';
+  import { renderMarkdown as renderMd } from '../utils/markdown';
+  import { formatDate, getWordCount, getReadingTime } from '../utils/format';
 
   // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
   const catppuccinDarkTheme = EditorView.theme({
@@ -118,38 +117,10 @@
   // ─── Markdown rendering ────────────────────────────────────────────
   let renderedHtml = $state('');
 
-  // ─── Render markdown: GFM + breaks enabled (single \n → <br>) ───────
-  // External links get target="_blank" for system browser handling.
-  const renderer = new marked.Renderer();
-  renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
-    const url = href ?? '';
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-    }
-    return `<a href="${url}">${text}</a>`;
-  };
-
-  function renderMarkdown(md: string) {
-    try {
-      // Pass options directly to parse() so they can't be reset by HMR
-      const html = marked.parse(md, {
-        renderer,
-        gfm: true,
-        breaks: true,
-        async: false,
-      }) as string;
-      renderedHtml = DOMPurify.sanitize(html, {
-        ADD_ATTR: ['target', 'rel'],
-      });
-    } catch {
-      renderedHtml = DOMPurify.sanitize(md);
-    }
-  }
-
   // Re-render when content changes
   $effect(() => {
     if (viewMode !== 'edit') {
-      renderMarkdown(editorContent);
+      renderedHtml = renderMd(editorContent);
     }
   });
 
@@ -488,16 +459,6 @@
     }
   }
 
-  // ─── Formatted date ──────────────────────────────────────────────
-  function formatDate(iso: string | null | undefined): string {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch {
-      return iso ?? '';
-    }
-  }
-
   // Watch editorContent changes from outside
   $effect(() => {
     if (editorView && (selectedDoc || showNewDoc)) {
@@ -550,14 +511,7 @@
   }
 
   // ─── Word count & reading time ────────────────────────────────────
-  function getWordCount(text: string): number {
-    return text.trim() ? text.trim().split(/\s+/).length : 0;
-  }
 
-  function getReadingTime(words: number): string {
-    const mins = Math.max(1, Math.ceil(words / 200));
-    return words === 0 ? '' : `${mins} min read`;
-  }
 
   // ─── Lifecycle ───────────────────────────────────────────────────
   $effect(() => {
