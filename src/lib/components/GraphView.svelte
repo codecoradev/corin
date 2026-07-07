@@ -661,7 +661,7 @@
 </div>
 
 <style>
-  .graph-view { height: 100%; display: flex; flex-direction: column; }
+  .graph-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); }
   .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }

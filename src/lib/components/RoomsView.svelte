@@ -445,7 +445,7 @@
 </div>
 
 <style>
-  .rooms-view { height: 100%; display: flex; flex-direction: column; }
+  .rooms-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
   .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: rgba(230,69,83,0.12); color: #e64553; font-size: 0.8rem; border-bottom: 1px solid rgba(230,69,83,0.3); }
   .error-dismiss { background: none; border: none; color: inherit; font-size: 1.1rem; cursor: pointer; padding: 0 4px; line-height: 1; }
   .rooms-header { padding: 16px 24px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }

@@ -58,7 +58,8 @@ export interface DocEntry {
   created_at?: string | null;
   updated_at?: string | null;
   parent_id?: string | null;
-  path?: string[] | null;
+  /** Materialized path string (e.g. "/uuid/uuid/") from uteke-core. */
+  path?: string | null;
   depth?: number | null;
   sort_order?: number | null;
   has_children?: boolean | null;

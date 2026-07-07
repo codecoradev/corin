@@ -2747,6 +2747,41 @@ pub async fn doc_create(
     Ok(serde_json::to_value(doc).unwrap_or_default())
 }
 
+/// Update an existing document via uteke-serve POST /doc/update.
+#[tauri::command]
+pub async fn doc_update(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: Option<String>,
+    slug: Option<String>,
+    title: Option<String>,
+    content: Option<String>,
+    tags: Option<Vec<String>>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let id_or_slug = id
+        .or(slug)
+        .ok_or_else(|| CommandError::Uteke("provide either 'id' or 'slug'".into()))?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let doc = client
+        .doc_update(
+            &id_or_slug,
+            namespace.as_deref(),
+            title.as_deref(),
+            content.as_deref(),
+            tags.as_deref(),
+            None,
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(serde_json::to_value(doc).unwrap_or_default())
+}
+
 /// Search documents via uteke-serve POST /doc/search.
 #[tauri::command]
 pub async fn doc_search(
