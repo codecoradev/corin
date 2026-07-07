@@ -1,3 +1,70 @@
+## [0.3.0] — 2026-07-07
+
+### Added
+
+**Documents Page Overhaul**
+- 3-mode toggle: Edit / Split / Preview with live markdown rendering (marked + DOMPurify)
+- GFM line breaks enabled (single `\n` → `<br>`)
+- Tree sidebar: auto-expand root nodes, recursive tree, Lucide chevron icons, slide transition
+- Internal document links (by slug) navigate in-app; external links open in system browser via `@tauri-apps/plugin-shell`
+- Save flow: try `/doc/update` first (uteke 0.6.7+), fall back to `/doc/create` (upsert) on 404
+- Default to Preview mode for existing docs; Edit mode for new docs
+- Word count + reading time in meta bar
+- Ctrl+S save shortcut, delete confirmation dialog
+- Success/error notification bars (green/red)
+- Export `.md` via native OS save dialog (Tauri dialog + fs plugin)
+- Scroll reset to top on document switch
+
+**Design System — Shared Component Library (`src/lib/ui/`)**
+- Button (4 variants × 3 sizes, press-scale micro-interaction)
+- IconButton, Card, Badge (7 Catppuccin colors), Input, Spinner, EmptyState
+- Modal (svelte:transition fade/scale, esc close, backdrop)
+- ConfirmDialog (reusable, built on Modal + Button)
+- Notification (toast system with fly transition) + toastStore
+- 31 unit tests (Button, Badge, Spinner, EmptyState, toastStore)
+
+**Animation System (`src/lib/transitions.ts`)**
+- 8 shared transition presets: fadeQuick, fadeUp, slideDown, modalScale, dialogPop, backdropFade, expandSlide, slideInRight
+- Custom easing: easeOut, easeInOut, springOut
+- View switching: cross-fade between views
+- Overlay transitions: DetailPanel/SettingsModal fade, MemoryEditor fly-up
+- Tree expand: children slide down (svelte/transition)
+- Chevron rotate animation, card hover lift, skeleton shimmer
+
+**Tailwind CSS v4 Integration**
+- CSS-first config (no tailwind.config.js)
+- Catppuccin Mocha palette mapped to `@theme` → Tailwind utilities
+- Backward compatible: existing CSS variables preserved
+
+**Component Refactoring (Phase 4)**
+- `src/lib/utils/format.ts` — formatDate, formatDuration, relativeTime, getWordCount, getReadingTime (29 tests)
+- `src/lib/utils/markdown.ts` — renderMarkdown with GFM + breaks + external link target
+- SettingsModal split: 828 → 233 lines (AgentsSection + UpdatesSection extracted)
+- RoomsView: extract RoomCreateForm, use shared utils
+- GraphView: extract graph-utils.ts (pickColor, buildTagEdges)
+- DocumentsView: use shared markdown + format utils
+
+**Dynamic Version + Auto-Update**
+- App version display is now dynamic (reads from `@tauri-apps/api/app`)
+- Auto-check for updates on Settings open (silent, 3s delay)
+- One-click download + install via Tauri updater plugin
+
+**Namespaces Full-Height Layout**
+- Tree + detail panels now fill full viewport height (was `max-height: 70vh`)
+
+**Testing Infrastructure**
+- Vitest configured with @testing-library/svelte + jest-dom
+- Auto-cleanup DOM after each test
+- Wrapper component pattern for Svelte 5 snippet children
+
+### Fixed
+
+- `UtekeDoc.title` missing `#[serde(default)]` — `/doc/create` response (`{id, slug}`) failed deserialization
+- Layout bug: views used `height: 100%` inside `overflow-y: auto` container → collapsed to 0px
+- Nested `<button>` in document tree (invalid HTML, click swallowed)
+- External links not opening browser (Tauri webview ignores `<a download>`)
+- Save error on older uteke servers (no `/doc/update` route → fallback to upsert)
+
 ## [0.2.0] — 2026-07-03
 
 ### Added
