@@ -44,14 +44,22 @@ export interface RoomEntry {
   created_at: string | null;
 }
 
+// Installed uteke version vs the minimum required for Documents.
+export interface VersionStatus {
+  /** Detected "X.Y.Z", or null if the uteke CLI couldn't be probed. */
+  current: string | null;
+  /** Minimum uteke version supporting global documents ("0.7.0"). */
+  required: string;
+  /** True iff current >= required (false when current is unknown). */
+  supported: boolean;
+}
+
 // Document entry from uteke-serve /doc/* API
 export interface DocEntry {
   id: string;
   slug: string;
   title: string;
   content?: string;
-  /** @deprecated since uteke v0.7.0 (#614) — documents are global; ignored by server. */
-  namespace?: string | null;
   tags?: string[];
   metadata?: Record<string, unknown>;
   version?: number | null;

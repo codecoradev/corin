@@ -3,7 +3,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
   MemoryEntry, SearchResult, GraphData, GraphEdge,
-  RoomEntry, StatsResponse, DocEntry, DocSearchResult,
+  RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
 } from './types';
 
 export const memory = {
@@ -256,30 +256,34 @@ export const connection = {
 
 // Document Engine (#137) — uteke-serve /doc/* API
 //
-// NOTE: since uteke v0.7.0 (#614) documents are global. The `namespace` option
-// is accepted but ignored by the server — kept for backward compat only.
+// Since uteke v0.7.0 (#614) documents are global — no namespace. The backend
+// gates all doc commands on uteke >= 0.7.0; use `versionStatus()` to detect an
+// outdated install and `selfUpdate()` to run `uteke upgrade`.
 export const docs = {
-  list: (opts?: { namespace?: string; limit?: number; roots_only?: boolean; parent?: string }) =>
+  /** Installed uteke version + whether it meets the Documents requirement. */
+  versionStatus: () => invoke<VersionStatus>('uteke_version_status'),
+
+  /** Run `uteke upgrade`, then re-detect. Resolves with the new status. */
+  selfUpdate: () => invoke<VersionStatus>('uteke_self_update'),
+
+  list: (opts?: { limit?: number; roots_only?: boolean; parent?: string }) =>
     invoke<DocEntry[]>('doc_list', {
-      namespace: opts?.namespace ?? null,
       limit: opts?.limit ?? null,
       roots_only: opts?.roots_only ?? null,
       parent: opts?.parent ?? null,
     }),
 
-  get: (opts: { slug?: string; id?: string; namespace?: string }) =>
+  get: (opts: { slug?: string; id?: string }) =>
     invoke<DocEntry>('doc_get', {
       slug: opts.slug ?? null,
       id: opts.id ?? null,
-      namespace: opts.namespace ?? null,
     }),
 
-  create: (slug: string, title: string, content: string, opts?: { namespace?: string; tags?: string[]; parent?: string }) =>
+  create: (slug: string, title: string, content: string, opts?: { tags?: string[]; parent?: string }) =>
     invoke<DocEntry>('doc_create', {
       slug,
       title,
       content,
-      namespace: opts?.namespace ?? null,
       tags: opts?.tags ?? null,
       parent: opts?.parent ?? null,
     }),
@@ -291,7 +295,6 @@ export const docs = {
     title?: string;
     content?: string;
     tags?: string[];
-    namespace?: string;
   }) =>
     invoke<DocEntry>('doc_update', {
       id: opts.id ?? null,
@@ -299,13 +302,11 @@ export const docs = {
       title: opts.title ?? null,
       content: opts.content ?? null,
       tags: opts.tags ?? null,
-      namespace: opts.namespace ?? null,
     }),
 
-  search: (query: string, opts?: { namespace?: string; limit?: number; mode?: string }) =>
+  search: (query: string, opts?: { limit?: number; mode?: string }) =>
     invoke<DocSearchResult[]>('doc_search', {
       query,
-      namespace: opts?.namespace ?? null,
       limit: opts?.limit ?? null,
       mode: opts?.mode ?? null,
     }),
@@ -316,12 +317,11 @@ export const docs = {
       slug: opts.slug ?? null,
     }),
 
-  move: (opts: { id?: string; slug?: string; new_parent?: string; namespace?: string }) =>
+  move: (opts: { id?: string; slug?: string; new_parent?: string }) =>
     invoke<unknown>('doc_move', {
       id: opts.id ?? null,
       slug: opts.slug ?? null,
       new_parent: opts.new_parent ?? null,
-      namespace: opts.namespace ?? null,
     }),
 
   /** Export document content as a downloadable .md file via native save dialog. */

@@ -195,6 +195,92 @@ fn find_uteke_serve() -> Option<std::path::PathBuf> {
     None
 }
 
+/// Minimum uteke version required for the global Documents feature (v0.7.0, #614).
+pub(crate) const MIN_UTEKE_FOR_DOCS: &str = "0.7.0";
+
+/// Find the `uteke` CLI binary in PATH or ~/.local/bin.
+pub(crate) fn find_uteke_cli() -> Option<std::path::PathBuf> {
+    if let Some(p) = find_in_path("uteke") {
+        return Some(p);
+    }
+    if let Some(home) = dirs::home_dir() {
+        let candidate = home.join(".local/bin/uteke");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Detect the installed uteke CLI version by shelling `uteke --version`.
+///
+/// Returns the parsed `X.Y.Z` string (e.g. `"0.7.0"`), or `None` if the
+/// binary is missing or the output can't be parsed. The HTTP server exposes
+/// no version endpoint, so the CLI is the only source of truth.
+pub(crate) fn detect_uteke_version() -> Option<String> {
+    let uteke = find_uteke_cli()?;
+    let out = std::process::Command::new(uteke)
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    // Output looks like "uteke 0.7.0". Take the last whitespace-separated token
+    // that contains a '.' so stray suffixes don't leak in.
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .last()
+        .filter(|s| s.contains('.'))
+        .map(|s| s.to_string())
+}
+
+/// Compare two `X.Y.Z` version strings. Returns `true` if `current >= min`.
+///
+/// If either side fails to parse, returns `false` — conservative, so an
+/// unknown/unparseable version prompts an upgrade rather than passing.
+pub(crate) fn version_meets(current: &str, min: &str) -> bool {
+    fn parse(v: &str) -> Option<(u32, u32, u32)> {
+        let mut parts = v.split('.');
+        let major = parts.next()?.parse().ok()?;
+        let minor = parts.next()?.parse().ok()?;
+        let patch = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+        Some((major, minor, patch))
+    }
+    match (parse(current), parse(min)) {
+        (Some(c), Some(m)) => c >= m,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_meets_equal_or_higher() {
+        assert!(version_meets("0.7.0", "0.7.0"));
+        assert!(version_meets("0.7.1", "0.7.0"));
+        assert!(version_meets("0.8.0", "0.7.0"));
+        assert!(version_meets("1.0.0", "0.7.0"));
+    }
+
+    #[test]
+    fn version_meets_lower_rejected() {
+        assert!(!version_meets("0.6.7", "0.7.0"));
+        assert!(!version_meets("0.6.0", "0.7.0"));
+    }
+
+    #[test]
+    fn version_meets_unparseable_is_conservative() {
+        // A fully unparseable current must NOT pass the gate.
+        // (Pre-release suffixes like "0.7.0-rc" parse to 0.7.0 and are accepted —
+        // acceptable, since uteke ships clean semver tags in practice.)
+        assert!(!version_meets("unknown", "0.7.0"));
+    }
+}
+
 /// Run the official uteke install script.
 ///
 /// Downloads `install.sh` from GitHub and pipes it to `sh`.
@@ -369,6 +455,8 @@ pub fn run() {
             commands::reconnect_connection,
             commands::disconnect_connection,
             // Document Engine (#137)
+            commands::uteke_version_status,
+            commands::uteke_self_update,
             commands::doc_list,
             commands::doc_get,
             commands::doc_create,
@@ -447,6 +535,10 @@ pub fn run() {
                                 let client = UtekeClient::with_auth(&server_url, auth_token);
                                 s.uteke_client = Some(client);
                             }
+
+                            // Cache the installed uteke version for feature
+                            // gating (e.g. Documents requires >= 0.7.0).
+                            s.uteke_version = detect_uteke_version();
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");
