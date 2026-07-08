@@ -928,6 +928,12 @@ impl UtekeClient {
     }
 
     // ── Documents (uteke-serve /doc/*) ─────────────────────────────────
+    //
+    // DEPRECATED since uteke v0.7.0 (#614): documents are now global — unique
+    // slugs across all namespaces. The server ignores `namespace` on these
+    // endpoints. We still accept and forward it for backward compat with older
+    // uteke-serve (<0.7.0) and to keep the IPC contract stable. Do not build
+    // new namespace-scoped document logic on top of this.
 
     /// List documents via POST /doc/list.
     ///

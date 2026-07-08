@@ -2662,6 +2662,9 @@ pub async fn disconnect_connection(
 }
 
 // ── Document Engine (uteke-serve /doc/*) ─────────────────────────────
+//
+// NOTE: since uteke v0.7.0 (#614) documents are global; `namespace` is ignored
+// by the server. The param is kept for IPC stability and older-server compat.
 
 /// List documents via uteke-serve POST /doc/list.
 #[tauri::command]

@@ -255,6 +255,9 @@ export const connection = {
 };
 
 // Document Engine (#137) — uteke-serve /doc/* API
+//
+// NOTE: since uteke v0.7.0 (#614) documents are global. The `namespace` option
+// is accepted but ignored by the server — kept for backward compat only.
 export const docs = {
   list: (opts?: { namespace?: string; limit?: number; roots_only?: boolean; parent?: string }) =>
     invoke<DocEntry[]>('doc_list', {

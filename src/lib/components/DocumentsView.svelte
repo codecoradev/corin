@@ -312,6 +312,8 @@
     saving = true;
     try {
       const tags = editorTags.split(',').map(t => t.trim()).filter(Boolean);
+      // Documents are global since uteke v0.7.0 (#614); `namespace` is ignored
+      // by the server. Forwarded only for older-server compat.
       const ns = namespace ?? undefined;
       if (selectedDoc && !showNewDoc) {
         // Existing document → update
@@ -322,7 +324,7 @@
             title: editorTitle || editorSlug,
             content: editorContent,
             tags,
-            namespace: selectedDoc.namespace ?? ns,
+            namespace: ns,
           });
           selectedDoc = updated;
         } catch (e: any) {
@@ -333,7 +335,7 @@
               editorSlug,
               editorTitle || editorSlug,
               editorContent,
-              { namespace: selectedDoc.namespace ?? ns, tags },
+              { namespace: ns, tags },
             );
             // create returns only {id, slug} — re-fetch for full state
             const full = await docs.get({ id: selectedDoc.id });

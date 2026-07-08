@@ -50,6 +50,7 @@ export interface DocEntry {
   slug: string;
   title: string;
   content?: string;
+  /** @deprecated since uteke v0.7.0 (#614) — documents are global; ignored by server. */
   namespace?: string | null;
   tags?: string[];
   metadata?: Record<string, unknown>;
