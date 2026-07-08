@@ -82,7 +82,8 @@
     </button>
   </div>
 
-  {#if loading}
+  <div class="scroll-area">
+    {#if loading}
     <div class="loading">Loading...</div>
   {:else}
     <!-- Uteke stats -->
@@ -145,13 +146,25 @@
       {/if}
     </div>
   {/if}
+  </div>
 </div>
 
 <style>
   .dashboard {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     padding: 24px;
     max-width: 960px;
     margin: 0 auto;
+  }
+
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .section-title {
