@@ -254,33 +254,6 @@ pub(crate) fn version_meets(current: &str, min: &str) -> bool {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn version_meets_equal_or_higher() {
-        assert!(version_meets("0.7.0", "0.7.0"));
-        assert!(version_meets("0.7.1", "0.7.0"));
-        assert!(version_meets("0.8.0", "0.7.0"));
-        assert!(version_meets("1.0.0", "0.7.0"));
-    }
-
-    #[test]
-    fn version_meets_lower_rejected() {
-        assert!(!version_meets("0.6.7", "0.7.0"));
-        assert!(!version_meets("0.6.0", "0.7.0"));
-    }
-
-    #[test]
-    fn version_meets_unparseable_is_conservative() {
-        // A fully unparseable current must NOT pass the gate.
-        // (Pre-release suffixes like "0.7.0-rc" parse to 0.7.0 and are accepted —
-        // acceptable, since uteke ships clean semver tags in practice.)
-        assert!(!version_meets("unknown", "0.7.0"));
-    }
-}
-
 /// Run the official uteke install script.
 ///
 /// Downloads `install.sh` from GitHub and pipes it to `sh`.
@@ -615,4 +588,31 @@ fn init_schema(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
         ",
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_meets_equal_or_higher() {
+        assert!(version_meets("0.7.0", "0.7.0"));
+        assert!(version_meets("0.7.1", "0.7.0"));
+        assert!(version_meets("0.8.0", "0.7.0"));
+        assert!(version_meets("1.0.0", "0.7.0"));
+    }
+
+    #[test]
+    fn version_meets_lower_rejected() {
+        assert!(!version_meets("0.6.7", "0.7.0"));
+        assert!(!version_meets("0.6.0", "0.7.0"));
+    }
+
+    #[test]
+    fn version_meets_unparseable_is_conservative() {
+        // A fully unparseable current must NOT pass the gate.
+        // (Pre-release suffixes like "0.7.0-rc" parse to 0.7.0 and are accepted —
+        // acceptable, since uteke ships clean semver tags in practice.)
+        assert!(!version_meets("unknown", "0.7.0"));
+    }
 }
