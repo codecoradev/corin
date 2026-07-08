@@ -1,6 +1,6 @@
 <script lang="ts">
   import { docs } from '../ts/ipc';
-  import type { DocEntry, DocSearchResult } from '../ts/types';
+  import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -75,11 +75,7 @@
   ]);
 
   // ─── Props ─────────────────────────────────────────────────────────
-  interface Props {
-    namespace: string | null;
-  }
-
-  let { namespace }: Props = $props();
+  // No props — documents are global since uteke v0.7.0 (#614).
 
   // ─── Editor / Preview mode ─────────────────────────────────────────
   type ViewMode = 'edit' | 'preview' | 'split';
@@ -109,6 +105,10 @@
   let successTimeout: ReturnType<typeof setTimeout> | null = null;
   let editorView = $state<EditorView | null>(null);
   let showProps = $state(false);
+
+  // Uteke version gate — documents require >= 0.7.0 (#614).
+  let versionStatus = $state<VersionStatus | null>(null);
+  let updating = $state(false);
 
   // ─── Bound DOM elements for scroll reset ───────────────────────────
   let editorContainer: HTMLElement | null = null;
@@ -146,7 +146,7 @@
   async function loadRootDocs() {
     loading = true;
     try {
-      rootDocs = await docs.list({ roots_only: true, namespace: namespace ?? undefined });
+      rootDocs = await docs.list({ roots_only: true });
       // Auto-expand root nodes that have children
       for (const doc of rootDocs) {
         if (doc.has_children) {
@@ -168,7 +168,7 @@
   async function loadChildren(docId: string) {
     if (childrenCache.has(docId)) return;
     try {
-      const children = await docs.list({ parent: docId, namespace: namespace ?? undefined });
+      const children = await docs.list({ parent: docId });
       childrenCache.set(docId, children);
       childrenCache = childrenCache;
     } catch (e: any) {
@@ -283,7 +283,7 @@
     searching = true;
     showSearchResults = true;
     try {
-      searchResults = await docs.search(searchQuery, { namespace: namespace ?? undefined, limit: 20 });
+      searchResults = await docs.search(searchQuery, { limit: 20 });
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -312,7 +312,6 @@
     saving = true;
     try {
       const tags = editorTags.split(',').map(t => t.trim()).filter(Boolean);
-      const ns = namespace ?? undefined;
       if (selectedDoc && !showNewDoc) {
         // Existing document → update
         try {
@@ -322,7 +321,6 @@
             title: editorTitle || editorSlug,
             content: editorContent,
             tags,
-            namespace: selectedDoc.namespace ?? ns,
           });
           selectedDoc = updated;
         } catch (e: any) {
@@ -333,7 +331,7 @@
               editorSlug,
               editorTitle || editorSlug,
               editorContent,
-              { namespace: selectedDoc.namespace ?? ns, tags },
+              { tags },
             );
             // create returns only {id, slug} — re-fetch for full state
             const full = await docs.get({ id: selectedDoc.id });
@@ -346,7 +344,6 @@
         // New document → create via /doc/create
         const parent = selectedDoc?.id ?? undefined;
         await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
-          namespace: ns,
           tags,
           parent,
         });
@@ -515,8 +512,41 @@
 
   // ─── Lifecycle ───────────────────────────────────────────────────
   $effect(() => {
-    loadRootDocs();
+    init();
   });
+
+  /** Probe the installed uteke version; load docs only if supported. */
+  async function init() {
+    try {
+      versionStatus = await docs.versionStatus();
+    } catch {
+      versionStatus = null;
+    }
+    if (versionStatus?.supported !== false) {
+      await loadRootDocs();
+    } else {
+      loading = false;
+    }
+  }
+
+  /** Run `uteke upgrade`, then re-probe and (if supported) load docs. */
+  async function updateUteke() {
+    updating = true;
+    try {
+      versionStatus = await docs.selfUpdate();
+      if (versionStatus.supported) {
+        success = 'Uteke updated — documents enabled.';
+        successTimeout = setTimeout(() => { success = ''; }, 3000);
+        await loadRootDocs();
+      } else {
+        showError(`Still on ${versionStatus.current ?? 'unknown'} after update.`);
+      }
+    } catch (e: any) {
+      showError(`Update failed: ${e}`);
+    } finally {
+      updating = false;
+    }
+  }
 
   // Cleanup on destroy
   $effect(() => {
@@ -545,6 +575,18 @@
       </button>
     </div>
   </div>
+
+  {#if versionStatus && !versionStatus.supported}
+    <div class="version-banner">
+      <div class="vb-text">
+        <strong>Uteke {versionStatus.required}+ required for documents.</strong>
+        Detected: {versionStatus.current ?? 'unknown'}.
+      </div>
+      <button class="vb-btn" onclick={updateUteke} disabled={updating}>
+        {updating ? 'Updating…' : 'Update uteke'}
+      </button>
+    </div>
+  {/if}
 
   {#if error}
     <div class="error-bar">
@@ -673,7 +715,7 @@
           </div>
         {/if}
 
-        <!-- Meta bar: version, date, namespace + actions -->
+        <!-- Meta bar: version, date + actions -->
         <div class="meta-bar">
           <div class="meta-left">
             <button class="props-toggle" onclick={() => (showProps = !showProps)}>
@@ -684,9 +726,6 @@
               <span class="meta-item">v{selectedDoc.version ?? 1}</span>
               {#if selectedDoc.updated_at}
                 <span class="meta-item">{formatDate(selectedDoc.updated_at)}</span>
-              {/if}
-              {#if selectedDoc.namespace}
-                <span class="ns-badge">{selectedDoc.namespace}</span>
               {/if}
             {:else}
               <span class="meta-item">New draft</span>
@@ -842,6 +881,31 @@
     flex-shrink: 0;
     animation: slideDown 0.15s ease;
   }
+  .version-banner {
+    padding: 10px 20px;
+    background: rgba(245, 208, 135, 0.12);
+    border-bottom: 1px solid rgba(245, 208, 135, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .vb-text { font-size: 0.85rem; color: var(--text-secondary); }
+  .vb-text strong { color: var(--yellow); }
+  .vb-btn {
+    padding: 6px 14px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .vb-btn:hover:not(:disabled) { opacity: 0.85; }
+  .vb-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } }
   .error-text {
     color: #f38ba8;

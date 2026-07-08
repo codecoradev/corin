@@ -157,7 +157,8 @@
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
 
-  {#if isLoading && list.length === 0}
+  <div class="scroll-area">
+    {#if isLoading && list.length === 0}
     <div class="loading">Loading...</div>
   {:else if list.length === 0}
     <div class="empty-state">
@@ -210,13 +211,25 @@
       </div>
     {/if}
   {/if}
+  </div>
 </div>
 
 <style>
   .memory-list-view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     padding: 16px 24px;
     max-width: 900px;
     margin: 0 auto;
+  }
+
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .toolbar {

@@ -164,7 +164,7 @@
           {:else if activeView === 'rooms'}
             <RoomsView {namespace} onmemoryclick={openDetail} />
           {:else if activeView === 'documents'}
-            <DocumentsView {namespace} />
+            <DocumentsView />
           {/if}
         </div>
       {/key}

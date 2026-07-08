@@ -928,6 +928,11 @@ impl UtekeClient {
     }
 
     // ── Documents (uteke-serve /doc/*) ─────────────────────────────────
+    //
+    // Since uteke v0.7.0 (#614) documents are GLOBAL — unique slugs across all
+    // namespaces. These methods send no `namespace`. Callers MUST gate access
+    // on `crate::MIN_UTEKE_FOR_DOCS` ("0.7.0") so older servers (where docs
+    // were namespace-scoped) never receive ambiguous global-slug requests.
 
     /// List documents via POST /doc/list.
     ///
@@ -935,15 +940,11 @@ impl UtekeClient {
     /// `parent` returns direct children of a specific document.
     pub async fn doc_list(
         &self,
-        namespace: Option<&str>,
         limit: Option<usize>,
         roots_only: Option<bool>,
         parent: Option<&str>,
     ) -> Result<Vec<UtekeDoc>, String> {
         let mut body = serde_json::json!({});
-        if let Some(ns) = namespace {
-            body["namespace"] = serde_json::Value::String(ns.to_string());
-        }
         if let Some(limit) = limit {
             body["limit"] = serde_json::json!(limit);
         }
@@ -966,21 +967,13 @@ impl UtekeClient {
     /// Get a single document via POST /doc/get.
     ///
     /// Accepts either `slug` or `id`. Returns full document with content.
-    pub async fn doc_get(
-        &self,
-        slug: Option<&str>,
-        id: Option<&str>,
-        namespace: Option<&str>,
-    ) -> Result<UtekeDoc, String> {
+    pub async fn doc_get(&self, slug: Option<&str>, id: Option<&str>) -> Result<UtekeDoc, String> {
         let mut body = serde_json::json!({});
         if let Some(s) = slug {
             body["slug"] = serde_json::Value::String(s.to_string());
         }
         if let Some(i) = id {
             body["id"] = serde_json::Value::String(i.to_string());
-        }
-        if let Some(ns) = namespace {
-            body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
         let resp = self
@@ -998,7 +991,6 @@ impl UtekeClient {
         slug: &str,
         title: &str,
         content: &str,
-        namespace: Option<&str>,
         tags: &[String],
         parent: Option<&str>,
     ) -> Result<UtekeDoc, String> {
@@ -1008,9 +1000,6 @@ impl UtekeClient {
             "content": content,
             "tags": tags,
         });
-        if let Some(ns) = namespace {
-            body["namespace"] = serde_json::Value::String(ns.to_string());
-        }
         if let Some(pid) = parent {
             body["parent"] = serde_json::Value::String(pid.to_string());
         }
@@ -1028,7 +1017,6 @@ impl UtekeClient {
     pub async fn doc_update(
         &self,
         id_or_slug: &str,
-        namespace: Option<&str>,
         title: Option<&str>,
         content: Option<&str>,
         tags: Option<&[String]>,
@@ -1044,9 +1032,6 @@ impl UtekeClient {
             body["id"] = serde_json::Value::String(id_or_slug.to_string());
         } else {
             body["slug"] = serde_json::Value::String(id_or_slug.to_string());
-        }
-        if let Some(ns) = namespace {
-            body["namespace"] = serde_json::Value::String(ns.to_string());
         }
         if let Some(t) = title {
             body["title"] = serde_json::Value::String(t.to_string());
@@ -1074,16 +1059,12 @@ impl UtekeClient {
     pub async fn doc_search(
         &self,
         query: &str,
-        namespace: Option<&str>,
         limit: Option<usize>,
         mode: Option<&str>,
     ) -> Result<Vec<DocSearchHit>, String> {
         let mut body = serde_json::json!({
             "query": query,
         });
-        if let Some(ns) = namespace {
-            body["namespace"] = serde_json::Value::String(ns.to_string());
-        }
         if let Some(limit) = limit {
             body["limit"] = serde_json::json!(limit);
         }
@@ -1127,7 +1108,6 @@ impl UtekeClient {
         id: Option<&str>,
         slug: Option<&str>,
         new_parent: Option<&str>,
-        namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let mut body = serde_json::json!({});
         if let Some(i) = id {
@@ -1138,9 +1118,6 @@ impl UtekeClient {
         }
         if let Some(np) = new_parent {
             body["new_parent"] = serde_json::Value::String(np.to_string());
-        }
-        if let Some(ns) = namespace {
-            body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
         let resp = self
