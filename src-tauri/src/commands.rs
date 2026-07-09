@@ -114,6 +114,17 @@ pub struct AppState {
     /// HTTP client for uteke-serve (all memory CRUD + graph operations).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
+    /// Cached installed uteke version ("X.Y.Z"), probed once at startup.
+    /// For local servers this is the `uteke --version` CLI output; for remote
+    /// servers it is the version reported by the server's `/health` (if any).
+    /// `None` if unknown. Used to gate features that require a minimum server
+    /// version (e.g. Documents → 0.7.1).
+    pub uteke_version: Option<String>,
+    /// `true` when Corin talks to a remote uteke-serve (https/host URL).
+    /// Remote servers are user-managed, so an unknown version is treated
+    /// leniently (no upgrade banner, no hard gate) — the server's own
+    /// responses surface any real incompatibility.
+    pub uteke_remote: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -2662,16 +2673,171 @@ pub async fn disconnect_connection(
 }
 
 // ── Document Engine (uteke-serve /doc/*) ─────────────────────────────
+//
+// Since uteke v0.7.0 (#614) documents are global — unique slugs across all
+// namespaces. `namespace` is no longer accepted. Every command gates on
+// `MIN_UTEKE_FOR_DOCS` ("0.7.1") so older servers never get ambiguous
+// global-slug requests. Frontend reads `uteke_version_status` to render an
+// upgrade banner; `uteke_self_update` runs `uteke upgrade` and re-detects.
+
+/// Installed vs required uteke version (for the Documents feature).
+#[derive(Debug, Clone, Serialize)]
+pub struct VersionStatus {
+    /// Detected `X.Y.Z`, or `None` if the `uteke` CLI couldn't be probed.
+    pub current: Option<String>,
+    /// Minimum uteke version that supports global documents ("0.7.1").
+    pub required: String,
+    /// `true` iff `current >= required` (false when current is unknown).
+    pub supported: bool,
+}
+
+/// Resolve the effective uteke version for gating.
+///
+/// - **Remote server**: probe the server's self-reported version via
+///   `/health` (authoritative for a user-managed server). The local CLI
+///   version is irrelevant — it may be older or newer than the server.
+/// - **Local server**: use the cached `uteke --version` output.
+async fn resolve_uteke_version(
+    state: &tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> (bool, Option<String>) {
+    let (is_remote, client, cached) = {
+        let s = state.lock().await;
+        (
+            s.uteke_remote,
+            s.uteke_client.clone(),
+            s.uteke_version.clone(),
+        )
+    };
+    if is_remote {
+        if let Some(client) = client
+            && client.is_available().await
+        {
+            let v = client.server_version().await;
+            return (true, v);
+        }
+        // Remote unreachable during this probe — fall back to whatever we know.
+        (true, cached)
+    } else {
+        (false, cached)
+    }
+}
+
+/// Reject the call unless the effective uteke version meets `min`.
+///
+/// For **remote** servers with an unknown version (e.g. an older server
+/// that doesn't report version in `/health`) the call is allowed through —
+/// remote servers are user-managed, and the server's own response surfaces
+/// any real incompatibility (e.g. a 404/400 for a missing route).
+async fn require_uteke_version(
+    state: &tauri::State<'_, Arc<Mutex<AppState>>>,
+    min: &str,
+) -> Result<(), CommandError> {
+    let (is_remote, current) = resolve_uteke_version(state).await;
+    let ok = current
+        .as_ref()
+        .map(|c| crate::version_meets(c, min))
+        // Remote + unknown version → don't block (user-managed server).
+        // Local + unknown version → block (we can't confirm capability).
+        .unwrap_or(is_remote);
+    if ok {
+        Ok(())
+    } else {
+        let hint = if is_remote {
+            "upgrade the uteke-serve on the remote host"
+        } else {
+            "run 'uteke upgrade' or use the Update button in Documents"
+        };
+        Err(CommandError::Uteke(format!(
+            "uteke {min} or newer is required for documents (current: {}). Please {hint}.",
+            current.as_deref().unwrap_or("unknown")
+        )))
+    }
+}
+
+/// Report the effective uteke version and whether it supports Documents.
+///
+/// Drives the Documents upgrade banner. For remote servers with an unknown
+/// version, `supported` is `true` so users are not nagged to upgrade a server
+/// they manage (and which may well be newer than the local CLI).
+#[tauri::command]
+pub async fn uteke_version_status(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<VersionStatus, CommandError> {
+    let (is_remote, current) = resolve_uteke_version(&state).await;
+    let supported = current
+        .as_ref()
+        .map(|c| crate::version_meets(c, crate::MIN_UTEKE_FOR_DOCS))
+        .unwrap_or(is_remote);
+    Ok(VersionStatus {
+        current,
+        required: crate::MIN_UTEKE_FOR_DOCS.to_string(),
+        supported,
+    })
+}
+
+/// Run `uteke upgrade`, then re-detect and cache the version.
+///
+/// Returns the post-upgrade `VersionStatus`. Errors if the `uteke` CLI is
+/// missing or the upgrade exits non-zero.
+#[tauri::command]
+pub async fn uteke_self_update(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<VersionStatus, CommandError> {
+    let is_remote = state.lock().await.uteke_remote;
+    if is_remote {
+        // Upgrading the local CLI won't affect a user-managed remote server.
+        // Just re-probe the server's version so the banner can refresh.
+        let (_, current) = resolve_uteke_version(&state).await;
+        let supported = current
+            .as_ref()
+            .map(|c| crate::version_meets(c, crate::MIN_UTEKE_FOR_DOCS))
+            .unwrap_or(true);
+        return Ok(VersionStatus {
+            current,
+            required: crate::MIN_UTEKE_FOR_DOCS.to_string(),
+            supported,
+        });
+    }
+    let uteke = crate::find_uteke_cli().ok_or_else(|| {
+        CommandError::Uteke("uteke CLI not found — install via the setup script".into())
+    })?;
+    let out = tokio::process::Command::new(&uteke)
+        .arg("upgrade")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .map_err(|e| CommandError::Uteke(format!("failed to run 'uteke upgrade': {e}")))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(CommandError::Uteke(format!(
+            "'uteke upgrade' failed: {stderr}"
+        )));
+    }
+    let new_version = crate::detect_uteke_version();
+    {
+        let mut s = state.lock().await;
+        s.uteke_version = new_version.clone();
+    }
+    let supported = new_version
+        .as_ref()
+        .map(|c| crate::version_meets(c, crate::MIN_UTEKE_FOR_DOCS))
+        .unwrap_or(false);
+    Ok(VersionStatus {
+        current: new_version,
+        required: crate::MIN_UTEKE_FOR_DOCS.to_string(),
+        supported,
+    })
+}
 
 /// List documents via uteke-serve POST /doc/list.
 #[tauri::command]
 pub async fn doc_list(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
-    namespace: Option<String>,
     limit: Option<usize>,
     roots_only: Option<bool>,
     parent: Option<String>,
 ) -> Result<Vec<serde_json::Value>, CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -2682,8 +2848,11 @@ pub async fn doc_list(
     if !client.is_available().await {
         return Err(CommandError::Uteke("uteke-serve not reachable".into()));
     }
+    // uteke-serve defaults /doc/list limit to 5 (shared with memory pagination).
+    // The document tree needs the full set client-side, so default high here.
+    let limit = Some(limit.unwrap_or(1000));
     let docs = client
-        .doc_list(namespace.as_deref(), limit, roots_only, parent.as_deref())
+        .doc_list(limit, roots_only, parent.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(docs
@@ -2698,8 +2867,8 @@ pub async fn doc_get(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     slug: Option<String>,
     id: Option<String>,
-    namespace: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -2708,7 +2877,7 @@ pub async fn doc_get(
         return Err(CommandError::Uteke("uteke-serve not running".into()));
     };
     let doc = client
-        .doc_get(slug.as_deref(), id.as_deref(), namespace.as_deref())
+        .doc_get(slug.as_deref(), id.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(serde_json::to_value(doc).unwrap_or_default())
@@ -2721,10 +2890,10 @@ pub async fn doc_create(
     slug: String,
     title: String,
     content: String,
-    namespace: Option<String>,
     tags: Option<Vec<String>>,
     parent: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let tags = tags.unwrap_or_default();
     let client = {
         let s = state.lock().await;
@@ -2734,14 +2903,7 @@ pub async fn doc_create(
         return Err(CommandError::Uteke("uteke-serve not running".into()));
     };
     let doc = client
-        .doc_create(
-            &slug,
-            &title,
-            &content,
-            namespace.as_deref(),
-            &tags,
-            parent.as_deref(),
-        )
+        .doc_create(&slug, &title, &content, &tags, parent.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(serde_json::to_value(doc).unwrap_or_default())
@@ -2756,8 +2918,8 @@ pub async fn doc_update(
     title: Option<String>,
     content: Option<String>,
     tags: Option<Vec<String>>,
-    namespace: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let id_or_slug = id
         .or(slug)
         .ok_or_else(|| CommandError::Uteke("provide either 'id' or 'slug'".into()))?;
@@ -2771,7 +2933,6 @@ pub async fn doc_update(
     let doc = client
         .doc_update(
             &id_or_slug,
-            namespace.as_deref(),
             title.as_deref(),
             content.as_deref(),
             tags.as_deref(),
@@ -2787,10 +2948,10 @@ pub async fn doc_update(
 pub async fn doc_search(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     query: String,
-    namespace: Option<String>,
     limit: Option<usize>,
     mode: Option<String>,
 ) -> Result<Vec<serde_json::Value>, CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -2799,7 +2960,7 @@ pub async fn doc_search(
         return Err(CommandError::Uteke("uteke-serve not running".into()));
     };
     let results = client
-        .doc_search(&query, namespace.as_deref(), limit, mode.as_deref())
+        .doc_search(&query, limit, mode.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(results
@@ -2815,6 +2976,7 @@ pub async fn doc_delete(
     id: Option<String>,
     slug: Option<String>,
 ) -> Result<(), CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -2835,8 +2997,8 @@ pub async fn doc_move(
     id: Option<String>,
     slug: Option<String>,
     new_parent: Option<String>,
-    namespace: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
+    require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -2845,12 +3007,7 @@ pub async fn doc_move(
         return Err(CommandError::Uteke("uteke-serve not running".into()));
     };
     let result = client
-        .doc_move(
-            id.as_deref(),
-            slug.as_deref(),
-            new_parent.as_deref(),
-            namespace.as_deref(),
-        )
+        .doc_move(id.as_deref(), slug.as_deref(), new_parent.as_deref())
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(result)

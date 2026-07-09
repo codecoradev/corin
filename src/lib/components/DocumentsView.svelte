@@ -1,6 +1,6 @@
 <script lang="ts">
   import { docs } from '../ts/ipc';
-  import type { DocEntry, DocSearchResult } from '../ts/types';
+  import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -17,6 +17,8 @@
     Eye,
     ChevronDown,
     FileText,
+    Folder,
+    FolderOpen,
     Save,
     Download,
     Trash2,
@@ -75,11 +77,7 @@
   ]);
 
   // ─── Props ─────────────────────────────────────────────────────────
-  interface Props {
-    namespace: string | null;
-  }
-
-  let { namespace }: Props = $props();
+  // No props — documents are global since uteke v0.7.0 (#614).
 
   // ─── Editor / Preview mode ─────────────────────────────────────────
   type ViewMode = 'edit' | 'preview' | 'split';
@@ -89,6 +87,8 @@
   let rootDocs = $state<DocEntry[]>([]);
   let expandedIds = $state<Set<string>>(new Set());
   let childrenCache = $state<Map<string, DocEntry[]>>(new Map());
+  // Flat id → DocEntry lookup for ancestor lookups (breadcrumb navigation).
+  let docById = $state<Map<string, DocEntry>>(new Map());
   let selectedDoc = $state<DocEntry | null>(null);
   let editorContent = $state('');
   let editorTitle = $state('');
@@ -109,6 +109,10 @@
   let successTimeout: ReturnType<typeof setTimeout> | null = null;
   let editorView = $state<EditorView | null>(null);
   let showProps = $state(false);
+
+  // Uteke version gate — documents require >= 0.7.0 (#614).
+  let versionStatus = $state<VersionStatus | null>(null);
+  let updating = $state(false);
 
   // ─── Bound DOM elements for scroll reset ───────────────────────────
   let editorContainer: HTMLElement | null = null;
@@ -142,21 +146,39 @@
     successTimeout = setTimeout(() => { success = ''; }, 3000);
   }
 
-  // ─── Load root documents ──────────────────────────────────────────
+  /** Whether a doc has children in the loaded tree (authoritative, from cache). */
+  function hasKids(doc: DocEntry): boolean {
+    return childrenCache.has(doc.id) && (childrenCache.get(doc.id)?.length ?? 0) > 0;
+  }
+
+  // ─── Load all documents & build the tree client-side ──────────────
+  // Fetches the full flat doc list once and assembles parent→children so the
+  // entire hierarchy is visible upfront (Obsidian/Outline-like), rather than
+  // only roots with lazy-expanded children.
   async function loadRootDocs() {
     loading = true;
     try {
-      rootDocs = await docs.list({ roots_only: true, namespace: namespace ?? undefined });
-      // Auto-expand root nodes that have children
-      for (const doc of rootDocs) {
-        if (doc.has_children) {
-          expandedIds.add(doc.id);
-          loadChildren(doc.id);
+      const all = await docs.list();
+      // Group by parent_id; roots have no parent_id.
+      const byParent = new Map<string, DocEntry[]>();
+      const byId = new Map<string, DocEntry>();
+      const roots: DocEntry[] = [];
+      for (const d of all) {
+        byId.set(d.id, d);
+        const pid = d.parent_id ?? null;
+        if (pid) {
+          const arr = byParent.get(pid) ?? [];
+          arr.push(d);
+          byParent.set(pid, arr);
+        } else {
+          roots.push(d);
         }
       }
-      if (rootDocs.some(d => d.has_children)) {
-        expandedIds = expandedIds;
-      }
+      childrenCache = byParent;
+      rootDocs = roots;
+      docById = byId;
+      // Expand every folder by default so the full tree is visible.
+      expandedIds = new Set(byParent.keys());
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -168,9 +190,12 @@
   async function loadChildren(docId: string) {
     if (childrenCache.has(docId)) return;
     try {
-      const children = await docs.list({ parent: docId, namespace: namespace ?? undefined });
-      childrenCache.set(docId, children);
-      childrenCache = childrenCache;
+      const children = await docs.list({ parent: docId });
+      // Immutable update — Svelte 5 does not re-render {@const} reads when a
+      // $state Map is mutated in place + reassigned to the same ref.
+      const next = new Map(childrenCache);
+      next.set(docId, children);
+      childrenCache = next;
     } catch (e: any) {
       showError(`Failed to load children: ${e}`);
     }
@@ -178,41 +203,41 @@
 
   // ─── Load all descendants (for selected doc's tree path) ─────────
   async function expandPathToDoc(docId: string) {
-    // Load root children first
-    for (const root of rootDocs) {
-      if (root.has_children && !childrenCache.has(root.id)) {
-        await loadChildren(root.id);
-      }
-    }
-    // Recursively expand down the path to find and expand the target
+    // Children are pre-built; walk the cached tree and expand the path.
+    // Collect into a new Set and reassign once — Svelte 5 needs a new ref
+    // to re-render {@const} reads of a $state Set.
+    const next = new Set(expandedIds);
     function searchLevel(entries: DocEntry[]): boolean {
       for (const entry of entries) {
         if (entry.id === docId) return true;
-        if (entry.has_children) {
-          if (childrenCache.has(entry.id)) {
-            const kids = childrenCache.get(entry.id) ?? [];
-            if (!expandedIds.has(entry.id)) {
-              expandedIds.add(entry.id);
-              expandedIds = expandedIds;
-            }
-            if (searchLevel(kids)) return true;
-          }
+        if (hasKids(entry)) {
+          const kids = childrenCache.get(entry.id) ?? [];
+          next.add(entry.id);
+          if (searchLevel(kids)) return true;
         }
       }
       return false;
     }
     searchLevel(rootDocs);
+    expandedIds = next;
   }
 
   // ─── Toggle tree node ─────────────────────────────────────────────
   async function toggleNode(doc: DocEntry) {
-    if (expandedIds.has(doc.id)) {
-      expandedIds.delete(doc.id);
-      expandedIds = expandedIds;
+    // Immutable update (new Set) — required for Svelte 5 to re-render the
+    // {@const expanded = expandedIds.has(...)} reads in the tree snippet.
+    // Mutating in place + reassigning the same ref does NOT trigger updates.
+    const next = new Set(expandedIds);
+    if (next.has(doc.id)) {
+      next.delete(doc.id);
+      expandedIds = next;
     } else {
-      expandedIds.add(doc.id);
-      expandedIds = expandedIds;
-      await loadChildren(doc.id);
+      next.add(doc.id);
+      expandedIds = next;
+      // Children are pre-built in loadRootDocs(); load lazily only if missing.
+      if (!childrenCache.has(doc.id) && doc.has_children) {
+        await loadChildren(doc.id);
+      }
     }
   }
 
@@ -231,11 +256,9 @@
       showNewDoc = false;
       // Default to preview mode when opening an existing document
       viewMode = 'preview';
-      // Auto-load and expand children of this document in the tree
-      if (full.has_children) {
-        expandedIds.add(full.id);
-        expandedIds = expandedIds;
-        await loadChildren(full.id);
+      // Auto-expand this document's subtree (children pre-built in loadRootDocs).
+      if (hasKids(full)) {
+        expandedIds = new Set([...expandedIds, full.id]);
       }
       // Auto-expand tree path to this document
       await expandPathToDoc(full.id);
@@ -283,7 +306,7 @@
     searching = true;
     showSearchResults = true;
     try {
-      searchResults = await docs.search(searchQuery, { namespace: namespace ?? undefined, limit: 20 });
+      searchResults = await docs.search(searchQuery, { limit: 20 });
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -312,7 +335,6 @@
     saving = true;
     try {
       const tags = editorTags.split(',').map(t => t.trim()).filter(Boolean);
-      const ns = namespace ?? undefined;
       if (selectedDoc && !showNewDoc) {
         // Existing document → update
         try {
@@ -322,7 +344,6 @@
             title: editorTitle || editorSlug,
             content: editorContent,
             tags,
-            namespace: selectedDoc.namespace ?? ns,
           });
           selectedDoc = updated;
         } catch (e: any) {
@@ -333,7 +354,7 @@
               editorSlug,
               editorTitle || editorSlug,
               editorContent,
-              { namespace: selectedDoc.namespace ?? ns, tags },
+              { tags },
             );
             // create returns only {id, slug} — re-fetch for full state
             const full = await docs.get({ id: selectedDoc.id });
@@ -346,7 +367,6 @@
         // New document → create via /doc/create
         const parent = selectedDoc?.id ?? undefined;
         await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
-          namespace: ns,
           tags,
           parent,
         });
@@ -501,13 +521,16 @@
   }
 
   // ─── Build breadcrumb path ────────────────────────────────────────
-  function getBreadcrumb(): string[] {
-    if (!selectedDoc) return [];
-    if (selectedDoc.path && selectedDoc.path.length > 0) {
-      const parts = selectedDoc.path.split('/').filter(Boolean);
-      return parts.length > 0 ? parts : [];
-    }
-    return [];
+  // `selectedDoc.path` is a materialized ancestor chain of UUIDs
+  // ("/uuid/uuid/"). Map each segment to its DocEntry via the flat lookup so
+  // each crumb is clickable and shows a real title.
+  function getBreadcrumb(): DocEntry[] {
+    if (!selectedDoc?.path) return [];
+    return selectedDoc.path
+      .split('/')
+      .filter(Boolean)
+      .map((id) => docById.get(id))
+      .filter((d): d is DocEntry => !!d);
   }
 
   // ─── Word count & reading time ────────────────────────────────────
@@ -515,8 +538,41 @@
 
   // ─── Lifecycle ───────────────────────────────────────────────────
   $effect(() => {
-    loadRootDocs();
+    init();
   });
+
+  /** Probe the installed uteke version; load docs only if supported. */
+  async function init() {
+    try {
+      versionStatus = await docs.versionStatus();
+    } catch {
+      versionStatus = null;
+    }
+    if (versionStatus?.supported !== false) {
+      await loadRootDocs();
+    } else {
+      loading = false;
+    }
+  }
+
+  /** Run `uteke upgrade`, then re-probe and (if supported) load docs. */
+  async function updateUteke() {
+    updating = true;
+    try {
+      versionStatus = await docs.selfUpdate();
+      if (versionStatus.supported) {
+        success = 'Uteke updated — documents enabled.';
+        successTimeout = setTimeout(() => { success = ''; }, 3000);
+        await loadRootDocs();
+      } else {
+        showError(`Still on ${versionStatus.current ?? 'unknown'} after update.`);
+      }
+    } catch (e: any) {
+      showError(`Update failed: ${e}`);
+    } finally {
+      updating = false;
+    }
+  }
 
   // Cleanup on destroy
   $effect(() => {
@@ -545,6 +601,18 @@
       </button>
     </div>
   </div>
+
+  {#if versionStatus && !versionStatus.supported}
+    <div class="version-banner">
+      <div class="vb-text">
+        <strong>Uteke {versionStatus.required}+ required for documents.</strong>
+        Detected: {versionStatus.current ?? 'unknown'}.
+      </div>
+      <button class="vb-btn" onclick={updateUteke} disabled={updating}>
+        {updating ? 'Updating…' : 'Update uteke'}
+      </button>
+    </div>
+  {/if}
 
   {#if error}
     <div class="error-bar">
@@ -621,9 +689,9 @@
           <div class="breadcrumb">
             {#if selectedDoc && !showNewDoc}
               <button class="crumb-link" onclick={() => { selectedDoc = null; showNewDoc = false; }}>Documents</button>
-              {#each getBreadcrumb() as part, i}
+              {#each getBreadcrumb() as ancestor, i}
                 <span class="crumb-sep">/</span>
-                <button class="crumb-link">{part.slice(0, 8)}</button>
+                <button class="crumb-link" title={ancestor.title || ancestor.slug} onclick={() => selectDoc(ancestor)}>{ancestor.title || ancestor.slug}</button>
               {/each}
               <span class="crumb-sep">/</span>
               <span class="crumb-current">{selectedDoc.title}</span>
@@ -673,7 +741,7 @@
           </div>
         {/if}
 
-        <!-- Meta bar: version, date, namespace + actions -->
+        <!-- Meta bar: version, date + actions -->
         <div class="meta-bar">
           <div class="meta-left">
             <button class="props-toggle" onclick={() => (showProps = !showProps)}>
@@ -684,9 +752,6 @@
               <span class="meta-item">v{selectedDoc.version ?? 1}</span>
               {#if selectedDoc.updated_at}
                 <span class="meta-item">{formatDate(selectedDoc.updated_at)}</span>
-              {/if}
-              {#if selectedDoc.namespace}
-                <span class="ns-badge">{selectedDoc.namespace}</span>
               {/if}
             {:else}
               <span class="meta-item">New draft</span>
@@ -761,28 +826,42 @@
 {/if}
 
 {#snippet treeNode(doc: DocEntry)}
+  {@const kids = childrenCache.get(doc.id) ?? []}
+  {@const isFolder = kids.length > 0}
+  {@const expanded = expandedIds.has(doc.id)}
   <div class="tree-node">
-    <div class="tree-row" class:active={selectedDoc?.id === doc.id}>
+    <div class="tree-row" class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
       <button
         class="tree-toggle"
-        class:has-children={doc.has_children}
-        class:expanded={expandedIds.has(doc.id)}
-        onclick={(e: MouseEvent) => { e.stopPropagation(); if (doc.has_children) toggleNode(doc); }}
-        tabindex={doc.has_children ? 0 : -1}
-        aria-label={doc.has_children ? 'Toggle children' : ''}
+        class:has-children={isFolder}
+        class:expanded={expanded}
+        onclick={(e: MouseEvent) => { e.stopPropagation(); if (isFolder) toggleNode(doc); }}
+        tabindex={isFolder ? 0 : -1}
+        aria-label={isFolder ? 'Toggle children' : ''}
       >
-        {#if doc.has_children}
+        {#if isFolder}
           <ChevronDown size={14} strokeWidth={2} class="chevron-icon" />
         {/if}
       </button>
       <button class="tree-label" onclick={() => selectDoc(doc)}>
-        <FileText size={13} strokeWidth={1.75} class="tree-doc-icon" />
+        {#if isFolder}
+          {#if expanded}
+            <FolderOpen size={13} strokeWidth={1.75} class="tree-doc-icon" />
+          {:else}
+            <Folder size={13} strokeWidth={1.75} class="tree-doc-icon" />
+          {/if}
+        {:else}
+          <FileText size={13} strokeWidth={1.75} class="tree-doc-icon" />
+        {/if}
         <span class="tree-title" title={doc.title}>{doc.title || doc.slug}</span>
+        {#if isFolder}
+          <span class="tree-count">{kids.length}</span>
+        {/if}
       </button>
     </div>
-    {#if expandedIds.has(doc.id) && childrenCache.has(doc.id)}
+    {#if expanded && kids.length > 0}
       <div class="tree-children" transition:slide={{ duration: 180 }}>
-        {#each childrenCache.get(doc.id) ?? [] as child (child.id)}
+        {#each kids as child (child.id)}
           {@render treeNode(child)}
         {/each}
       </div>
@@ -842,6 +921,31 @@
     flex-shrink: 0;
     animation: slideDown 0.15s ease;
   }
+  .version-banner {
+    padding: 10px 20px;
+    background: rgba(245, 208, 135, 0.12);
+    border-bottom: 1px solid rgba(245, 208, 135, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .vb-text { font-size: 0.85rem; color: var(--text-secondary); }
+  .vb-text strong { color: var(--yellow); }
+  .vb-btn {
+    padding: 6px 14px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .vb-btn:hover:not(:disabled) { opacity: 0.85; }
+  .vb-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } }
   .error-text {
     color: #f38ba8;
@@ -922,7 +1026,11 @@
   .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
 
   .tree-node { user-select: none; }
-  .tree-children { padding-left: 14px; }
+  .tree-children {
+    padding-left: 16px;
+    margin-left: 10px;
+    border-left: 1px solid var(--border);
+  }
 
   .tree-row {
     display: flex;
@@ -940,6 +1048,18 @@
   }
   .tree-row.active .tree-title { color: var(--accent); }
   .tree-row.active .tree-doc-icon { color: var(--accent); }
+  .tree-row.folder .tree-doc-icon { color: var(--accent); }
+  .tree-row.folder.active .tree-doc-icon { color: var(--accent); }
+  .tree-count {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    background: var(--bg-hover);
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 2px;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
 
   .tree-toggle {
     display: flex;

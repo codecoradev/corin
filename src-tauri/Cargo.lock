@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "corin"
-version = "0.2.0"
+version = "0.3.1-beta.1"
 dependencies = [
  "chrono",
  "dirs",
