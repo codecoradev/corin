@@ -286,6 +286,27 @@ impl UtekeClient {
             .unwrap_or(false)
     }
 
+    /// Probe the server's self-reported version via `/health`.
+    ///
+    /// Returns `Some("X.Y.Z")` when the server includes a `version` field
+    /// (uteke ≥ the /health-version patch), otherwise `None`. Used to gate
+    /// features for remote servers where the local `uteke` CLI version is
+    /// irrelevant — the server may be newer or older than the CLI.
+    pub async fn server_version(&self) -> Option<String> {
+        let resp = self
+            .authed(self.client.get(format!("{}/health", self.base_url)))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let body: serde_json::Value = resp.json().await.ok()?;
+        body.get("version")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    }
+
     /// Semantic recall (vector + FTS5 hybrid search via RRF).
     pub async fn recall(
         &self,
@@ -931,7 +952,7 @@ impl UtekeClient {
     //
     // Since uteke v0.7.0 (#614) documents are GLOBAL — unique slugs across all
     // namespaces. These methods send no `namespace`. Callers MUST gate access
-    // on `crate::MIN_UTEKE_FOR_DOCS` ("0.7.0") so older servers (where docs
+    // on `crate::MIN_UTEKE_FOR_DOCS` ("0.7.1") so older servers (where docs
     // were namespace-scoped) never receive ambiguous global-slug requests.
 
     /// List documents via POST /doc/list.
