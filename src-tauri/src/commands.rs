@@ -116,7 +116,7 @@ pub struct AppState {
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
     /// Cached installed uteke version ("X.Y.Z"), probed once at startup via
     /// `uteke --version`. `None` if the CLI couldn't be probed. Used to gate
-    /// features that require a minimum server version (e.g. Documents → 0.7.0).
+    /// features that require a minimum server version (e.g. Documents → 0.7.1).
     pub uteke_version: Option<String>,
 }
 
@@ -2669,7 +2669,7 @@ pub async fn disconnect_connection(
 //
 // Since uteke v0.7.0 (#614) documents are global — unique slugs across all
 // namespaces. `namespace` is no longer accepted. Every command gates on
-// `MIN_UTEKE_FOR_DOCS` ("0.7.0") so older servers never get ambiguous
+// `MIN_UTEKE_FOR_DOCS` ("0.7.1") so older servers never get ambiguous
 // global-slug requests. Frontend reads `uteke_version_status` to render an
 // upgrade banner; `uteke_self_update` runs `uteke upgrade` and re-detects.
 
@@ -2678,7 +2678,7 @@ pub async fn disconnect_connection(
 pub struct VersionStatus {
     /// Detected `X.Y.Z`, or `None` if the `uteke` CLI couldn't be probed.
     pub current: Option<String>,
-    /// Minimum uteke version that supports global documents ("0.7.0").
+    /// Minimum uteke version that supports global documents ("0.7.1").
     pub required: String,
     /// `true` iff `current >= required` (false when current is unknown).
     pub supported: bool,

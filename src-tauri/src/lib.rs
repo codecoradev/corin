@@ -195,8 +195,10 @@ fn find_uteke_serve() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Minimum uteke version required for the global Documents feature (v0.7.0, #614).
-pub(crate) const MIN_UTEKE_FOR_DOCS: &str = "0.7.0";
+/// Minimum uteke version required for the global Documents feature.
+/// v0.7.0 introduced global docs (#614), but document delete/move landed in
+/// v0.7.1 — require it so the full doc feature set is available.
+pub(crate) const MIN_UTEKE_FOR_DOCS: &str = "0.7.1";
 
 /// Find the `uteke` CLI binary in PATH or ~/.local/bin.
 pub(crate) fn find_uteke_cli() -> Option<std::path::PathBuf> {
@@ -510,7 +512,7 @@ pub fn run() {
                             }
 
                             // Cache the installed uteke version for feature
-                            // gating (e.g. Documents requires >= 0.7.0).
+                            // gating (e.g. Documents requires >= 0.7.1).
                             s.uteke_version = detect_uteke_version();
                         }
                         Err(e) => {
@@ -600,6 +602,15 @@ mod tests {
         assert!(version_meets("0.7.1", "0.7.0"));
         assert!(version_meets("0.8.0", "0.7.0"));
         assert!(version_meets("1.0.0", "0.7.0"));
+    }
+
+    #[test]
+    fn docs_gate_requires_0_7_1() {
+        // Document delete/move landed in 0.7.1; 0.7.0 must be rejected so the
+        // UI prompts for an upgrade instead of hitting a missing /doc/delete.
+        assert!(!version_meets("0.7.0", MIN_UTEKE_FOR_DOCS));
+        assert!(version_meets("0.7.1", MIN_UTEKE_FOR_DOCS));
+        assert!(version_meets("0.8.0", MIN_UTEKE_FOR_DOCS));
     }
 
     #[test]

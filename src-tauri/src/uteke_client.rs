@@ -931,7 +931,7 @@ impl UtekeClient {
     //
     // Since uteke v0.7.0 (#614) documents are GLOBAL — unique slugs across all
     // namespaces. These methods send no `namespace`. Callers MUST gate access
-    // on `crate::MIN_UTEKE_FOR_DOCS` ("0.7.0") so older servers (where docs
+    // on `crate::MIN_UTEKE_FOR_DOCS` ("0.7.1") so older servers (where docs
     // were namespace-scoped) never receive ambiguous global-slug requests.
 
     /// List documents via POST /doc/list.
