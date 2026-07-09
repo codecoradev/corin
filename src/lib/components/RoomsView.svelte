@@ -10,14 +10,8 @@
     title: string | null;
     namespace: string;
     memory_count: number;
-    participant_count: number;
     created_at: string;
     updated_at: string;
-  }
-
-  interface Participant {
-    namespace: string;
-    count: number;
   }
 
   interface Props {
@@ -36,7 +30,7 @@
   let showCreateForm = $state(false);
 
   // Tab state
-  let activeTab = $state<'summary' | 'timeline' | 'participants'>('summary');
+  let activeTab = $state<'summary' | 'timeline'>('summary');
 
   // Summary state
   let roomDocument = $state('');
@@ -45,10 +39,6 @@
 
   // Confirm delete state
   let showDeleteConfirm = $state(false);
-
-  // Participants state (authoritative from server)
-  let roomStatsData = $state<{ memory_count: number; participant_count: number; participant_namespaces?: string[] } | null>(null);
-  let participantsLoading = $state(false);
 
   async function loadRooms() {
     loading = true;
@@ -77,7 +67,6 @@
     activeTab = 'summary';
     documentLoaded = false;
     roomDocument = '';
-    roomStatsData = null;
     if (utekeReady) {
       // Use chronological room_memories (uteke >= 0.6.7) with fallback to recall
       try {
@@ -86,46 +75,6 @@
         roomMemories = await uteke.roomRecall(roomId, 50).catch(() => []);
       }
     }
-  }
-
-  /** Load participants from server stats (authoritative) */
-  async function loadParticipants() {
-    if (!selectedRoom || !utekeReady) return;
-    participantsLoading = true;
-    try {
-      roomStatsData = await uteke.roomStats(selectedRoom);
-    } catch {
-      roomStatsData = null;
-    }
-    participantsLoading = false;
-  }
-
-  /**
-   * Get participants — authoritative from server stats when available,
-   * falls back to client-side grouping from roomMemories.
-   */
-  function getParticipants(): Participant[] {
-    // Prefer server-provided participant_namespaces list
-    if (roomStatsData?.participant_namespaces?.length) {
-      const memCounts: Record<string, number> = {};
-      for (const m of roomMemories) {
-        const ns = m.namespace ?? 'default';
-        memCounts[ns] = (memCounts[ns] ?? 0) + 1;
-      }
-      return roomStatsData.participant_namespaces
-        .map((ns) => ({ namespace: ns, count: memCounts[ns] ?? 0 }))
-        .sort((a, b) => b.count - a.count);
-    }
-
-    // Fallback: derive from roomMemories (may undercount if limit truncates)
-    const counts: Record<string, number> = {};
-    for (const m of roomMemories) {
-      const ns = m.namespace ?? 'default';
-      counts[ns] = (counts[ns] ?? 0) + 1;
-    }
-    return Object.entries(counts)
-      .map(([namespace, count]) => ({ namespace, count }))
-      .sort((a, b) => b.count - a.count);
   }
 
   async function loadDocument(roomId: string) {
@@ -144,12 +93,6 @@
   $effect(() => {
     if (selectedRoom && activeTab === 'summary') {
       loadDocument(selectedRoom);
-    }
-  });
-
-  $effect(() => {
-    if (selectedRoom && activeTab === 'participants') {
-      loadParticipants();
     }
   });
 
@@ -238,8 +181,6 @@
             <div class="room-meta">
               <span>{room.memory_count} memories</span>
               <span>·</span>
-              <span>{room.participant_count} agents</span>
-              <span>·</span>
               <span>{relativeTime(room.created_at)}</span>
             </div>
             <div class="room-ns">{room.namespace}</div>
@@ -280,7 +221,6 @@
           <div class="tabs">
             <button class="tab" class:active={activeTab === 'summary'} onclick={() => activeTab = 'summary'}>Summary</button>
             <button class="tab" class:active={activeTab === 'timeline'} onclick={() => activeTab = 'timeline'}>Memories</button>
-            <button class="tab" class:active={activeTab === 'participants'} onclick={() => activeTab = 'participants'}>Participants</button>
           </div>
 
           <!-- Tab: Summary -->
@@ -328,36 +268,6 @@
             {/if}
           {/if}
 
-          <!-- Tab: Participants -->
-          {#if activeTab === 'participants'}
-            {@const participants = getParticipants()}
-            {@const serverParticipantCount = roomStatsData?.participant_count ?? currentRoom?.participant_count ?? 0}
-            {#if participantsLoading}
-              <div class="tab-loading">Loading participants…</div>
-            {:else if participants.length === 0}
-              <div class="tab-empty">
-                <p>No participants yet.</p>
-                <p class="sub">Agents will appear here when they contribute memories to this room.</p>
-              </div>
-            {:else}
-              <div class="participant-list">
-                {#each participants as p (p.namespace)}
-                  <div class="participant-card">
-                    <div class="participant-info">
-                      <span class="participant-avatar">{'🤖'}</span>
-                      <div class="participant-detail">
-                        <span class="participant-ns">{p.namespace}</span>
-                        <span class="participant-count">{p.count} {p.count === 1 ? 'memory' : 'memories'}</span>
-                      </div>
-                    </div>
-                  </div>
-                {/each}
-                <div class="participant-summary">
-                  <span>{participants.length} {participants.length === 1 ? 'participant' : 'participants'} · {serverParticipantCount > participants.length ? `(server reports ${serverParticipantCount} total)` : ''} · {roomMemories.length} memories loaded</span>
-                </div>
-              </div>
-            {/if}
-          {/if}
         {/if}
       </div>
     </div>
@@ -445,16 +355,6 @@
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
   .tag { font-size: 0.7rem; padding: 2px 6px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
   .ns { font-size: 0.7rem; padding: 2px 6px; background: rgba(137,180,250,0.15); color: var(--accent); border-radius: 3px; }
-
-  /* Participants */
-  .participant-list { display: flex; flex-direction: column; gap: 8px; }
-  .participant-card { padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; }
-  .participant-info { display: flex; align-items: center; gap: 10px; }
-  .participant-avatar { font-size: 1.2rem; }
-  .participant-detail { display: flex; flex-direction: column; gap: 2px; }
-  .participant-ns { font-size: 0.9rem; color: var(--accent); font-family: var(--font-mono); }
-  .participant-count { font-size: 0.75rem; color: var(--text-muted); }
-  .participant-summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted); text-align: center; }
 
   /* General */
   .msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; gap: 8px; }
