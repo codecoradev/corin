@@ -1,3 +1,22 @@
+## [0.3.1-beta.1] — 2026-07-09
+
+### Added
+- **Document tree UX overhaul** — full hierarchy view with folder/file icons, recursive tree, and slide transitions (#157)
+- **Clickable breadcrumbs** — every ancestor crumb navigates to its parent/sub-doc; resolves the materialized path client-side with no extra requests (#161)
+
+### Fixed
+- **Document tree only showed ~5 docs** — `doc_list` now defaults `limit` to 1000 (uteke-serve's `/doc/list` default of 5 was capping the client-side tree) (#159)
+- **Folders couldn't be expanded/collapsed** — Svelte 5 reactivity bug: in-place `Set` mutation + same-ref reassign did not re-render `{@const}` reads; switched to immutable updates (#160)
+- **Delete failed with `400 Bad Request`** — require uteke ≥ 0.7.1 (0.7.0 lacks `/doc/delete`); the version gate now rejects 0.7.0 up front with an upgrade prompt (#159)
+- **False "uteke upgrade required" for remote users** — version gate used the local CLI version; now probes the remote server via `GET /health` and treats unknown remote versions leniently (#159)
+- View scroll reset + document namespace/version gate for uteke v0.7.0 (#154)
+
+### Changed
+- Removed the Participants tab from Rooms (#158)
+- Release workflow now marks hyphenated tags (e.g. `-beta.1`, `-rc.1`) as GitHub prereleases automatically
+
+---
+
 ## [0.3.0] — 2026-07-07
 
 ### Added
