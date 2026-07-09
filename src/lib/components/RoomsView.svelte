@@ -10,7 +10,6 @@
     title: string | null;
     namespace: string;
     memory_count: number;
-    participant_count: number;
     created_at: string;
     updated_at: string;
   }
@@ -181,8 +180,6 @@
             <div class="room-title">{room.title ?? room.id}</div>
             <div class="room-meta">
               <span>{room.memory_count} memories</span>
-              <span>·</span>
-              <span>{room.participant_count} agents</span>
               <span>·</span>
               <span>{relativeTime(room.created_at)}</span>
             </div>
