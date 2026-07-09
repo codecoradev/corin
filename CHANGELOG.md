@@ -1,4 +1,6 @@
-## [0.3.1-beta.1] — 2026-07-09
+## [0.3.1] — 2026-07-09
+
+Stable patch release. Promotes v0.3.1-beta.1 (identical contents) to a full release.
 
 ### Added
 - **Document tree UX overhaul** — full hierarchy view with folder/file icons, recursive tree, and slide transitions (#157)
