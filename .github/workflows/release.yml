@@ -110,7 +110,7 @@ jobs:
           releaseBody: |
             See the assets below to download this version.
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           updaterJsonPreferNsis: true
           updaterKeepSingleGroup: true
           args: ${{ matrix.settings.args }}
