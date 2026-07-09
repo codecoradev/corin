@@ -17,6 +17,8 @@
     Eye,
     ChevronDown,
     FileText,
+    Folder,
+    FolderOpen,
     Save,
     Download,
     Trash2,
@@ -142,21 +144,36 @@
     successTimeout = setTimeout(() => { success = ''; }, 3000);
   }
 
-  // ─── Load root documents ──────────────────────────────────────────
+  /** Whether a doc has children in the loaded tree (authoritative, from cache). */
+  function hasKids(doc: DocEntry): boolean {
+    return childrenCache.has(doc.id) && (childrenCache.get(doc.id)?.length ?? 0) > 0;
+  }
+
+  // ─── Load all documents & build the tree client-side ──────────────
+  // Fetches the full flat doc list once and assembles parent→children so the
+  // entire hierarchy is visible upfront (Obsidian/Outline-like), rather than
+  // only roots with lazy-expanded children.
   async function loadRootDocs() {
     loading = true;
     try {
-      rootDocs = await docs.list({ roots_only: true });
-      // Auto-expand root nodes that have children
-      for (const doc of rootDocs) {
-        if (doc.has_children) {
-          expandedIds.add(doc.id);
-          loadChildren(doc.id);
+      const all = await docs.list();
+      // Group by parent_id; roots have no parent_id.
+      const byParent = new Map<string, DocEntry[]>();
+      const roots: DocEntry[] = [];
+      for (const d of all) {
+        const pid = d.parent_id ?? null;
+        if (pid) {
+          const arr = byParent.get(pid) ?? [];
+          arr.push(d);
+          byParent.set(pid, arr);
+        } else {
+          roots.push(d);
         }
       }
-      if (rootDocs.some(d => d.has_children)) {
-        expandedIds = expandedIds;
-      }
+      childrenCache = byParent;
+      rootDocs = roots;
+      // Expand every folder by default so the full tree is visible.
+      expandedIds = new Set(byParent.keys());
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -178,25 +195,17 @@
 
   // ─── Load all descendants (for selected doc's tree path) ─────────
   async function expandPathToDoc(docId: string) {
-    // Load root children first
-    for (const root of rootDocs) {
-      if (root.has_children && !childrenCache.has(root.id)) {
-        await loadChildren(root.id);
-      }
-    }
-    // Recursively expand down the path to find and expand the target
+    // Children are pre-built; just walk the cached tree and expand the path.
     function searchLevel(entries: DocEntry[]): boolean {
       for (const entry of entries) {
         if (entry.id === docId) return true;
-        if (entry.has_children) {
-          if (childrenCache.has(entry.id)) {
-            const kids = childrenCache.get(entry.id) ?? [];
-            if (!expandedIds.has(entry.id)) {
-              expandedIds.add(entry.id);
-              expandedIds = expandedIds;
-            }
-            if (searchLevel(kids)) return true;
+        if (hasKids(entry)) {
+          const kids = childrenCache.get(entry.id) ?? [];
+          if (!expandedIds.has(entry.id)) {
+            expandedIds.add(entry.id);
+            expandedIds = expandedIds;
           }
+          if (searchLevel(kids)) return true;
         }
       }
       return false;
@@ -212,7 +221,10 @@
     } else {
       expandedIds.add(doc.id);
       expandedIds = expandedIds;
-      await loadChildren(doc.id);
+      // Children are pre-built in loadRootDocs(); load lazily only if missing.
+      if (!childrenCache.has(doc.id) && doc.has_children) {
+        await loadChildren(doc.id);
+      }
     }
   }
 
@@ -231,11 +243,10 @@
       showNewDoc = false;
       // Default to preview mode when opening an existing document
       viewMode = 'preview';
-      // Auto-load and expand children of this document in the tree
-      if (full.has_children) {
+      // Auto-expand this document's subtree (children pre-built in loadRootDocs).
+      if (hasKids(full)) {
         expandedIds.add(full.id);
         expandedIds = expandedIds;
-        await loadChildren(full.id);
       }
       // Auto-expand tree path to this document
       await expandPathToDoc(full.id);
@@ -800,28 +811,42 @@
 {/if}
 
 {#snippet treeNode(doc: DocEntry)}
+  {@const kids = childrenCache.get(doc.id) ?? []}
+  {@const isFolder = kids.length > 0}
+  {@const expanded = expandedIds.has(doc.id)}
   <div class="tree-node">
-    <div class="tree-row" class:active={selectedDoc?.id === doc.id}>
+    <div class="tree-row" class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
       <button
         class="tree-toggle"
-        class:has-children={doc.has_children}
-        class:expanded={expandedIds.has(doc.id)}
-        onclick={(e: MouseEvent) => { e.stopPropagation(); if (doc.has_children) toggleNode(doc); }}
-        tabindex={doc.has_children ? 0 : -1}
-        aria-label={doc.has_children ? 'Toggle children' : ''}
+        class:has-children={isFolder}
+        class:expanded={expanded}
+        onclick={(e: MouseEvent) => { e.stopPropagation(); if (isFolder) toggleNode(doc); }}
+        tabindex={isFolder ? 0 : -1}
+        aria-label={isFolder ? 'Toggle children' : ''}
       >
-        {#if doc.has_children}
+        {#if isFolder}
           <ChevronDown size={14} strokeWidth={2} class="chevron-icon" />
         {/if}
       </button>
       <button class="tree-label" onclick={() => selectDoc(doc)}>
-        <FileText size={13} strokeWidth={1.75} class="tree-doc-icon" />
+        {#if isFolder}
+          {#if expanded}
+            <FolderOpen size={13} strokeWidth={1.75} class="tree-doc-icon" />
+          {:else}
+            <Folder size={13} strokeWidth={1.75} class="tree-doc-icon" />
+          {/if}
+        {:else}
+          <FileText size={13} strokeWidth={1.75} class="tree-doc-icon" />
+        {/if}
         <span class="tree-title" title={doc.title}>{doc.title || doc.slug}</span>
+        {#if isFolder}
+          <span class="tree-count">{kids.length}</span>
+        {/if}
       </button>
     </div>
-    {#if expandedIds.has(doc.id) && childrenCache.has(doc.id)}
+    {#if expanded && kids.length > 0}
       <div class="tree-children" transition:slide={{ duration: 180 }}>
-        {#each childrenCache.get(doc.id) ?? [] as child (child.id)}
+        {#each kids as child (child.id)}
           {@render treeNode(child)}
         {/each}
       </div>
@@ -986,7 +1011,11 @@
   .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
 
   .tree-node { user-select: none; }
-  .tree-children { padding-left: 14px; }
+  .tree-children {
+    padding-left: 16px;
+    margin-left: 10px;
+    border-left: 1px solid var(--border);
+  }
 
   .tree-row {
     display: flex;
@@ -1004,6 +1033,18 @@
   }
   .tree-row.active .tree-title { color: var(--accent); }
   .tree-row.active .tree-doc-icon { color: var(--accent); }
+  .tree-row.folder .tree-doc-icon { color: var(--accent); }
+  .tree-row.folder.active .tree-doc-icon { color: var(--accent); }
+  .tree-count {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    background: var(--bg-hover);
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 2px;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
 
   .tree-toggle {
     display: flex;
