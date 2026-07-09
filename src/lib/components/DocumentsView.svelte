@@ -87,6 +87,8 @@
   let rootDocs = $state<DocEntry[]>([]);
   let expandedIds = $state<Set<string>>(new Set());
   let childrenCache = $state<Map<string, DocEntry[]>>(new Map());
+  // Flat id → DocEntry lookup for ancestor lookups (breadcrumb navigation).
+  let docById = $state<Map<string, DocEntry>>(new Map());
   let selectedDoc = $state<DocEntry | null>(null);
   let editorContent = $state('');
   let editorTitle = $state('');
@@ -159,8 +161,10 @@
       const all = await docs.list();
       // Group by parent_id; roots have no parent_id.
       const byParent = new Map<string, DocEntry[]>();
+      const byId = new Map<string, DocEntry>();
       const roots: DocEntry[] = [];
       for (const d of all) {
+        byId.set(d.id, d);
         const pid = d.parent_id ?? null;
         if (pid) {
           const arr = byParent.get(pid) ?? [];
@@ -172,6 +176,7 @@
       }
       childrenCache = byParent;
       rootDocs = roots;
+      docById = byId;
       // Expand every folder by default so the full tree is visible.
       expandedIds = new Set(byParent.keys());
     } catch (e: any) {
@@ -509,13 +514,16 @@
   }
 
   // ─── Build breadcrumb path ────────────────────────────────────────
-  function getBreadcrumb(): string[] {
-    if (!selectedDoc) return [];
-    if (selectedDoc.path && selectedDoc.path.length > 0) {
-      const parts = selectedDoc.path.split('/').filter(Boolean);
-      return parts.length > 0 ? parts : [];
-    }
-    return [];
+  // `selectedDoc.path` is a materialized ancestor chain of UUIDs
+  // ("/uuid/uuid/"). Map each segment to its DocEntry via the flat lookup so
+  // each crumb is clickable and shows a real title.
+  function getBreadcrumb(): DocEntry[] {
+    if (!selectedDoc?.path) return [];
+    return selectedDoc.path
+      .split('/')
+      .filter(Boolean)
+      .map((id) => docById.get(id))
+      .filter((d): d is DocEntry => !!d);
   }
 
   // ─── Word count & reading time ────────────────────────────────────
@@ -674,9 +682,9 @@
           <div class="breadcrumb">
             {#if selectedDoc && !showNewDoc}
               <button class="crumb-link" onclick={() => { selectedDoc = null; showNewDoc = false; }}>Documents</button>
-              {#each getBreadcrumb() as part, i}
+              {#each getBreadcrumb() as ancestor, i}
                 <span class="crumb-sep">/</span>
-                <button class="crumb-link">{part.slice(0, 8)}</button>
+                <button class="crumb-link" title={ancestor.title || ancestor.slug} onclick={() => selectDoc(ancestor)}>{ancestor.title || ancestor.slug}</button>
               {/each}
               <span class="crumb-sep">/</span>
               <span class="crumb-current">{selectedDoc.title}</span>
