@@ -186,8 +186,11 @@
     if (childrenCache.has(docId)) return;
     try {
       const children = await docs.list({ parent: docId });
-      childrenCache.set(docId, children);
-      childrenCache = childrenCache;
+      // Immutable update — Svelte 5 does not re-render {@const} reads when a
+      // $state Map is mutated in place + reassigned to the same ref.
+      const next = new Map(childrenCache);
+      next.set(docId, children);
+      childrenCache = next;
     } catch (e: any) {
       showError(`Failed to load children: ${e}`);
     }
@@ -195,32 +198,37 @@
 
   // ─── Load all descendants (for selected doc's tree path) ─────────
   async function expandPathToDoc(docId: string) {
-    // Children are pre-built; just walk the cached tree and expand the path.
+    // Children are pre-built; walk the cached tree and expand the path.
+    // Collect into a new Set and reassign once — Svelte 5 needs a new ref
+    // to re-render {@const} reads of a $state Set.
+    const next = new Set(expandedIds);
     function searchLevel(entries: DocEntry[]): boolean {
       for (const entry of entries) {
         if (entry.id === docId) return true;
         if (hasKids(entry)) {
           const kids = childrenCache.get(entry.id) ?? [];
-          if (!expandedIds.has(entry.id)) {
-            expandedIds.add(entry.id);
-            expandedIds = expandedIds;
-          }
+          next.add(entry.id);
           if (searchLevel(kids)) return true;
         }
       }
       return false;
     }
     searchLevel(rootDocs);
+    expandedIds = next;
   }
 
   // ─── Toggle tree node ─────────────────────────────────────────────
   async function toggleNode(doc: DocEntry) {
-    if (expandedIds.has(doc.id)) {
-      expandedIds.delete(doc.id);
-      expandedIds = expandedIds;
+    // Immutable update (new Set) — required for Svelte 5 to re-render the
+    // {@const expanded = expandedIds.has(...)} reads in the tree snippet.
+    // Mutating in place + reassigning the same ref does NOT trigger updates.
+    const next = new Set(expandedIds);
+    if (next.has(doc.id)) {
+      next.delete(doc.id);
+      expandedIds = next;
     } else {
-      expandedIds.add(doc.id);
-      expandedIds = expandedIds;
+      next.add(doc.id);
+      expandedIds = next;
       // Children are pre-built in loadRootDocs(); load lazily only if missing.
       if (!childrenCache.has(doc.id) && doc.has_children) {
         await loadChildren(doc.id);
@@ -245,8 +253,7 @@
       viewMode = 'preview';
       // Auto-expand this document's subtree (children pre-built in loadRootDocs).
       if (hasKids(full)) {
-        expandedIds.add(full.id);
-        expandedIds = expandedIds;
+        expandedIds = new Set([...expandedIds, full.id]);
       }
       // Auto-expand tree path to this document
       await expandPathToDoc(full.id);
