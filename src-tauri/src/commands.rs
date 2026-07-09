@@ -114,10 +114,17 @@ pub struct AppState {
     /// HTTP client for uteke-serve (all memory CRUD + graph operations).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
-    /// Cached installed uteke version ("X.Y.Z"), probed once at startup via
-    /// `uteke --version`. `None` if the CLI couldn't be probed. Used to gate
-    /// features that require a minimum server version (e.g. Documents → 0.7.1).
+    /// Cached installed uteke version ("X.Y.Z"), probed once at startup.
+    /// For local servers this is the `uteke --version` CLI output; for remote
+    /// servers it is the version reported by the server's `/health` (if any).
+    /// `None` if unknown. Used to gate features that require a minimum server
+    /// version (e.g. Documents → 0.7.1).
     pub uteke_version: Option<String>,
+    /// `true` when Corin talks to a remote uteke-serve (https/host URL).
+    /// Remote servers are user-managed, so an unknown version is treated
+    /// leniently (no upgrade banner, no hard gate) — the server's own
+    /// responses surface any real incompatibility.
+    pub uteke_remote: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -2684,40 +2691,83 @@ pub struct VersionStatus {
     pub supported: bool,
 }
 
-/// Reject the call unless the cached uteke version meets `min`.
+/// Resolve the effective uteke version for gating.
 ///
-/// Reads `AppState::uteke_version` (set once at startup). Returns a clear,
-/// upgrade-instructing message when unsupported or when the version is unknown.
+/// - **Remote server**: probe the server's self-reported version via
+///   `/health` (authoritative for a user-managed server). The local CLI
+///   version is irrelevant — it may be older or newer than the server.
+/// - **Local server**: use the cached `uteke --version` output.
+async fn resolve_uteke_version(
+    state: &tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> (bool, Option<String>) {
+    let (is_remote, client, cached) = {
+        let s = state.lock().await;
+        (
+            s.uteke_remote,
+            s.uteke_client.clone(),
+            s.uteke_version.clone(),
+        )
+    };
+    if is_remote {
+        if let Some(client) = client
+            && client.is_available().await
+        {
+            let v = client.server_version().await;
+            return (true, v);
+        }
+        // Remote unreachable during this probe — fall back to whatever we know.
+        (true, cached)
+    } else {
+        (false, cached)
+    }
+}
+
+/// Reject the call unless the effective uteke version meets `min`.
+///
+/// For **remote** servers with an unknown version (e.g. an older server
+/// that doesn't report version in `/health`) the call is allowed through —
+/// remote servers are user-managed, and the server's own response surfaces
+/// any real incompatibility (e.g. a 404/400 for a missing route).
 async fn require_uteke_version(
     state: &tauri::State<'_, Arc<Mutex<AppState>>>,
     min: &str,
 ) -> Result<(), CommandError> {
-    let current = state.lock().await.uteke_version.clone();
+    let (is_remote, current) = resolve_uteke_version(state).await;
     let ok = current
         .as_ref()
         .map(|c| crate::version_meets(c, min))
-        .unwrap_or(false);
+        // Remote + unknown version → don't block (user-managed server).
+        // Local + unknown version → block (we can't confirm capability).
+        .unwrap_or(is_remote);
     if ok {
         Ok(())
     } else {
+        let hint = if is_remote {
+            "upgrade the uteke-serve on the remote host"
+        } else {
+            "run 'uteke upgrade' or use the Update button in Documents"
+        };
         Err(CommandError::Uteke(format!(
-            "uteke {min} or newer is required for documents (current: {}). \
-             Run 'uteke upgrade' or use the Update button in Documents.",
+            "uteke {min} or newer is required for documents (current: {}). Please {hint}.",
             current.as_deref().unwrap_or("unknown")
         )))
     }
 }
 
-/// Report the installed uteke version and whether it supports Documents.
+/// Report the effective uteke version and whether it supports Documents.
+///
+/// Drives the Documents upgrade banner. For remote servers with an unknown
+/// version, `supported` is `true` so users are not nagged to upgrade a server
+/// they manage (and which may well be newer than the local CLI).
 #[tauri::command]
 pub async fn uteke_version_status(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<VersionStatus, CommandError> {
-    let current = state.lock().await.uteke_version.clone();
+    let (is_remote, current) = resolve_uteke_version(&state).await;
     let supported = current
         .as_ref()
         .map(|c| crate::version_meets(c, crate::MIN_UTEKE_FOR_DOCS))
-        .unwrap_or(false);
+        .unwrap_or(is_remote);
     Ok(VersionStatus {
         current,
         required: crate::MIN_UTEKE_FOR_DOCS.to_string(),
@@ -2733,6 +2783,21 @@ pub async fn uteke_version_status(
 pub async fn uteke_self_update(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<VersionStatus, CommandError> {
+    let is_remote = state.lock().await.uteke_remote;
+    if is_remote {
+        // Upgrading the local CLI won't affect a user-managed remote server.
+        // Just re-probe the server's version so the banner can refresh.
+        let (_, current) = resolve_uteke_version(&state).await;
+        let supported = current
+            .as_ref()
+            .map(|c| crate::version_meets(c, crate::MIN_UTEKE_FOR_DOCS))
+            .unwrap_or(true);
+        return Ok(VersionStatus {
+            current,
+            required: crate::MIN_UTEKE_FOR_DOCS.to_string(),
+            supported,
+        });
+    }
     let uteke = crate::find_uteke_cli().ok_or_else(|| {
         CommandError::Uteke("uteke CLI not found — install via the setup script".into())
     })?;

@@ -511,8 +511,15 @@ pub fn run() {
                                 s.uteke_client = Some(client);
                             }
 
+                            // Cache whether we're talking to a user-managed remote
+                            // server (vs. a locally spawned uteke-serve).
+                            s.uteke_remote = config::is_remote_url(&server_url);
+
                             // Cache the installed uteke version for feature
                             // gating (e.g. Documents requires >= 0.7.1).
+                            // For remote servers the authoritative version is
+                            // probed live from /health in the gating commands;
+                            // the local CLI version is only a fallback there.
                             s.uteke_version = detect_uteke_version();
                         }
                         Err(e) => {
