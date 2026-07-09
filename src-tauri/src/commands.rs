@@ -2783,6 +2783,9 @@ pub async fn doc_list(
     if !client.is_available().await {
         return Err(CommandError::Uteke("uteke-serve not reachable".into()));
     }
+    // uteke-serve defaults /doc/list limit to 5 (shared with memory pagination).
+    // The document tree needs the full set client-side, so default high here.
+    let limit = Some(limit.unwrap_or(1000));
     let docs = client
         .doc_list(limit, roots_only, parent.as_deref())
         .await
