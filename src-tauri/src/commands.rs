@@ -565,7 +565,8 @@ pub async fn get_room_document(
 }
 
 /// Build a human-readable markdown document from the JSON returned by
-/// `/room/document`. Defensive: tolerates variant field names
+/// `/room/summary-document` (with legacy `/room/document` fallback). Defensive:
+/// tolerates variant field names
 /// (`heading`/`title`/`label`, `items`/`memories`/`entries`).
 fn format_room_document(doc: &serde_json::Value) -> String {
     let title = doc
