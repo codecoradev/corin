@@ -1,3 +1,23 @@
+## [0.3.2] — 2026-07-20
+
+Patch release: Windows Documents-tab fix, uteke 0.8.x compatibility, and a full dependency sweep (including vite 6→8).
+
+### Fixed
+- **Windows: Documents tab always showed "uteke CLI not found"** — the version gate probed `uteke --version` via the CLI, and binary discovery (`find_in_path` / `find_uteke_cli`) did not handle the `.exe` extension or `PATHEXT`, so the gate read "unknown" and blocked Documents even with `uteke.exe` correctly installed. The gate is now **HTTP-first**: it reads the connected server's `GET /health` `version` field (works on every platform, no CLI lookup needed for uteke ≥ 0.7.2). The CLI fallback path is also fixed — `find_in_path` / `find_uteke_cli` / `find_uteke_serve` now try every `PATHEXT` extension on Windows, with cross-platform unit tests for the resolution logic (#171, #180).
+- **Uteke 0.8.x room-document compat** — `room_document()` now prefers `POST /room/summary-document` (canonical since uteke #735) and falls back to the legacy `POST /room/document` on HTTP 404, so CorIn works against both the released uteke 0.8.0 and newer (#178).
+
+### Changed
+- **Version gate is now HTTP-first** — `resolve_uteke_version` reads the connected uteke-serve's self-reported version via `/health` for local servers too (previously remote-only), aligning the gate with CorIn's HTTP-only architecture. The cached `uteke --version` CLI output remains as a fallback for servers older than 0.7.2 (#180).
+
+### Dependencies
+- **vite 6.4.3 → 8.1.5** and **@sveltejs/vite-plugin-svelte 5.1.1 → 7.2.0** — coupled major bump (the plugin peers vite ^8); vite 8 now builds with rolldown, and the production build is faster (#179).
+- **tokio** 1.52.3 → 1.53.0 (#175)
+- **serde** 1.0.228 → 1.0.229 (#176), **thiserror** 2.0.18 → 2.0.19 (#174), **toml** 1.1.2 → 1.1.3 (#173), **tauri-plugin-dialog** 2.7.1 → 2.7.2 (#177)
+- **@codemirror/language** 6.12.3 → 6.12.4 (#169), **dompurify** 3.4.11 → 3.4.12 (#167), **marked** 18.0.5 → 18.0.6 (#166)
+- **actions/setup-node** 6 → 7 (#172)
+
+---
+
 ## [0.3.1] — 2026-07-09
 
 Stable patch release. Promotes v0.3.1-beta.1 (identical contents) to a full release.

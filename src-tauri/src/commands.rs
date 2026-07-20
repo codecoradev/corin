@@ -565,7 +565,8 @@ pub async fn get_room_document(
 }
 
 /// Build a human-readable markdown document from the JSON returned by
-/// `/room/document`. Defensive: tolerates variant field names
+/// `/room/summary-document` (with legacy `/room/document` fallback). Defensive:
+/// tolerates variant field names
 /// (`heading`/`title`/`label`, `items`/`memories`/`entries`).
 fn format_room_document(doc: &serde_json::Value) -> String {
     let title = doc
@@ -2693,10 +2694,16 @@ pub struct VersionStatus {
 
 /// Resolve the effective uteke version for gating.
 ///
-/// - **Remote server**: probe the server's self-reported version via
-///   `/health` (authoritative for a user-managed server). The local CLI
-///   version is irrelevant — it may be older or newer than the server.
-/// - **Local server**: use the cached `uteke --version` output.
+/// Both local and remote servers are probed via the running server's
+/// `/health` `version` field first (authoritative — the server being gated
+/// is the one actually serving the routes). The local `uteke --version` CLI
+/// output is only a fallback for servers older than the `/health` version
+/// field (uteke < 0.7.2, #636) or when the server is unreachable.
+///
+/// This HTTP-first resolution also fixes #171 on Windows: the CLI binary
+/// lookup (`find_uteke_cli`) historically missed `uteke.exe`/`PATHEXT`, so
+/// the Documents version gate read "unknown" even though the connected
+/// local server reported its version over HTTP just fine.
 async fn resolve_uteke_version(
     state: &tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> (bool, Option<String>) {
@@ -2718,6 +2725,18 @@ async fn resolve_uteke_version(
         // Remote unreachable during this probe — fall back to whatever we know.
         (true, cached)
     } else {
+        // Local server: prefer the version the running server reports via
+        // /health (authoritative, and works even when the CLI binary can't
+        // be located — e.g. Windows where `find_uteke_cli` historically
+        // missed `.exe`/PATHEXT, see #171). Fall back to the cached CLI
+        // probe (`uteke --version` at startup) only for servers older than
+        // the /health `version` field (uteke < 0.7.2, #636).
+        if let Some(client) = client
+            && client.is_available().await
+            && let Some(v) = client.server_version().await
+        {
+            return (false, Some(v));
+        }
         (false, cached)
     }
 }

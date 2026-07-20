@@ -7,6 +7,12 @@
 //! Corin is a pure HTTP client to uteke-serve — no native uteke-core
 //! dependency. All operations (memory CRUD, graph, rooms) go through
 //! the HTTP API.
+//!
+//! Compatibility: verified against uteke 0.7.x and 0.8.x (develop). The
+//! `/recall` (plain, no `search_type`) and `/search` endpoints return the
+//! stable `[{memory, score}]` shape across these versions, so no API-version
+//! prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document` prefers the
+//! new `/room/summary-document` route (#735) with a legacy fallback.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -709,16 +715,51 @@ impl UtekeClient {
     }
 
     /// Room document — structured document from room memories.
+    ///
+    /// Prefers `POST /room/summary-document` (the canonical name since uteke
+    /// #735 — the old `/room/document` route was renamed to avoid colliding
+    /// with the existing `GET /room/summary`). On HTTP 404 (older servers
+    /// that predate #735, e.g. the released `v0.8.0` tag), falls back to the
+    /// legacy `POST /room/document`, which newer servers still accept but
+    /// log a deprecation warning for. Both routes return the same payload.
     pub async fn room_document(&self, room_id: &str) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({
             "room_id": room_id,
         });
 
+        // Canonical route (uteke >= #735, post-v0.8.0-tag develop).
+        let resp = self
+            .authed(
+                self.client
+                    .post(format!("{}/room/summary-document", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resp.status().is_success() {
+            return resp.json().await.map_err(|e| e.to_string());
+        }
+
+        // Anything other than 404 is a real failure — surface it with context.
+        if resp.status() != reqwest::StatusCode::NOT_FOUND {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "/room/summary-document: server returned {status}: {text}"
+            ));
+        }
+
+        // Legacy fallback: POST /room/document (canonical on v0.8.0, deprecated
+        // alias on newer servers). `.json()` borrows `body`, so it's reusable.
         self.authed(self.client.post(format!("{}/room/document", self.base_url)))
             .json(&body)
             .send()
             .await
             .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| format!("/room/document: {e}"))?
             .json()
             .await
             .map_err(|e| e.to_string())
