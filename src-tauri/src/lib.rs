@@ -180,16 +180,21 @@ pub(crate) fn ensure_uteke_server() -> String {
 }
 
 /// Find uteke-serve binary in PATH or ~/.local/bin.
+///
+/// Windows-aware: tries `uteke-serve.exe` (and other `PATHEXT` exts) in
+/// both PATH and `~/.local/bin`. Fixes #171.
 fn find_uteke_serve() -> Option<std::path::PathBuf> {
     // Try PATH first.
     if let Some(p) = find_in_path("uteke-serve") {
         return Some(p);
     }
-    // Try ~/.local/bin/uteke-serve (install script default).
+    // Try ~/.local/bin/uteke-serve[-.exe] (install script default).
     if let Some(home) = dirs::home_dir() {
-        let candidate = home.join(".local/bin/uteke-serve");
-        if candidate.is_file() {
-            return Some(candidate);
+        for n in candidate_filenames("uteke-serve") {
+            let candidate = home.join(".local/bin").join(n);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
     }
     None
@@ -201,14 +206,20 @@ fn find_uteke_serve() -> Option<std::path::PathBuf> {
 pub(crate) const MIN_UTEKE_FOR_DOCS: &str = "0.7.1";
 
 /// Find the `uteke` CLI binary in PATH or ~/.local/bin.
+///
+/// On Windows the binary is `uteke.exe` (not `uteke`), so both the PATH
+/// scan and the `~/.local/bin` fallback try every `PATHEXT` extension —
+/// see [`candidate_filenames`]. Fixes #171.
 pub(crate) fn find_uteke_cli() -> Option<std::path::PathBuf> {
     if let Some(p) = find_in_path("uteke") {
         return Some(p);
     }
     if let Some(home) = dirs::home_dir() {
-        let candidate = home.join(".local/bin/uteke");
-        if candidate.is_file() {
-            return Some(candidate);
+        for n in candidate_filenames("uteke") {
+            let candidate = home.join(".local/bin").join(n);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
     }
     None
@@ -342,16 +353,68 @@ fn parse_host_port(url: &str) -> Option<(String, u16)> {
     Some((host.to_string(), port))
 }
 
+/// Expand a bare executable `name` against a `PATHEXT`-style list.
+///
+/// `pathext` is a `;`-separated list of extensions, each including the
+/// leading dot (e.g. `".EXE;.COM;.BAT;.CMD"` — the shape of Windows'
+/// `PATHEXT` env var). Returns `name` with each extension appended.
+/// Empty entries are skipped.
+///
+/// Pure and platform-independent so the Windows path-resolution logic can
+/// be unit-tested on any OS. Fixes #171.
+#[cfg(any(windows, test))]
+fn expand_with_pathext(name: &str, pathext: &str) -> Vec<String> {
+    pathext
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(|ext| format!("{name}{ext}"))
+        .collect()
+}
+
+/// Filenames to probe when resolving `name` on the current platform.
+///
+/// - **Windows**: the bare `name` is never the on-disk binary — Windows
+///   executables carry an extension (`.exe`, `.cmd`, …). The shell searches
+///   `PATHEXT` to pick one; we mirror that, falling back to a sensible
+///   default (`.EXE;.COM;.BAT;.CMD;.VBS;.JS;.WS;.MSC`) when `PATHEXT` is
+///   unset. If `PATHEXT` is explicitly empty, the Windows default list is
+///   still used (a bare name is never executable on Windows).
+/// - **Unix**: executables have no extension, so only `name` itself is tried.
+fn candidate_filenames(name: &str) -> Vec<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        let default = ".EXE;.COM;.BAT;.CMD;.VBS;.JS;.WS;.MSC";
+        let pathext = std::env::var("PATHEXT")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| default.to_string());
+        expand_with_pathext(name, &pathext)
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        vec![std::path::PathBuf::from(name)]
+    }
+}
+
 /// Find an executable in PATH.
+///
+/// On Windows, also probes every `PATHEXT` extension (e.g. `name.exe`) per
+/// PATH entry — see [`candidate_filenames`]. Fixes #171.
 fn find_in_path(name: &str) -> Option<std::path::PathBuf> {
+    let names = candidate_filenames(name);
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths).find_map(|dir| {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                Some(candidate)
-            } else {
-                None
-            }
+            names.iter().find_map(|n| {
+                let candidate = dir.join(n);
+                if candidate.is_file() {
+                    Some(candidate)
+                } else {
+                    None
+                }
+            })
         })
     })
 }
@@ -632,5 +695,35 @@ mod tests {
         // (Pre-release suffixes like "0.7.0-rc" parse to 0.7.0 and are accepted —
         // acceptable, since uteke ships clean semver tags in practice.)
         assert!(!version_meets("unknown", "0.7.0"));
+    }
+
+    // ── Windows PATHEXT resolution (#171) ───────────────────────────────
+    //
+    // `expand_with_pathext` is pure, so these guard the Windows binary-
+    // discovery logic on every OS — even though CI currently runs only on
+    // Linux.
+
+    #[test]
+    fn pathext_expands_each_extension() {
+        let out = expand_with_pathext("uteke", ".EXE;.COM;.BAT;.CMD");
+        assert_eq!(
+            out,
+            vec!["uteke.EXE", "uteke.COM", "uteke.BAT", "uteke.CMD"]
+        );
+    }
+
+    #[test]
+    fn pathext_skips_empty_entries() {
+        // Windows PATHEXT can carry stray/double semicolons.
+        let out = expand_with_pathext("uteke-serve", ".EXE;;.BAT;");
+        assert_eq!(out, vec!["uteke-serve.EXE", "uteke-serve.BAT"]);
+    }
+
+    #[test]
+    fn pathext_preserves_case_as_given() {
+        // We append PATHEXT entries verbatim. Windows is case-insensitive at
+        // the FS layer, so `.EXE` and `.exe` both match `uteke.exe` on disk.
+        let out = expand_with_pathext("uteke", ".exe");
+        assert_eq!(out, vec!["uteke.exe"]);
     }
 }
