@@ -138,9 +138,8 @@ jobs:
           name: updater-${{ matrix.settings.updater_key }}
           if-no-files-found: warn
           path: |
-            src-tauri/target*/release/bundle/macos/*.app.tar.gz
-            src-tauri/target*/release/bundle/macos/*.app.tar.gz.sig
-            src-tauri/target*/release/bundle/nsis/*-setup.exe.sig
+            src-tauri/target/**/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/**/bundle/nsis/*-setup.exe.sig
 
   # ── Assemble + upload the auto-update manifest ──
   publish-updater-json:
