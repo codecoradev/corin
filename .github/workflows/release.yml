@@ -136,7 +136,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-${{ matrix.settings.updater_key }}
-          if-no-files-found: warning
+          if-no-files-found: warn
           path: |
             src-tauri/target*/release/bundle/macos/*.app.tar.gz
             src-tauri/target*/release/bundle/macos/*.app.tar.gz.sig
