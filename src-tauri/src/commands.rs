@@ -187,6 +187,37 @@ pub async fn recall(
         .collect())
 }
 
+/// Unified semantic search across memories AND documents (uteke ≥ 0.9.0).
+///
+/// `search_type`: `"all"` | `"memory"` | `"document"` (default `"all"`).
+/// Returns [`crate::uteke_client::UnifiedSearchResult`] items tagged with
+/// `result_type` so the UI can render memory vs document hits differently.
+/// Requires uteke ≥ 0.9.0 (the `search_type`-triggered unified path).
+#[tauri::command]
+pub async fn recall_unified(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    query: String,
+    search_type: Option<String>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::uteke_client::UnifiedSearchResult>, CommandError> {
+    let limit = limit.unwrap_or(20);
+    let stype = search_type.as_deref().unwrap_or("all");
+    // The unified search_type path landed in uteke 0.9.0.
+    require_uteke_version(&state, "0.9.0").await?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .recall_unified(&query, stype, namespace.as_deref(), limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
 #[tauri::command]
 pub async fn search(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
