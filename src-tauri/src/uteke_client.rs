@@ -8,11 +8,12 @@
 //! dependency. All operations (memory CRUD, graph, rooms) go through
 //! the HTTP API.
 //!
-//! Compatibility: verified against uteke 0.7.x and 0.8.x (develop). The
-//! `/recall` (plain, no `search_type`) and `/search` endpoints return the
-//! stable `[{memory, score}]` shape across these versions, so no API-version
-//! prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document` prefers the
-//! new `/room/summary-document` route (#735) with a legacy fallback.
+//! Compatibility: verified against uteke 0.7.x–0.9.x (released + develop).
+//! The `/recall` (plain, no `search_type`) and `/search` endpoints return
+//! the stable `[{memory, score}]` shape across these versions, so no
+//! API-version prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document`
+//! prefers the canonical `/room/summary-document` route (#735, released in
+//! uteke 0.9.0) with a legacy `/room/document` fallback for 0.8.0.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
