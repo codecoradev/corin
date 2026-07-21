@@ -2,16 +2,18 @@
   import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import { createPager } from '../stores/pagination.svelte';
   import { invalidateAll } from '../stores/cache.svelte';
-  import type { MemoryEntry } from '../ts/types';
+  import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
 
   interface Props {
     namespace: string | null;
     onmemoryclick: (id: string) => void;
     onnewmemory: () => void;
+    /** Open a document by slug (from unified-search document hits). */
+    ondocumentclick: (slug: string) => void;
   }
 
-  let { namespace, onmemoryclick, onnewmemory }: Props = $props();
+  let { namespace, onmemoryclick, onnewmemory, ondocumentclick }: Props = $props();
 
   // Multi-namespace filter. `null` = all (show every namespace),
   // `[]` = none, array = explicit. Takes precedence over the single
@@ -22,6 +24,11 @@
   let searchResults = $state<(MemoryEntry & { score?: number })[] | null>(null);
   let searchQuery = $state('');
   let searching = $state(false);
+
+  // Search scope: 'memories' (memory-only recall) or 'all' (memories +
+  // documents via uteke 0.9.0 unified recall — recallUnified).
+  let searchMode = $state<'memories' | 'all'>('memories');
+  let unifiedResults = $state<UnifiedSearchResult[] | null>(null);
 
   // Resolved single-namespace scope for search: the one picked namespace
   // when exactly one is selected, else fall back to the prop. Computed via
@@ -55,11 +62,28 @@
   async function runSearch() {
     if (!searchQuery.trim()) {
       searchResults = null;
+      unifiedResults = null;
       return;
     }
     searching = true;
     try {
       await checkReady();
+      // Unified search across memories + documents (uteke 0.9.0+).
+      if (searchMode === 'all') {
+        try {
+          unifiedResults = await utekeServer.recallUnified(searchQuery, {
+            searchType: 'all',
+            namespace: searchNs ?? undefined,
+            limit: 20,
+          });
+        } catch {
+          // uteke < 0.9.0 (gated in the backend) or server error.
+          unifiedResults = [];
+        }
+        searchResults = null;
+        return;
+      }
+      unifiedResults = null;
       // /recall is cross-namespace (uteke #448 fixed) — ONE call, no fan-out.
       // Scope to the single selected namespace when exactly one is picked;
       // search across all when multiple/all are selected.
@@ -123,6 +147,7 @@
     namespace;
     selectedNamespaces;
     searchResults = null;
+    unifiedResults = null;
     searchQuery = '';
     loadList();
   });
@@ -149,16 +174,99 @@
           onclick={() => {
             searchQuery = '';
             searchResults = null;
+            unifiedResults = null;
           }}>✕</button
         >
       {/if}
+    </div>
+    <div class="search-mode" role="group" aria-label="Search scope">
+      <button
+        class="mode-btn"
+        class:active={searchMode === 'memories'}
+        onclick={() => {
+          if (searchMode === 'memories') return;
+          searchMode = 'memories';
+          searchResults = null;
+          unifiedResults = null;
+          if (searchQuery.trim()) runSearch();
+        }}>Memories</button
+      >
+      <button
+        class="mode-btn"
+        class:active={searchMode === 'all'}
+        title="Search memories + documents (uteke 0.9.0+)"
+        onclick={() => {
+          if (searchMode === 'all') return;
+          searchMode = 'all';
+          searchResults = null;
+          unifiedResults = null;
+          if (searchQuery.trim()) runSearch();
+        }}>All</button
+      >
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
 
   <div class="scroll-area">
-    {#if isLoading && list.length === 0}
+    {#if unifiedResults}
+      <div class="search-info">
+        Unified search — top {unifiedResults.length} (memories + documents)
+      </div>
+      {#if unifiedResults.length === 0}
+        <div class="empty-state">
+          <p>No matches in memories or documents.</p>
+        </div>
+      {:else}
+        <div class="list">
+          {#each unifiedResults as r (r.memory_id ?? r.doc_slug ?? r.content)}
+            {#if r.result_type === 'document'}
+              <div
+                class="memory-card doc-card"
+                role="button"
+                tabindex="0"
+                onclick={() => r.doc_slug && ondocumentclick(r.doc_slug)}
+                onkeydown={(e) => e.key === 'Enter' && r.doc_slug && ondocumentclick(r.doc_slug)}
+              >
+                <div class="card-content">
+                  <span class="type-badge doc">📄 Doc</span>
+                  <strong>{r.doc_title ?? r.doc_slug}</strong>
+                  {#if r.chunk_heading}
+                    <span class="chunk-heading"> — {r.chunk_heading.replace(/^#+\s*/, '')}</span>
+                  {/if}
+                </div>
+                {#if r.chunk_snippet}
+                  <div class="doc-snippet">{r.chunk_snippet.slice(0, 200)}</div>
+                {/if}
+                <div class="semantic-score">{(r.score * 100).toFixed(0)}% match</div>
+              </div>
+            {:else}
+              <div
+                class="memory-card"
+                role="button"
+                tabindex="0"
+                onclick={() => r.memory_id && onmemoryclick(r.memory_id)}
+                onkeydown={(e) => e.key === 'Enter' && r.memory_id && onmemoryclick(r.memory_id)}
+              >
+                <div class="card-content">
+                  <span class="type-badge mem">💾 Memory</span>
+                  {r.content.slice(0, 200)}
+                </div>
+                <div class="semantic-score">{(r.score * 100).toFixed(0)}% match</div>
+                <div class="card-meta">
+                  <div class="tags">
+                    {#each r.tags.slice(0, 5) as tag}<span class="tag">{tag}</span>{/each}
+                  </div>
+                  <div class="meta-right">
+                    {#if r.namespace}<span class="namespace">{r.namespace}</span>{/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+    {:else if isLoading && list.length === 0}
     <div class="loading">Loading...</div>
   {:else if list.length === 0}
     <div class="empty-state">
@@ -402,5 +510,53 @@
 
   .empty-state button {
     margin-top: 12px;
+  }
+  .search-mode {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .mode-btn {
+    padding: 6px 10px;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    border: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: #1e1e2e;
+    font-weight: 600;
+  }
+  .type-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .type-badge.doc {
+    background: rgba(137, 180, 250, 0.15);
+    color: #89b4fa;
+  }
+  .type-badge.mem {
+    background: rgba(166, 227, 161, 0.15);
+    color: #a6e3a1;
+  }
+  .doc-card .doc-snippet {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chunk-heading {
+    color: var(--text-muted);
+    font-weight: 400;
   }
 </style>

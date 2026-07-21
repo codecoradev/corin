@@ -227,9 +227,13 @@ pub(crate) fn find_uteke_cli() -> Option<std::path::PathBuf> {
 
 /// Detect the installed uteke CLI version by shelling `uteke --version`.
 ///
-/// Returns the parsed `X.Y.Z` string (e.g. `"0.7.0"`), or `None` if the
-/// binary is missing or the output can't be parsed. The HTTP server exposes
-/// no version endpoint, so the CLI is the only source of truth.
+/// Returns the parsed `X.Y.Z` string (e.g. `"0.9.0"`), or `None` if the
+/// binary is missing or the output can't be parsed.
+///
+/// Used ONLY by `uteke_self_update` to read the freshly-upgraded CLI
+/// version. The version GATE does not use this — it reads the server's
+/// `/health` `version` field (HTTP-only, since uteke 0.7.2 #636) in
+/// `resolve_uteke_version`.
 pub(crate) fn detect_uteke_version() -> Option<String> {
     let uteke = find_uteke_cli()?;
     let out = std::process::Command::new(uteke)
@@ -431,6 +435,7 @@ pub fn run() {
             // Memory
             commands::remember,
             commands::recall,
+            commands::recall_unified,
             commands::search,
             commands::list,
             commands::forget,
@@ -578,12 +583,10 @@ pub fn run() {
                             // server (vs. a locally spawned uteke-serve).
                             s.uteke_remote = config::is_remote_url(&server_url);
 
-                            // Cache the installed uteke version for feature
-                            // gating (e.g. Documents requires >= 0.7.1).
-                            // For remote servers the authoritative version is
-                            // probed live from /health in the gating commands;
-                            // the local CLI version is only a fallback there.
-                            s.uteke_version = detect_uteke_version();
+                            // Version gating is HTTP-only: the effective
+                            // uteke version is resolved live from the server's
+                            // /health `version` field in `resolve_uteke_version`
+                            // (no `uteke` CLI probe at startup). See #180.
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");
@@ -725,5 +728,26 @@ mod tests {
         // the FS layer, so `.EXE` and `.exe` both match `uteke.exe` on disk.
         let out = expand_with_pathext("uteke", ".exe");
         assert_eq!(out, vec!["uteke.exe"]);
+    }
+
+    // ── Unified search (uteke 0.9.0) ────────────────────────────────────
+
+    #[test]
+    fn unified_search_result_deserializes_memory_and_doc() {
+        use crate::uteke_client::UnifiedSearchResult;
+        // Mirrors the shape uteke-serve returns for POST /recall with
+        // search_type=all: a memory hit and a document chunk hit.
+        let json = r##"[
+            {"result_type":"memory","score":0.91,"content":"a fact","memory_id":"m1","tags":["x"],"namespace":"default","memory_type":"fact","importance":0.8},
+            {"result_type":"document","score":0.66,"content":"doc excerpt","doc_slug":"benchmarks","doc_title":"Benchmarks","chunk_heading":"# Benchmarks"}
+        ]"##;
+        let v: Vec<UnifiedSearchResult> = serde_json::from_str(json).unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].result_type, "memory");
+        assert_eq!(v[0].memory_id.as_deref(), Some("m1"));
+        assert!((v[0].importance.unwrap() - 0.8).abs() < 1e-9);
+        assert_eq!(v[1].result_type, "document");
+        assert_eq!(v[1].doc_slug.as_deref(), Some("benchmarks"));
+        assert_eq!(v[1].doc_title.as_deref(), Some("Benchmarks"));
     }
 }

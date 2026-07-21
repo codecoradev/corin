@@ -114,12 +114,10 @@ pub struct AppState {
     /// HTTP client for uteke-serve (all memory CRUD + graph operations).
     /// None if server is not running.
     pub uteke_client: Option<crate::uteke_client::UtekeClient>,
-    /// Cached installed uteke version ("X.Y.Z"), probed once at startup.
-    /// For local servers this is the `uteke --version` CLI output; for remote
-    /// servers it is the version reported by the server's `/health` (if any).
-    /// `None` if unknown. Used to gate features that require a minimum server
-    /// version (e.g. Documents → 0.7.1).
-    pub uteke_version: Option<String>,
+    // (No cached `uteke_version` field — the effective version is resolved
+    // HTTP-only from the server's `/health` `version` field in
+    // `resolve_uteke_version`. The `uteke` CLI is touched only by the
+    // explicit self-update action, not on the data/version path.)
     /// `true` when Corin talks to a remote uteke-serve (https/host URL).
     /// Remote servers are user-managed, so an unknown version is treated
     /// leniently (no upgrade banner, no hard gate) — the server's own
@@ -187,6 +185,37 @@ pub async fn recall(
             tags: r.memory.tags,
         })
         .collect())
+}
+
+/// Unified semantic search across memories AND documents (uteke ≥ 0.9.0).
+///
+/// `search_type`: `"all"` | `"memory"` | `"document"` (default `"all"`).
+/// Returns [`crate::uteke_client::UnifiedSearchResult`] items tagged with
+/// `result_type` so the UI can render memory vs document hits differently.
+/// Requires uteke ≥ 0.9.0 (the `search_type`-triggered unified path).
+#[tauri::command]
+pub async fn recall_unified(
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
+    query: String,
+    search_type: Option<String>,
+    namespace: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::uteke_client::UnifiedSearchResult>, CommandError> {
+    let limit = limit.unwrap_or(20);
+    let stype = search_type.as_deref().unwrap_or("all");
+    // The unified search_type path landed in uteke 0.9.0.
+    require_uteke_version(&state, "0.9.0").await?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .recall_unified(&query, stype, namespace.as_deref(), limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
 #[tauri::command]
@@ -2692,53 +2721,30 @@ pub struct VersionStatus {
     pub supported: bool,
 }
 
-/// Resolve the effective uteke version for gating.
+/// Resolve the effective uteke version for gating — **HTTP-only**.
 ///
-/// Both local and remote servers are probed via the running server's
-/// `/health` `version` field first (authoritative — the server being gated
-/// is the one actually serving the routes). The local `uteke --version` CLI
-/// output is only a fallback for servers older than the `/health` version
-/// field (uteke < 0.7.2, #636) or when the server is unreachable.
+/// Probes the connected server's `/health` `version` field (authoritative,
+/// same path for local and remote servers). No `uteke` CLI lookup happens
+/// here — that was the source of #171 on Windows, where binary discovery
+/// missed `uteke.exe`/`PATHEXT`. Returns `None` when the server is
+/// unreachable or older than the `/health` version field (uteke < 0.7.2).
 ///
-/// This HTTP-first resolution also fixes #171 on Windows: the CLI binary
-/// lookup (`find_uteke_cli`) historically missed `uteke.exe`/`PATHEXT`, so
-/// the Documents version gate read "unknown" even though the connected
-/// local server reported its version over HTTP just fine.
+/// The CLI is still touched by the explicit "Update uteke" action
+/// (`uteke_self_update` → `uteke upgrade`) — that's binary maintenance, not
+/// data/version exchange.
 async fn resolve_uteke_version(
     state: &tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> (bool, Option<String>) {
-    let (is_remote, client, cached) = {
+    let (is_remote, client) = {
         let s = state.lock().await;
-        (
-            s.uteke_remote,
-            s.uteke_client.clone(),
-            s.uteke_version.clone(),
-        )
+        (s.uteke_remote, s.uteke_client.clone())
     };
-    if is_remote {
-        if let Some(client) = client
-            && client.is_available().await
-        {
-            let v = client.server_version().await;
-            return (true, v);
-        }
-        // Remote unreachable during this probe — fall back to whatever we know.
-        (true, cached)
-    } else {
-        // Local server: prefer the version the running server reports via
-        // /health (authoritative, and works even when the CLI binary can't
-        // be located — e.g. Windows where `find_uteke_cli` historically
-        // missed `.exe`/PATHEXT, see #171). Fall back to the cached CLI
-        // probe (`uteke --version` at startup) only for servers older than
-        // the /health `version` field (uteke < 0.7.2, #636).
-        if let Some(client) = client
-            && client.is_available().await
-            && let Some(v) = client.server_version().await
-        {
-            return (false, Some(v));
-        }
-        (false, cached)
+    if let Some(client) = client
+        && client.is_available().await
+    {
+        return (is_remote, client.server_version().await);
     }
+    (is_remote, None)
 }
 
 /// Reject the call unless the effective uteke version meets `min`.
@@ -2832,11 +2838,10 @@ pub async fn uteke_self_update(
             "'uteke upgrade' failed: {stderr}"
         )));
     }
+    // The CLI binary was just upgraded — read its new version directly.
+    // (Not re-probed via /health because the running uteke-serve is still
+    // the pre-upgrade process until restarted.)
     let new_version = crate::detect_uteke_version();
-    {
-        let mut s = state.lock().await;
-        s.uteke_version = new_version.clone();
-    }
     let supported = new_version
         .as_ref()
         .map(|c| crate::version_meets(c, crate::MIN_UTEKE_FOR_DOCS))

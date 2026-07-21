@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { system } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
+  import { pendingDocSlug } from './lib/stores/nav';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
   import MemoryList from './lib/components/MemoryList.svelte';
@@ -60,6 +61,13 @@
   // The underlying view stays mounted — no re-render when returning.
   function openDetail(id: string) {
     detailId = id;
+  }
+
+  // Open a document by slug from elsewhere (e.g. a unified-search doc hit) —
+  // stash the slug for DocumentsView to consume on mount, then switch view.
+  function openDocument(slug: string) {
+    pendingDocSlug.set(slug);
+    navigate('documents');
   }
 
   function closeDetail() {
@@ -155,7 +163,7 @@
             {/key}
           {:else if activeView === 'memories'}
             {#key refreshKey}
-              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} />
+              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} />
             {/key}
           {:else if activeView === 'namespaces'}
             <NamespacesView onmemoryclick={openDetail} />

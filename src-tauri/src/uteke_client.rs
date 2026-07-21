@@ -8,11 +8,12 @@
 //! dependency. All operations (memory CRUD, graph, rooms) go through
 //! the HTTP API.
 //!
-//! Compatibility: verified against uteke 0.7.x and 0.8.x (develop). The
-//! `/recall` (plain, no `search_type`) and `/search` endpoints return the
-//! stable `[{memory, score}]` shape across these versions, so no API-version
-//! prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document` prefers the
-//! new `/room/summary-document` route (#735) with a legacy fallback.
+//! Compatibility: verified against uteke 0.7.x–0.9.x (released + develop).
+//! The `/recall` (plain, no `search_type`) and `/search` endpoints return
+//! the stable `[{memory, score}]` shape across these versions, so no
+//! API-version prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document`
+//! prefers the canonical `/room/summary-document` route (#735, released in
+//! uteke 0.9.0) with a legacy `/room/document` fallback for 0.8.0.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -38,6 +39,46 @@ pub struct UtekeMemory {
 pub struct RecallResult {
     pub memory: UtekeMemory,
     pub score: f32,
+}
+
+/// A unified search hit from `/recall` with `search_type` set (uteke ≥ 0.9.0).
+///
+/// Can be a memory or a document chunk — discriminate via `result_type`
+/// (`"memory"` or "document"`). Document-specific fields (`doc_slug`,
+/// `doc_title`, `chunk_*`) are populated only for document hits; memory
+/// metadata (`memory_id`, `memory_type`, `importance`, …) only for memories.
+/// Optional fields use `#[serde(default)]` so partial/varied payloads still
+/// deserialize.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnifiedSearchResult {
+    #[serde(default)]
+    pub result_type: String,
+    pub score: f32,
+    pub content: String,
+    #[serde(default)]
+    pub memory_id: Option<String>,
+    #[serde(default)]
+    pub doc_slug: Option<String>,
+    #[serde(default)]
+    pub doc_title: Option<String>,
+    #[serde(default)]
+    pub chunk_heading: Option<String>,
+    #[serde(default)]
+    pub chunk_snippet: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub memory_type: Option<String>,
+    #[serde(default)]
+    pub importance: Option<f64>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,6 +369,40 @@ impl UtekeClient {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
 
+        let resp = self
+            .authed(self.client.post(format!("{}/recall", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/recall").await
+    }
+
+    /// Unified semantic recall across memories AND documents (uteke ≥ 0.9.0).
+    ///
+    /// Sends `search_type` on `POST /recall`, routing through the server's
+    /// `recall_unified` path and returning [`UnifiedSearchResult`] items
+    /// tagged with `result_type` (`"memory"` / `"document"`). `search_type`
+    /// is `"all"` | `"memory"` | `"document"`.
+    ///
+    /// Requires uteke ≥ 0.9.0. On older servers `search_type` is ignored and
+    /// the memory-only `[{memory, score}]` shape is returned, so callers that
+    /// only want memories should prefer [`recall`](Self::recall).
+    pub async fn recall_unified(
+        &self,
+        query: &str,
+        search_type: &str,
+        namespace: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<UnifiedSearchResult>, String> {
+        let mut body = serde_json::json!({
+            "query": query,
+            "limit": limit,
+            "search_type": search_type,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
         let resp = self
             .authed(self.client.post(format!("{}/recall", self.base_url)))
             .json(&body)

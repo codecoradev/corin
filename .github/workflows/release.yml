@@ -5,6 +5,12 @@ name: Release
 # PREREQUISITE: Before tagging, merge develop → main via PR.
 # The tag must point to a commit on main, NOT develop.
 # GitFlow: develop (default) → PR → main → tag → release.
+#
+# Auto-update manifest: tauri-action@v1 has a regression where it fails to
+# collect the `.sig` artifacts ("Signature not found for the updater JSON"),
+# so `latest.json` never gets uploaded. We work around this by uploading each
+# platform's `.sig` as a workflow artifact and assembling `latest.json`
+# ourselves in a final job (scripts/build-updater-manifest.ts).
 
 on:
   push:
@@ -44,7 +50,7 @@ jobs:
             exit 1
           fi
 
-  # ── Publish tauri-action ──
+  # ── Build + publish per platform ──
   publish-tauri:
     name: Build ${{ matrix.settings.platform }}
     needs: [verify-main]
@@ -54,31 +60,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # updater_key = the Tauri updater platform key (os-arch) this build
+          # provides an auto-update bundle for. Empty = no auto-update bundle
+          # (e.g. Linux deb/rpm, which aren't self-updatable).
           - settings:
               platform: macos-latest
               args: "--target aarch64-apple-darwin"
+              updater_key: "darwin-aarch64"
           - settings:
               platform: macos-latest
               args: "--target x86_64-apple-darwin"
+              updater_key: "darwin-x86_64"
           - settings:
               platform: ubuntu-24.04
               args: ""
+              updater_key: ""
           - settings:
               platform: windows-latest
               args: ""
+              updater_key: "windows-x86_64"
 
     runs-on: ${{ matrix.settings.platform }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
+      # bun is the project's JS toolchain (not npm/pnpm).
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -112,5 +123,50 @@ jobs:
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           updaterJsonPreferNsis: true
-          updaterKeepSingleGroup: true
+          # Invoke tauri via bun (project toolchain).
+          tauriScript: "bunx tauri"
           args: ${{ matrix.settings.args }}
+
+      # tauri-action@v1 fails to collect the .sig for the updater manifest
+      # (tauri-apps/tauri-action#1098), so latest.json is never uploaded.
+      # Upload the signed updater bundle + .sig as a workflow artifact for the
+      # manifest job to assemble latest.json from.
+      - name: Upload updater signature (for manifest)
+        if: matrix.settings.updater_key != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-${{ matrix.settings.updater_key }}
+          if-no-files-found: warning
+          path: |
+            src-tauri/target*/release/bundle/macos/*.app.tar.gz
+            src-tauri/target*/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target*/release/bundle/nsis/*-setup.exe.sig
+
+  # ── Assemble + upload the auto-update manifest ──
+  publish-updater-json:
+    name: Publish latest.json
+    needs: [publish-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Download signed artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*
+          path: artifacts
+
+      - name: Build latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun run scripts/build-updater-manifest.ts "${{ github.ref_name }}" artifacts
+
+      - name: Upload latest.json to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" latest.json --clobber

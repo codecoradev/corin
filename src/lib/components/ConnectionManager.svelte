@@ -270,7 +270,7 @@
             {@const h = healthResults[conn.id]}
             <div class="health-info" class:success={h.success} class:fail={!h.success}>
               {#if h.success}
-                <span>✓ Healthy — {h.latency_ms}ms</span>
+                <span>✓ Healthy{#if h.version} · uteke v{h.version}{/if} — {h.latency_ms}ms</span>
               {:else}
                 <span>✗ {h.error || 'Connection failed'}</span>
               {/if}
