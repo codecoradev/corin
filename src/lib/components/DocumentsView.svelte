@@ -26,6 +26,7 @@
   } from 'lucide-svelte';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { slide } from 'svelte/transition';
+  import { pendingDocSlug } from '../stores/nav';
   import { renderMarkdown as renderMd } from '../utils/markdown';
   import { formatDate, getWordCount, getReadingTime } from '../utils/format';
 
@@ -539,6 +540,16 @@
   // ─── Lifecycle ───────────────────────────────────────────────────
   $effect(() => {
     init();
+  });
+
+  // Open a document requested from elsewhere (e.g. a unified-search hit in
+  // MemoryList). `pendingDocSlug` is set before navigating here; consume it.
+  $effect(() => {
+    const slug = $pendingDocSlug;
+    if (slug) {
+      pendingDocSlug.set(null);
+      navigateToSlug(slug);
+    }
   });
 
   /** Probe the installed uteke version; load docs only if supported. */
