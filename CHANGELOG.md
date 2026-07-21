@@ -1,3 +1,20 @@
+## [0.3.3] — 2026-07-21
+
+Patch release: **auto-update now works**, unified search across memories + documents, and the version gate is fully HTTP-only.
+
+### Added
+- **Unified search across memories and documents** — a new "Memories | All" scope toggle in the Memories search bar. "All" runs unified recall (`search_type=all`, uteke 0.9.0+) and shows a mixed list of memory and document hits, each badged; document hits open in the Documents view (#184, #185).
+
+### Fixed
+- **Auto-update works again** — every release since v0.2.0 was missing the `latest.json` manifest (tauri-action#1098: "Signature not found for the updater JSON"), so the in-app updater errored with "Could not fetch a valid release JSON from the remote." The release pipeline now generates + uploads `latest.json` itself (each platform build exports its `.sig`; a final job assembles the Tauri v2 manifest) (#187).
+
+### Changed
+- **Version detection is fully HTTP-only** — the gate no longer probes the `uteke` CLI; it reads the connected server's `/health` `version` field for both local and remote servers. Completes the HTTP-first direction that fixed the Windows #171 bug in v0.3.2 (#183).
+- **uteke server version shown in Settings → Connections** — the health line now displays the server version from `/health`, e.g. `✓ Healthy · uteke v0.9.0 — 12ms` (#186).
+- **Tooling switched to bun** — `tauri.conf.json` build hooks and the release runner now use bun instead of npm (#186, #187).
+
+---
+
 ## [0.3.2] — 2026-07-20
 
 Patch release: Windows Documents-tab fix, uteke 0.8.x compatibility, and a full dependency sweep (including vite 6→8).
