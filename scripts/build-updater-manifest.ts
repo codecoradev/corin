@@ -17,6 +17,21 @@ import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+/** Recursively find the first `*.sig` file under `dir` (upload-artifact v4 may
+ * preserve directory structure, so the .sig may be nested). */
+function findSig(dir: string): string | null {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findSig(p);
+      if (found) return found;
+    } else if (entry.name.endsWith('.sig')) {
+      return p;
+    }
+  }
+  return null;
+}
+
 const tag = process.argv[2];
 const artifactsDir = process.argv[3] ?? 'artifacts';
 
@@ -57,13 +72,13 @@ for (const p of PLATFORMS) {
     console.warn(`⚠ no artifact dir for ${p.key} — skipping (no auto-update for this platform)`);
     continue;
   }
-  // The downloaded artifact preserves the original filenames; find the .sig.
-  const sigFile = readdirSync(dir).find((f) => f.endsWith('.sig'));
-  if (!sigFile) {
+  // The downloaded artifact may preserve directory structure; search recursively.
+  const sigPath = findSig(dir);
+  if (!sigPath) {
     console.warn(`⚠ no .sig in ${dir} — skipping ${p.key}`);
     continue;
   }
-  const signature = readFileSync(join(dir, sigFile), 'utf-8');
+  const signature = readFileSync(sigPath, 'utf-8');
 
   // Match the unsigned updater bundle in the release assets.
   const bundle = ghAssets.find(
