@@ -78,6 +78,14 @@ for (const p of PLATFORMS) {
   console.log(`✓ ${p.key} ← ${bundle.name}`);
 }
 
+if (Object.keys(platforms).length === 0) {
+  console.error(
+    '✖ No platforms assembled — no .sig artifacts matched. Aborting ' +
+      '(an empty manifest would break auto-update). Check the upload-step globs.',
+  );
+  process.exit(1);
+}
+
 const manifest = {
   version,
   notes,
