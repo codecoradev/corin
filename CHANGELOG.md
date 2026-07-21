@@ -1,3 +1,25 @@
+## [0.3.4] — 2026-07-21
+
+Hotfix release: makes auto-update functional. v0.3.3's release pipeline had
+bugs that shipped `latest.json` with an empty `platforms` object, so every
+"Check for Updates" errored with "None of the fallback platforms were found."
+
+### Fixed
+- **Auto-update manifest** — the release pipeline now correctly uploads each
+  platform's signed `.sig` (the artifact glob `target*/release/...` didn't
+  cross directory separators, so it missed the macOS cross-compile path;
+  switched to `target/**/bundle/...`) and finds it recursively, so
+  `latest.json` ships with populated `platforms` for darwin-aarch64,
+  darwin-x86_64, and windows-x86_64. The manifest job also fails loud if no
+  platforms assemble (#190, #192).
+
+The app code is unchanged from v0.3.3 — this release exists to ship a
+working auto-update manifest. All v0.3.3 features (unified search across
+memories + documents, HTTP-only version gate, uteke server version in
+Settings, clickable codecora.dev, bun tooling) are included.
+
+---
+
 ## [0.3.3] — 2026-07-21
 
 Patch release: **auto-update now works**, unified search across memories + documents, and the version gate is fully HTTP-only.
