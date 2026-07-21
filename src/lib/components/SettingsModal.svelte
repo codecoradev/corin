@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
+  import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { system } from '../ts/ipc';
   import ImportExport from './ImportExport.svelte';
   import AgentsSection from './settings/AgentsSection.svelte';
@@ -95,7 +96,15 @@
       <div class="sidebar-separator"></div>
       <div class="sidebar-info">
         <p class="version">CorIn v{appVersion}</p>
-        <p class="powered">codecora.dev</p>
+        <a
+          class="powered"
+          href="https://codecora.dev"
+          target="_blank"
+          rel="noopener"
+          onclick={(e) => {
+            e.preventDefault();
+            shellOpen('https://codecora.dev');
+          }}>codecora.dev</a>
       </div>
     </aside>
 
@@ -201,7 +210,8 @@
   .sidebar-separator { height: 1px; background: var(--border); margin: 8px 4px; }
   .sidebar-info { margin-top: auto; padding: 8px 12px; }
   .sidebar-info .version { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
-  .sidebar-info .powered { font-size: 0.7rem; color: var(--text-muted); margin: 2px 0 0; opacity: 0.7; }
+  .sidebar-info .powered { font-size: 0.7rem; color: var(--text-muted); margin: 2px 0 0; opacity: 0.7; text-decoration: none; cursor: pointer; display: inline-block; }
+  .sidebar-info .powered:hover { opacity: 1; color: var(--accent); }
 
   .settings-content { flex: 1; overflow-y: auto; padding: 20px 24px; }
   .content-section { margin-bottom: 24px; }
