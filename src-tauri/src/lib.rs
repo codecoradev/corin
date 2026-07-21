@@ -227,9 +227,13 @@ pub(crate) fn find_uteke_cli() -> Option<std::path::PathBuf> {
 
 /// Detect the installed uteke CLI version by shelling `uteke --version`.
 ///
-/// Returns the parsed `X.Y.Z` string (e.g. `"0.7.0"`), or `None` if the
-/// binary is missing or the output can't be parsed. The HTTP server exposes
-/// no version endpoint, so the CLI is the only source of truth.
+/// Returns the parsed `X.Y.Z` string (e.g. `"0.9.0"`), or `None` if the
+/// binary is missing or the output can't be parsed.
+///
+/// Used ONLY by `uteke_self_update` to read the freshly-upgraded CLI
+/// version. The version GATE does not use this — it reads the server's
+/// `/health` `version` field (HTTP-only, since uteke 0.7.2 #636) in
+/// `resolve_uteke_version`.
 pub(crate) fn detect_uteke_version() -> Option<String> {
     let uteke = find_uteke_cli()?;
     let out = std::process::Command::new(uteke)
@@ -578,12 +582,10 @@ pub fn run() {
                             // server (vs. a locally spawned uteke-serve).
                             s.uteke_remote = config::is_remote_url(&server_url);
 
-                            // Cache the installed uteke version for feature
-                            // gating (e.g. Documents requires >= 0.7.1).
-                            // For remote servers the authoritative version is
-                            // probed live from /health in the gating commands;
-                            // the local CLI version is only a fallback there.
-                            s.uteke_version = detect_uteke_version();
+                            // Version gating is HTTP-only: the effective
+                            // uteke version is resolved live from the server's
+                            // /health `version` field in `resolve_uteke_version`
+                            // (no `uteke` CLI probe at startup). See #180.
                         }
                         Err(e) => {
                             eprintln!("Failed to open database: {e}");
