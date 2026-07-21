@@ -21,6 +21,28 @@ export interface SearchResult {
   tags: string[];
 }
 
+/**
+ * A unified search hit from `/recall` with `search_type` set (uteke ≥ 0.9.0).
+ * Can be a memory or a document chunk — check `result_type`.
+ */
+export interface UnifiedSearchResult {
+  result_type: 'memory' | 'document';
+  score: number;
+  content: string;
+  memory_id?: string;
+  doc_slug?: string;
+  doc_title?: string;
+  chunk_heading?: string;
+  chunk_snippet?: string;
+  tags: string[];
+  namespace?: string;
+  memory_type?: string;
+  importance?: number;
+  pinned?: boolean;
+  source?: string;
+  metadata?: unknown;
+}
+
 // Graph edge
 export interface GraphEdge {
   id: number | null;

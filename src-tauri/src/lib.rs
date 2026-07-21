@@ -435,6 +435,7 @@ pub fn run() {
             // Memory
             commands::remember,
             commands::recall,
+            commands::recall_unified,
             commands::search,
             commands::list,
             commands::forget,
@@ -727,5 +728,26 @@ mod tests {
         // the FS layer, so `.EXE` and `.exe` both match `uteke.exe` on disk.
         let out = expand_with_pathext("uteke", ".exe");
         assert_eq!(out, vec!["uteke.exe"]);
+    }
+
+    // ── Unified search (uteke 0.9.0) ────────────────────────────────────
+
+    #[test]
+    fn unified_search_result_deserializes_memory_and_doc() {
+        use crate::uteke_client::UnifiedSearchResult;
+        // Mirrors the shape uteke-serve returns for POST /recall with
+        // search_type=all: a memory hit and a document chunk hit.
+        let json = r##"[
+            {"result_type":"memory","score":0.91,"content":"a fact","memory_id":"m1","tags":["x"],"namespace":"default","memory_type":"fact","importance":0.8},
+            {"result_type":"document","score":0.66,"content":"doc excerpt","doc_slug":"benchmarks","doc_title":"Benchmarks","chunk_heading":"# Benchmarks"}
+        ]"##;
+        let v: Vec<UnifiedSearchResult> = serde_json::from_str(json).unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].result_type, "memory");
+        assert_eq!(v[0].memory_id.as_deref(), Some("m1"));
+        assert!((v[0].importance.unwrap() - 0.8).abs() < 1e-9);
+        assert_eq!(v[1].result_type, "document");
+        assert_eq!(v[1].doc_slug.as_deref(), Some("benchmarks"));
+        assert_eq!(v[1].doc_title.as_deref(), Some("Benchmarks"));
     }
 }

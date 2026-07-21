@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
-  MemoryEntry, SearchResult, GraphData, GraphEdge,
+  MemoryEntry, SearchResult, UnifiedSearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
 } from './types';
 
@@ -140,6 +140,17 @@ export const utekeServer = {
   recall: (query: string, opts?: { namespace?: string; limit?: number }) =>
     invoke<Array<MemoryEntry & { score: number }>>('uteke_recall', {
       query,
+      namespace: opts?.namespace ?? null,
+      limit: opts?.limit ?? null,
+    }),
+  /** Unified semantic search across memories AND documents (uteke ≥ 0.9.0). */
+  recallUnified: (
+    query: string,
+    opts?: { searchType?: 'all' | 'memory' | 'document'; namespace?: string; limit?: number },
+  ) =>
+    invoke<UnifiedSearchResult[]>('recall_unified', {
+      query,
+      searchType: opts?.searchType ?? null,
       namespace: opts?.namespace ?? null,
       limit: opts?.limit ?? null,
     }),
