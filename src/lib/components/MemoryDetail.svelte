@@ -2,6 +2,7 @@
   import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
   import { X, Link2 } from 'lucide-svelte';
+  import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface Neighbor {
     id: string;
@@ -21,9 +22,10 @@
     onedit: (m: MemoryEntry) => void;
     onback: () => void;
     onneighborclick: (id: string) => void;
+    ondeleted?: () => void;
   }
 
-  let { memoryId, onedit, onback, onneighborclick }: Props = $props();
+  let { memoryId, onedit, onback, onneighborclick, ondeleted }: Props = $props();
 
   let memory = $state<MemoryEntry | null>(null);
   let neighbors = $state<Neighbor[]>([]);
@@ -61,10 +63,17 @@
       } else {
         await memoryApi.forget(memoryId);
       }
-    } catch {
-      await memoryApi.forget(memoryId);
+      // Surface success: refresh the underlying list + toast. Just closing
+      // the panel is ambiguous (looks like nothing happened).
+      if (ondeleted) {
+        ondeleted();
+      } else {
+        onback();
+      }
+    } catch (e) {
+      toastStore.error(`Failed to delete memory: ${e instanceof Error ? e.message : String(e)}`);
+      showDeleteConfirm = false;
     }
-    onback();
   }
 
   // Relationship badge styling
@@ -90,7 +99,7 @@
   </div>
 
   {#if loading}
-    <div class="loading">Loading...</div>
+    <div class="loading"><Spinner size={18} /> Loading...</div>
   {:else if !memory}
     <div class="empty">Memory not found.</div>
   {:else}
@@ -180,22 +189,15 @@
   {/if}
 
   {#if showDeleteConfirm}
-    <div
-      class="modal-overlay"
-      role="button"
-      tabindex="0"
-      onclick={() => (showDeleteConfirm = false)}
-      onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
-    >
-      <div class="confirm-dialog" onclick={(e) => e.stopPropagation()} role="presentation">
-        <h3>Delete memory?</h3>
-        <p>This action cannot be undone.</p>
-        <div class="confirm-actions">
-          <button class="cancel-btn" onclick={() => (showDeleteConfirm = false)}>Cancel</button>
-          <button class="confirm-delete-btn" onclick={handleDelete}>Delete</button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      open={showDeleteConfirm}
+      title="Delete memory?"
+      message="This action cannot be undone."
+      confirmLabel="Delete"
+      danger={true}
+      onconfirm={handleDelete}
+      oncancel={() => (showDeleteConfirm = false)}
+    />
   {/if}
 </div>
 
@@ -266,13 +268,6 @@
   .no-neighbors { text-align: center; padding: 24px; color: var(--text-muted); }
   .no-neighbors .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
 
-  .modal-overlay { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 200; }
-  .confirm-dialog { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 360px; }
-  .confirm-dialog h3 { margin-bottom: 8px; }
-  .confirm-dialog p { color: var(--text-muted); margin-bottom: 16px; }
-  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
-  .cancel-btn { padding: 6px 16px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
-  .confirm-delete-btn { padding: 6px 16px; background: var(--red); color: var(--bg-primary); border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
-
   .loading, .empty { text-align: center; padding: 40px; color: var(--text-muted); }
+  .loading { display: flex; align-items: center; justify-content: center; gap: 8px; }
 </style>

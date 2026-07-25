@@ -7,6 +7,7 @@
   import AgentsSection from './settings/AgentsSection.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X } from 'lucide-svelte';
+  import { Spinner } from '../ui';
 
   interface Props {
     onclose: () => void;
@@ -111,7 +112,7 @@
 
     <div class="settings-content">
       {#if loading}
-        <div class="loading">Loading...</div>
+        <div class="loading"><Spinner size={18} /> Loading...</div>
       {:else if activeTab === 'corin'}
         <section class="content-section">
           <h3>Preferences</h3>

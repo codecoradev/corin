@@ -5,6 +5,7 @@
     StatsResponse,
     MemoryEntry,
   } from '../ts/types';
+  import { Spinner } from '../ui';
 
   interface Props {
     namespace: string | null;
@@ -67,7 +68,7 @@
   <div class="quick-search">
     <input
       type="text"
-      placeholder={serverOnline ? 'Semantic search...' : 'Search memories...'}
+      placeholder="Search memories... (Enter)"
       value={searchQuery}
       oninput={(e) => (searchQuery = e.currentTarget.value)}
       onkeydown={(e) => {
@@ -84,7 +85,7 @@
 
   <div class="scroll-area">
     {#if loading}
-    <div class="loading">Loading...</div>
+    <div class="loading"><Spinner size={18} /> Loading...</div>
   {:else}
     <!-- Uteke stats -->
     <section class="stats-section">

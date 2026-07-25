@@ -175,6 +175,7 @@
           bind:value={content}
           placeholder="Write your memory..."
           rows="8"
+          autofocus
         ></textarea>
       </div>
 

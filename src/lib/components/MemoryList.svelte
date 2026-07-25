@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import { createPager } from '../stores/pagination.svelte';
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
   import { FileText, Brain, X } from 'lucide-svelte';
+  import { Spinner } from '../ui';
 
   interface Props {
     namespace: string | null;
@@ -143,6 +145,22 @@
     }
   }
 
+  // Debounced typeahead: fire search 350ms after the user stops typing.
+  // Enter still triggers an immediate search. Min length 2 to avoid
+  // hammering the semantic backend on single-character keystrokes.
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleSearch(query: string) {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    if (query.trim().length < 2) {
+      // Too short — clear any stale results so the paged list returns.
+      searchResults = null;
+      unifiedResults = null;
+      return;
+    }
+    debounceTimer = setTimeout(() => runSearch(), 350);
+  }
+  onDestroy(() => { if (debounceTimer) clearTimeout(debounceTimer); });
+
   // Reload list when namespace changes; clear any active search.
   $effect(() => {
     namespace;
@@ -164,9 +182,12 @@
     <div class="search-bar">
       <input
         type="text"
-        placeholder="Search memories... (Enter)"
+        placeholder="Search memories... (type or Enter)"
         value={searchQuery}
-        oninput={(e) => (searchQuery = e.currentTarget.value)}
+        oninput={(e) => {
+          searchQuery = e.currentTarget.value;
+          scheduleSearch(searchQuery);
+        }}
         onkeydown={(e) => e.key === 'Enter' && runSearch()}
       />
       {#if searchQuery}
@@ -176,6 +197,7 @@
             searchQuery = '';
             searchResults = null;
             unifiedResults = null;
+            if (debounceTimer) clearTimeout(debounceTimer);
           }}><X size={13} strokeWidth={2.5} /></button
         >
       {/if}
@@ -272,7 +294,7 @@
         </div>
       {/if}
     {:else if isLoading && list.length === 0}
-    <div class="loading">Loading...</div>
+    <div class="loading"><Spinner size={18} /> Loading...</div>
   {:else if list.length === 0}
     <div class="empty-state">
       <p>{searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}</p>

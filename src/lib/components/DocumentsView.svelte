@@ -25,6 +25,7 @@
     Plus,
     X,
   } from 'lucide-svelte';
+  import { ConfirmDialog } from '../ui';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { slide } from 'svelte/transition';
   import { pendingDocSlug } from '../stores/nav';
@@ -417,6 +418,7 @@
 
   async function executeDelete() {
     if (!deleteTarget) return;
+    const targetTitle = deleteTarget.title || deleteTarget.slug;
     try {
       await docs.delete({ id: deleteTarget.id });
       if (selectedDoc?.id === deleteTarget.id) {
@@ -424,6 +426,7 @@
         showNewDoc = false;
       }
       await loadRootDocs();
+      showSuccess(`\u201c${targetTitle}\u201d deleted`);
     } catch (e: any) {
       showError(e.toString());
     }
@@ -770,7 +773,7 @@
         <!-- Properties row: title, slug, tags -->
         {#if showProps}
           <div class="props-row">
-            <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} />
+            <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} autofocus />
             <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
             <input type="text" class="prop-input tags-input" placeholder="tag1, tag2" bind:value={editorTags} />
           </div>
@@ -847,17 +850,15 @@
 
 <!-- Delete Confirmation Dialog -->
 {#if showDeleteConfirm}
-  <div class="overlay" onclick={() => { showDeleteConfirm = false; deleteTarget = null; }}>
-    <div class="confirm-dialog" onclick={(e) => e.stopPropagation()}>
-      <h3>Delete Document</h3>
-      <p>Are you sure you want to delete <strong>{deleteTarget?.title}</strong>?</p>
-      <p class="sub">This action cannot be undone.</p>
-      <div class="confirm-actions">
-        <button class="action-btn" onclick={() => { showDeleteConfirm = false; deleteTarget = null; }}>Cancel</button>
-        <button class="action-btn danger" onclick={executeDelete}>Delete</button>
-      </div>
-    </div>
-  </div>
+  <ConfirmDialog
+    open={showDeleteConfirm}
+    title="Delete document?"
+    message="Are you sure you want to delete \u201c{deleteTarget?.title}\u201d? This action cannot be undone."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={executeDelete}
+    oncancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+  />
 {/if}
 
 {#snippet treeNode(doc: DocEntry)}
@@ -1512,24 +1513,6 @@
 
   /* ── Dialog ── */
   .overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
+    display: none;
   }
-  .confirm-dialog {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-  }
-  .confirm-dialog h3 { margin: 0 0 12px; }
-  .confirm-dialog p { margin: 0; font-size: 0.85rem; }
-  .confirm-dialog .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
-  .confirm-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 </style>
