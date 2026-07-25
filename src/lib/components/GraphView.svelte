@@ -26,6 +26,25 @@
   let W = 800;
   let H = 600;
 
+  // Canvas color cache — resolved from CSS custom properties on mount so the
+  // graph tracks the rest of the UI. Canvas can't read var() directly.
+  let COL = {
+    crust: '#1e1e2e',
+    ink: '#cdd6f4',
+    muted: '#6c7086',
+    blue: '#89b4fa',
+  };
+
+  function resolveCanvasTokens(): void {
+    const root = document.documentElement;
+    const s = getComputedStyle(root);
+    const get = (n: string, fb: string): string => s.getPropertyValue(n).trim() || fb;
+    COL.crust = get('--color-crust', COL.crust);
+    COL.ink = get('--color-text', COL.ink);
+    COL.muted = get('--color-overlay', COL.muted);
+    COL.blue = get('--color-blue', COL.blue);
+  }
+
   interface SimNode {
     id: string;
     x: number; y: number; vx: number; vy: number;
@@ -317,7 +336,7 @@
 
   // ─── Drawing ───────────────────────────────────────────────────────
   function draw(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = '#1e1e2e';
+    ctx.fillStyle = COL.crust;
     ctx.fillRect(0, 0, W, H);
     if (!nodes.length) return;
 
@@ -327,7 +346,7 @@
       if (ai === undefined || bi === undefined) continue;
       const a = nodes[ai], b = nodes[bi];
       const hi = hoveredNode === a.id || hoveredNode === b.id;
-      ctx.strokeStyle = hi ? 'rgba(137,180,250,1)' : 'rgba(137,180,250,0.45)';
+      ctx.strokeStyle = hi ? COL.blue : COL.blue + '73';
       ctx.lineWidth = hi ? 3 : 1.5;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -361,9 +380,10 @@
       // Pulsing indicator for nodes that haven't been expanded (clickable)
       if (!n.expanded && !isExpanding) {
         const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 600 + n.id.charCodeAt(0));
+        const ah = Math.round((0.1 + pulse * 0.15) * 255).toString(16).padStart(2, '0');
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 2 + pulse * 2, 0, 6.283);
-        ctx.strokeStyle = `rgba(137,180,250,${0.1 + pulse * 0.15})`;
+        ctx.strokeStyle = COL.blue + ah;
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -371,13 +391,13 @@
       // Node circle
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, 6.283);
-      ctx.fillStyle = hi ? '#cdd6f4' : n.color;
+      ctx.fillStyle = hi ? COL.ink : n.color;
       ctx.fill();
 
       // Label: show on hover, or for highly-connected nodes
       if (hi || n.conns >= 3) {
         ctx.font = '11px -apple-system, sans-serif';
-        ctx.fillStyle = hi ? '#cdd6f4' : '#6c7086';
+        ctx.fillStyle = hi ? COL.ink : COL.muted;
         ctx.textAlign = 'center';
         // Truncate long labels
         const label = n.label.length > 30 ? n.label.slice(0, 27) + '…' : n.label;
@@ -387,7 +407,7 @@
       // Expanding spinner
       if (isExpanding) {
         ctx.font = '10px -apple-system, sans-serif';
-        ctx.fillStyle = '#89b4fa';
+        ctx.fillStyle = COL.blue;
         ctx.textAlign = 'center';
         ctx.fillText('…', n.x, n.y - r - 5);
       }
@@ -537,6 +557,7 @@
   });
 
   onMount(() => {
+    resolveCanvasTokens();
     const canvas = canvasEl;
     if (canvas && canvas.parentElement) {
       W = canvas.parentElement.clientWidth || 800;

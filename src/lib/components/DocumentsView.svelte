@@ -52,18 +52,19 @@
   const TEAL = v('--color-teal', '#94e2d5');
   const SUBTEXT = v('--color-subtext', '#a6adc8');
   const SURFACE0 = v('--color-surface0', '#313244');
-  const CARET = '#f5e0dc';
+  const SURFACE1 = v('--color-surface1', '#45475a');
+  const CARET = v('--color-rosewater', '#f5e0dc');
 
   const catppuccinDarkTheme = EditorView.theme({
     '&': { color: INK, backgroundColor: SURFACE, height: '100%' },
     '.cm-content': { caretColor: CARET },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: CARET },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: '#45475a !important' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: `${SURFACE1} !important` },
     '.cm-panels': { backgroundColor: MANTLE, color: INK },
     '.cm-panels.cm-panels-top': { borderBottom: `2px solid ${SURFACE0}` },
     '.cm-searchMatch': { backgroundColor: `color-mix(in srgb, ${YELLOW} 20%, transparent)`, outline: `1px solid color-mix(in srgb, ${YELLOW} 40%, transparent)` },
     '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': { backgroundColor: `color-mix(in srgb, ${BLUE} 30%, transparent)`, outline: `1px solid ${BLUE}` },
-    '.cm-activeLine': { backgroundColor: 'rgba(69,71,90,0.3)' },
+    '.cm-activeLine': { backgroundColor: `color-mix(in srgb, ${SURFACE1} 30%, transparent)` },
     '.cm-selectionMatch': { backgroundColor: `color-mix(in srgb, ${BLUE} 15%, transparent)` },
   }, { dark: true });
 
