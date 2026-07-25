@@ -28,7 +28,7 @@
         pendingUpdate = update;
         updateStatus = `Update available: v${update.version} — click Install below`;
       } else if (!silent) {
-        updateStatus = 'Up to date ✅';
+        updateStatus = 'Up to date';
       }
     } catch (e: unknown) {
       if (!silent) updateStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;

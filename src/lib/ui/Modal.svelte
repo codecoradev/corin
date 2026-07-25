@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade, scale } from 'svelte/transition';
   import type { Snippet } from 'svelte';
+  import { X } from 'lucide-svelte';
 
   interface Props {
     open: boolean;
@@ -31,7 +32,7 @@
       {#if title}
         <div class="modal-header">
           <h3>{title}</h3>
-          <button class="modal-close" onclick={onclose} title="Close (Esc)">✕</button>
+          <button class="modal-close" onclick={onclose} title="Close (Esc)"><X size={14} strokeWidth={2.5} /></button>
         </div>
       {/if}
       <div class="modal-body">
@@ -53,7 +54,7 @@
   .modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--scrim);
     backdrop-filter: blur(2px);
   }
   .modal-dialog {
@@ -91,7 +92,7 @@
     font-size: 1rem;
     padding: 4px 8px;
     border-radius: 4px;
-    transition: all 0.12s;
+    transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
   }
   .modal-close:hover {
     background: var(--bg-hover);

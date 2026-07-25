@@ -600,8 +600,8 @@
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
   .hint-text { font-size: 0.7rem; color: var(--text-muted); opacity: 0.6; }
   .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
-  .mode-tag.semantic { background: rgba(166,227,161,0.15); color: var(--green); }
-  .mode-tag.local { background: rgba(148,226,213,0.15); color: var(--teal); }
+  .mode-tag.semantic { background: var(--color-green-bg); color: var(--green); }
+  .mode-tag.local { background: var(--color-teal-bg); color: var(--teal); }
   .canvas-wrap { flex: 1; position: relative; overflow: hidden; }
   .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); pointer-events: none; }
 </style>

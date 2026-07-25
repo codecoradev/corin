@@ -292,7 +292,7 @@
   .namespace {
     font-size: 0.7rem;
     padding: 2px 6px;
-    background: rgba(137, 180, 250, 0.15);
+    background: var(--color-blue-bg);
     color: var(--accent);
     border-radius: 3px;
   }

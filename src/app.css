@@ -59,6 +59,32 @@
   --font-mono: var(--font-mono);
   --font-sans: var(--font-sans);
   --radius: var(--radius-md);
+
+  /* ── Semantic tint tokens (alpha) ───────────────────────────────
+     Derived from the palette via color-mix. Use these for status
+     backgrounds, badges, banners, focus halos. Never hardcode
+     rgba() literals — they bypass the system.
+     Two strengths: `-bg` (14% surface tint) and `-line` (30% border). */
+  --color-blue-bg: color-mix(in srgb, var(--color-blue) 14%, transparent);
+  --color-blue-line: color-mix(in srgb, var(--color-blue) 30%, transparent);
+  --color-green-bg: color-mix(in srgb, var(--color-green) 14%, transparent);
+  --color-green-line: color-mix(in srgb, var(--color-green) 30%, transparent);
+  --color-red-bg: color-mix(in srgb, var(--color-red) 14%, transparent);
+  --color-red-line: color-mix(in srgb, var(--color-red) 30%, transparent);
+  --color-yellow-bg: color-mix(in srgb, var(--color-yellow) 14%, transparent);
+  --color-yellow-line: color-mix(in srgb, var(--color-yellow) 30%, transparent);
+  --color-peach-bg: color-mix(in srgb, var(--color-peach) 14%, transparent);
+  --color-peach-line: color-mix(in srgb, var(--color-peach) 30%, transparent);
+  --color-mauve-bg: color-mix(in srgb, var(--color-mauve) 14%, transparent);
+  --color-mauve-line: color-mix(in srgb, var(--color-mauve) 30%, transparent);
+  --color-teal-bg: color-mix(in srgb, var(--color-teal) 14%, transparent);
+  --color-teal-line: color-mix(in srgb, var(--color-teal) 30%, transparent);
+
+  /* Modal/overlay scrim — single value, not three different rgba(0,0,0,.x). */
+  --scrim: color-mix(in srgb, var(--color-base) 60%, transparent);
+
+  /* Easing curve — exponential ease-out for UI state. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -128,5 +154,5 @@ button {
 
 /* ── Global micro-interactions ───────────────────────────── */
 button:active:not(:disabled) {
-  transition: transform 0.08s ease;
+  transition: transform 0.08s var(--ease-out);
 }

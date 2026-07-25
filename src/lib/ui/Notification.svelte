@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
-  import { X } from 'lucide-svelte';
+  import { X, Check, Info } from 'lucide-svelte';
 
   type ToastType = 'success' | 'error' | 'info';
 
@@ -17,20 +17,21 @@
 
   let { toasts, ondismiss }: Props = $props();
 
-  const icons: Record<ToastType, string> = {
-    success: '✓',
-    error: '✕',
-    info: 'ℹ',
-  };
+  const icons = {
+    success: Check,
+    error: X,
+    info: Info,
+  } satisfies Record<ToastType, typeof Check>;
 </script>
 
 <div class="toast-container">
   {#each toasts as toast (toast.id)}
+    {@const Icon = icons[toast.type]}
     <div
       class="toast toast-{toast.type}"
       transition:fly={{ y: -16, duration: 200 }}
     >
-      <span class="toast-icon">{icons[toast.type]}</span>
+      <span class="toast-icon"><Icon size={13} strokeWidth={2.5} /></span>
       <span class="toast-msg">{toast.message}</span>
       <button class="toast-dismiss" onclick={() => ondismiss(toast.id)}>
         <X size={13} strokeWidth={2.5} />
@@ -92,22 +93,22 @@
   .toast-dismiss:hover { opacity: 1; }
 
   .toast-success {
-    background: rgba(166, 227, 161, 0.12);
-    border: 1px solid rgba(166, 227, 161, 0.3);
+    background: var(--color-green-bg);
+    border: 1px solid var(--color-green-line);
     color: var(--green);
   }
   .toast-success .toast-icon { background: var(--green); color: var(--bg-primary); }
 
   .toast-error {
-    background: rgba(243, 139, 168, 0.12);
-    border: 1px solid rgba(243, 139, 168, 0.3);
+    background: var(--color-red-bg);
+    border: 1px solid var(--color-red-line);
     color: var(--red);
   }
   .toast-error .toast-icon { background: var(--red); color: var(--bg-primary); }
 
   .toast-info {
-    background: rgba(137, 180, 250, 0.12);
-    border: 1px solid rgba(137, 180, 250, 0.3);
+    background: var(--color-blue-bg);
+    border: 1px solid var(--color-blue-line);
     color: var(--accent);
   }
   .toast-info .toast-icon { background: var(--accent); color: var(--bg-primary); }

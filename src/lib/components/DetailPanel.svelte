@@ -43,7 +43,7 @@
   .detail-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--scrim);
     z-index: 89;
     animation: fadeIn 0.15s ease;
   }

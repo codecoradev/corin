@@ -447,10 +447,10 @@
 
   .error-msg {
     padding: 8px 12px;
-    background: color-mix(in srgb, #f43f5e 10%, transparent);
-    color: #f43f5e;
-    border: 1px solid color-mix(in srgb, #f43f5e 30%, transparent);
-    border-radius: 4px;
+    background: var(--color-red-bg);
+    color: var(--red);
+    border: 1px solid var(--color-red-line);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     margin-bottom: 12px;
   }
