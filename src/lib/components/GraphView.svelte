@@ -593,7 +593,7 @@
       {:else}
         <span class="mode-tag local">Local</span>
       {/if}
-      <span class="hint-text">click to expand · double-click for detail</span>
+      <span class="hint-text">Single-click a node to expand neighbors · double-click to open detail</span>
     {/if}
     <div class="toolbar-spacer"></div>
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
@@ -619,7 +619,7 @@
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); }
   .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
-  .hint-text { font-size: 0.7rem; color: var(--text-muted); opacity: 0.6; }
+  .hint-text { font-size: 0.72rem; color: var(--text-secondary); opacity: 0.75; }
   .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
   .mode-tag.semantic { background: var(--color-green-bg); color: var(--green); }
   .mode-tag.local { background: var(--color-teal-bg); color: var(--teal); }

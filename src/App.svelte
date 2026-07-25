@@ -97,9 +97,19 @@
   }
 
   function handleSave() {
+    const wasEditing = !!editorMemory;
     showEditor = false;
     editorMemory = null;
     refreshKey++;
+    toastStore.success(wasEditing ? 'Memory updated' : 'Memory created');
+  }
+
+  // Memory deleted from the detail panel — refresh the list underneath and
+  // confirm to the user (the panel closing alone is ambiguous).
+  function handleMemoryDeleted() {
+    refreshKey++;
+    detailId = null;
+    toastStore.success('Memory deleted');
   }
 
   function closeSettings() {
@@ -189,6 +199,7 @@
         onback={closeDetail}
         onneighborclick={detailNavigate}
         onedit={editMemory}
+        ondeleted={handleMemoryDeleted}
       />
     </DetailPanel>
   </div>

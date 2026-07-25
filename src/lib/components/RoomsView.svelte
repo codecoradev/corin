@@ -5,6 +5,7 @@
   import { renderMarkdown } from '../utils/markdown';
   import RoomCreateForm from './rooms/RoomCreateForm.svelte';
   import { Trash2, TriangleAlert, X, Plus } from 'lucide-svelte';
+  import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface UtekeRoom {
     id: string;
@@ -124,6 +125,7 @@
       selectedRoom = null;
       roomMemories = [];
       await loadRooms();
+      toastStore.success('Room deleted');
     } catch (e) {
       reportError('Delete room', e);
       showDeleteConfirm = false;
@@ -156,7 +158,7 @@
   </div>
 
   {#if loading}
-    <div class="msg">Loading...</div>
+    <div class="msg"><Spinner size={18} /> Loading...</div>
   {:else if rooms.length === 0}
     <div class="msg">
       {#if utekeReady}
@@ -213,11 +215,9 @@
                   <Trash2 size={12} strokeWidth={2} /> Delete
                 </button>
               {:else}
-                <div class="delete-confirm">
-                  <span class="delete-label">Delete "{currentRoom?.title ?? selectedRoom}"?</span>
-                  <button class="btn-confirm-delete" onclick={deleteRoom}>Confirm</button>
-                  <button class="btn-cancel-del" onclick={() => showDeleteConfirm = false}>Cancel</button>
-                </div>
+                <button class="btn-delete" onclick={() => showDeleteConfirm = false} title="Cancel delete">
+                  Cancel
+                </button>
               {/if}
             </div>
           </div>
@@ -277,6 +277,16 @@
       </div>
     </div>
   {/if}
+
+  <ConfirmDialog
+    open={showDeleteConfirm}
+    title="Delete room?"
+    message="The room and its memory references will be removed. This cannot be undone."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={deleteRoom}
+    oncancel={() => (showDeleteConfirm = false)}
+  />
 </div>
 
 <style>

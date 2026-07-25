@@ -13,6 +13,7 @@
     X,
     Plus,
   } from 'lucide-svelte';
+  import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   const store = getConnectionsStore();
 
@@ -55,8 +56,14 @@
       const result = await connection.test(id);
       healthResults = { ...healthResults, [id]: result };
       await loadConnections();
+      if (result.success) {
+        toastStore.success(`Healthy — ${result.latency_ms}ms`);
+      } else {
+        toastStore.error(`Connection test failed${result.error ? `: ${result.error}` : ''}`);
+      }
     } catch (e) {
       healthResults = { ...healthResults, [id]: { success: false, latency_ms: 0, version: null, error: String(e) } };
+      toastStore.error(`Connection test failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       testing = null;
     }
@@ -67,8 +74,9 @@
     try {
       const result = await store.reconnect(id);
       healthResults = { ...healthResults, [id]: result };
+      toastStore.success('Reconnected');
     } catch (e) {
-      healthResults = { ...healthResults, [id]: { success: false, latency_ms: 0, version: null, error: String(e) } };
+      toastStore.error(`Reconnect failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       reconnecting = null;
     }
@@ -77,8 +85,9 @@
   async function setPrimary(id: string) {
     try {
       await store.setPrimary(id);
+      toastStore.success('Primary connection set');
     } catch (e) {
-      console.error('Failed to set primary:', e);
+      toastStore.error(`Failed to set primary: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -86,8 +95,9 @@
     disconnecting = true;
     try {
       await store.disconnect();
+      toastStore.info('Memory backend disconnected');
     } catch (e) {
-      console.error('Failed to disconnect:', e);
+      toastStore.error(`Disconnect failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       disconnecting = false;
     }
@@ -103,12 +113,13 @@
 
   async function confirmDelete() {
     if (!pendingDelete) return;
-    const id = pendingDelete.id;
+    const { id, name } = pendingDelete;
     pendingDelete = null;
     try {
       await store.remove(id);
+      toastStore.success(`Connection \u201c${name}\u201d deleted`);
     } catch (e) {
-      console.error('Failed to delete connection:', e);
+      toastStore.error(`Failed to delete connection: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -129,6 +140,7 @@
       addToken = '';
       showAdd = false;
       await loadConnections();
+      toastStore.success('Connection added');
     } catch (e) {
       addError = String(e);
     }
@@ -172,6 +184,7 @@
       });
       cancelEdit();
       await loadConnections();
+      toastStore.success('Connection updated');
       // If we just edited the primary connection, live-rebuild the client
       // so URL/token changes take effect immediately (no app restart).
       const updated = connections.find((c) => c.id === id);
@@ -240,7 +253,7 @@
       {/if}
       <label>
         Name
-        <input type="text" bind:value={addName} placeholder="My Uteke VPS" />
+        <input type="text" bind:value={addName} placeholder="My Uteke VPS" autofocus />
       </label>
       <label>
         Server URL
@@ -257,7 +270,7 @@
   {/if}
 
   {#if loading}
-    <p class="loading">Loading connections…</p>
+    <p class="loading"><Spinner size={16} /> Loading connections…</p>
   {:else if connections.length === 0}
     <p class="empty">No connections configured.</p>
   {:else}
@@ -378,22 +391,15 @@
 </div>
 
 {#if pendingDelete}
-  <div
-    class="confirm-overlay"
-    role="button"
-    tabindex="0"
-    onclick={cancelDelete}
-    onkeydown={(e) => e.key === 'Escape' && cancelDelete()}
-  >
-    <div class="confirm-dialog" onclick={(e) => e.stopPropagation()} role="presentation">
-      <h3>Delete “{pendingDelete.name}”?</h3>
-      <p>The auth token will be wiped and the connection row removed. This cannot be undone.</p>
-      <div class="confirm-actions">
-        <button class="btn-sm" onclick={cancelDelete}>Cancel</button>
-        <button class="btn-sm btn-danger" onclick={confirmDelete}>Delete</button>
-      </div>
-    </div>
-  </div>
+  <ConfirmDialog
+    open={!!pendingDelete}
+    title="Delete connection?"
+    message="\u201c{pendingDelete.name}\u201d — the auth token will be wiped and the connection row removed. This cannot be undone."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={confirmDelete}
+    oncancel={cancelDelete}
+  />
 {/if}
 
 <style>
@@ -625,33 +631,10 @@
     font-size: 0.9rem;
     text-align: center;
     padding: 24px;
-  }
-  .confirm-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    backdrop-filter: blur(2px);
-    z-index: 200;
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-  .confirm-dialog {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 20px;
-    max-width: 360px;
-    width: 90%;
-  }
-  .confirm-dialog h3 {
-    margin: 0 0 8px;
-    font-size: 1rem;
-  }
-  .confirm-dialog p {
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    margin: 0 0 16px;
+    gap: 8px;
   }
   .confirm-actions {
     display: flex;
