@@ -55,7 +55,7 @@
     font-family: inherit;
     font-weight: 500;
     white-space: nowrap;
-    transition: all 0.12s ease;
+    transition: background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), color 0.12s var(--ease-out), opacity 0.12s var(--ease-out);
     user-select: none;
     line-height: 1;
   }
@@ -101,10 +101,10 @@
   .btn-danger {
     background: transparent;
     color: var(--red);
-    border: 1px solid rgba(243, 139, 168, 0.3);
+    border: 1px solid var(--color-red-line);
   }
   .btn-danger:hover:not(:disabled) {
-    background: rgba(243, 139, 168, 0.1);
+    background: var(--color-red-bg);
     border-color: var(--red);
   }
 

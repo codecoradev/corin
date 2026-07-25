@@ -2,6 +2,17 @@
   import { onMount, onDestroy } from 'svelte';
   import { connection, type HealthInfo } from '../ts/ipc';
   import { getConnectionsStore } from '../stores/connections.svelte';
+  import type { Component } from 'svelte';
+  import {
+    Database,
+    Server,
+    Star,
+    Lock,
+    Pencil,
+    Check,
+    X,
+    Plus,
+  } from 'lucide-svelte';
 
   const store = getConnectionsStore();
 
@@ -176,10 +187,10 @@
 
   function statusColor(status: string): string {
     switch (status) {
-      case 'connected': return '#4caf50';
-      case 'disconnected': return '#9e9e9e';
-      case 'error': return '#f44336';
-      default: return '#ff9800';
+      case 'connected': return 'var(--green)';
+      case 'disconnected': return 'var(--text-muted)';
+      case 'error': return 'var(--red)';
+      default: return 'var(--peach)';
     }
   }
 
@@ -193,10 +204,11 @@
     }
   }
 
-  function productIcon(type: string): string {
+  // Product icon as a Lucide component (replaces emoji 🔮/📦).
+  function productIcon(type: string): typeof Database {
     switch (type) {
-      case 'uteke': return '🔮';
-      default: return '📦';
+      case 'uteke': return Database;
+      default: return Server;
     }
   }
 
@@ -212,7 +224,11 @@
   <div class="cm-header">
     <h3>Connections</h3>
     <button class="btn-add" onclick={() => showAdd = !showAdd}>
-      {showAdd ? '✕ Cancel' : '+ Add Connection'}
+      {#if showAdd}
+        <X size={14} strokeWidth={2.5} /> Cancel
+      {:else}
+        <Plus size={14} strokeWidth={2.5} /> Add Connection
+      {/if}
     </button>
   </div>
 
@@ -247,32 +263,42 @@
   {:else}
     <div class="connection-list">
       {#each connections as conn (conn.id)}
+        {@const Icon = productIcon(conn.product_type)}
         <div class="connection-card card" class:primary={conn.is_primary}>
           <div class="card-header">
-            <span class="icon">{productIcon(conn.product_type)}</span>
+            <span class="icon">
+              <Icon size={18} strokeWidth={1.75} />
+            </span>
             <div class="info">
               <h4>{conn.name}</h4>
               <span class="url">{conn.url}</span>
             </div>
             <span class="status-badge" style="color: {statusColor(conn.status)}">
-              ● {statusLabel(conn.status)}
+              <span class="status-dot" style="background: {statusColor(conn.status)}"></span>
+              {statusLabel(conn.status)}
             </span>
           </div>
 
-          {#if conn.is_primary}
-            <span class="badge-primary">⭐ Primary</span>
-          {/if}
-          {#if conn.has_token}
-            <span class="badge-token">🔒 Auth</span>
-          {/if}
+          <div class="badges">
+            {#if conn.is_primary}
+              <span class="badge-tag badge-primary">
+                <Star size={11} strokeWidth={2.5} /> Primary
+              </span>
+            {/if}
+            {#if conn.has_token}
+              <span class="badge-tag badge-token">
+                <Lock size={11} strokeWidth={2.5} /> Auth
+              </span>
+            {/if}
+          </div>
 
           {#if healthResults[conn.id]}
             {@const h = healthResults[conn.id]}
             <div class="health-info" class:success={h.success} class:fail={!h.success}>
               {#if h.success}
-                <span>✓ Healthy{#if h.version} · uteke v{h.version}{/if} — {h.latency_ms}ms</span>
+                <span><Check size={13} strokeWidth={2.5} /> Healthy{#if h.version} · uteke v{h.version}{/if} — {h.latency_ms}ms</span>
               {:else}
-                <span>✗ {h.error || 'Connection failed'}</span>
+                <span><X size={13} strokeWidth={2.5} /> {h.error || 'Connection failed'}</span>
               {/if}
             </div>
           {/if}
@@ -283,7 +309,7 @@
               onclick={() => startEdit(conn.id, conn.name, conn.url)}
               disabled={!!editId}
               title="Edit connection"
-            >✎</button>
+            ><Pencil size={13} strokeWidth={2} /></button>
             <button
               class="btn-sm"
               onclick={() => testConn(conn.id)}
@@ -334,7 +360,7 @@
                 <input type="text" bind:value={editUrl} placeholder="https://uteke.myvps.com:8767" />
               </label>
               <label>
-                Auth Token <span class="optional">(leave blank to keep current{conn.has_token ? ' 🔒' : ''})</span>
+                Auth Token <span class="optional">(leave blank to keep current{conn.has_token ? '' : ''})</span>
                 <input type="password" bind:value={editToken} placeholder={conn.has_token ? '•••••••• (set new to replace)' : 'Bearer token (optional)'} />
               </label>
               <div class="form-actions">
@@ -385,20 +411,24 @@
     font-size: 1.1rem;
   }
   .btn-add, .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 6px 14px;
-    border-radius: 6px;
-    border: 1px solid var(--accent, #6c5ce7);
-    background: var(--accent, #6c5ce7);
-    color: #fff;
+    border-radius: var(--radius);
+    border: none;
+    background: var(--accent);
+    color: var(--bg-primary);
     cursor: pointer;
     font-size: 0.85rem;
+    font-weight: 600;
   }
   .btn-add:hover, .btn-primary:hover {
-    opacity: 0.9;
+    opacity: 0.85;
   }
   .card {
-    background: var(--card-bg, #1a1a2e);
-    border: 1px solid var(--border, #2d2d44);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 12px;
@@ -407,31 +437,35 @@
     display: block;
     margin-bottom: 12px;
     font-size: 0.85rem;
-    color: var(--muted, #888);
+    color: var(--text-secondary);
   }
   .add-form input {
     width: 100%;
     margin-top: 4px;
     padding: 8px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border, #2d2d44);
-    background: var(--input-bg, #0f0f23);
-    color: var(--fg, #e0e0e0);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    color: var(--text-primary);
     font-size: 0.9rem;
     box-sizing: border-box;
+  }
+  .add-form input:focus {
+    outline: none;
+    border-color: var(--accent);
   }
   .optional {
     font-size: 0.75rem;
     opacity: 0.6;
   }
   .error-banner {
-    background: #3e1a1a;
-    border: 1px solid #6b2c2c;
-    border-radius: 6px;
+    background: var(--color-red-bg);
+    border: 1px solid var(--color-red-line);
+    border-radius: var(--radius);
     padding: 8px 12px;
     margin-bottom: 12px;
     font-size: 0.85rem;
-    color: #f44336;
+    color: var(--red);
   }
   .form-actions {
     margin-top: 8px;
@@ -440,7 +474,7 @@
   .edit-form {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px dashed var(--border, #2d2d44);
+    border-top: 1px dashed var(--border);
   }
   .edit-form h4 {
     margin: 0 0 10px;
@@ -450,22 +484,28 @@
     display: block;
     margin-bottom: 10px;
     font-size: 0.8rem;
-    color: var(--muted, #888);
+    color: var(--text-secondary);
   }
   .edit-form input {
     width: 100%;
     margin-top: 4px;
     padding: 7px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border, #2d2d44);
-    background: var(--input-bg, #0f0f23);
-    color: var(--fg, #e0e0e0);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    color: var(--text-primary);
     font-size: 0.85rem;
     box-sizing: border-box;
   }
+  .edit-form input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
   .btn-icon {
     width: 28px;
-    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px 0;
   }
   .connection-list {
@@ -474,7 +514,7 @@
     gap: 8px;
   }
   .connection-card.primary {
-    border-color: var(--accent, #6c5ce7);
+    border-color: var(--accent);
   }
   .card-header {
     display: flex;
@@ -482,7 +522,10 @@
     gap: 10px;
   }
   .icon {
-    font-size: 1.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
   }
   .info {
     flex: 1;
@@ -497,37 +540,61 @@
   }
   .url {
     font-size: 0.8rem;
-    color: var(--muted, #888);
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 0.8rem;
     white-space: nowrap;
   }
-  .badge-primary, .badge-token {
-    display: inline-block;
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .badges {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .badge-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 0.75rem;
     padding: 2px 8px;
-    border-radius: 4px;
-    margin: 4px 4px 0 0;
-    background: var(--bg, #0f0f23);
-    color: var(--fg, #e0e0e0);
+    border-radius: var(--radius-sm);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
   }
+  .badge-primary { color: var(--yellow); }
+  .badge-token { color: var(--text-secondary); }
   .health-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin-top: 8px;
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     font-size: 0.85rem;
   }
+  .health-info span { display: inline-flex; align-items: center; gap: 5px; }
   .health-info.success {
-    background: #1a3e1a;
-    border: 1px solid #2c6b2c;
+    background: var(--color-green-bg);
+    border: 1px solid var(--color-green-line);
+    color: var(--green);
   }
   .health-info.fail {
-    background: #3e1a1a;
-    border: 1px solid #6b2c2c;
+    background: var(--color-red-bg);
+    border: 1px solid var(--color-red-line);
+    color: var(--red);
   }
   .card-actions {
     display: flex;
@@ -536,22 +603,25 @@
   }
   .btn-sm {
     padding: 4px 10px;
-    border-radius: 4px;
-    border: 1px solid var(--border, #2d2d44);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
     background: transparent;
-    color: var(--fg, #e0e0e0);
+    color: var(--text-primary);
     cursor: pointer;
     font-size: 0.8rem;
   }
   .btn-sm:hover {
-    background: var(--border, #2d2d44);
+    background: var(--bg-hover);
   }
   .btn-danger {
-    color: #f44336;
-    border-color: #6b2c2c;
+    color: var(--red);
+    border-color: var(--color-red-line);
+  }
+  .btn-danger:hover {
+    background: var(--color-red-bg);
   }
   .loading, .empty {
-    color: var(--muted, #888);
+    color: var(--text-muted);
     font-size: 0.9rem;
     text-align: center;
     padding: 24px;
@@ -559,7 +629,7 @@
   .confirm-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--scrim);
     backdrop-filter: blur(2px);
     z-index: 200;
     display: flex;
@@ -567,8 +637,8 @@
     justify-content: center;
   }
   .confirm-dialog {
-    background: var(--card-bg, #1a1a2e);
-    border: 1px solid var(--border, #2d2d44);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 20px;
     max-width: 360px;
@@ -579,7 +649,7 @@
     font-size: 1rem;
   }
   .confirm-dialog p {
-    color: var(--muted, #888);
+    color: var(--text-muted);
     font-size: 0.85rem;
     margin: 0 0 16px;
   }

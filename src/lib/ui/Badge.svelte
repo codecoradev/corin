@@ -32,27 +32,27 @@
     color: var(--text-secondary);
   }
   .badge-accent {
-    background: rgba(137, 180, 250, 0.15);
+    background: var(--color-blue-bg);
     color: var(--accent);
   }
   .badge-green {
-    background: rgba(166, 227, 161, 0.15);
+    background: var(--color-green-bg);
     color: var(--green);
   }
   .badge-red {
-    background: rgba(243, 139, 168, 0.15);
+    background: var(--color-red-bg);
     color: var(--red);
   }
   .badge-yellow {
-    background: rgba(249, 226, 175, 0.15);
+    background: var(--color-yellow-bg);
     color: var(--yellow);
   }
   .badge-mauve {
-    background: rgba(203, 166, 247, 0.15);
+    background: var(--color-mauve-bg);
     color: var(--mauve);
   }
   .badge-teal {
-    background: rgba(148, 226, 213, 0.15);
+    background: var(--color-teal-bg);
     color: var(--teal);
   }
 </style>

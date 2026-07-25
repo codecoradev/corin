@@ -4,6 +4,7 @@
   import { relativeTime } from '../utils/format';
   import { renderMarkdown } from '../utils/markdown';
   import RoomCreateForm from './rooms/RoomCreateForm.svelte';
+  import { Trash2, TriangleAlert, X, Plus } from 'lucide-svelte';
 
   interface UtekeRoom {
     id: string;
@@ -134,8 +135,8 @@
 <div class="rooms-view">
   {#if lastError}
     <div class="error-banner">
-      <span>⚠ {lastError}</span>
-      <button class="error-dismiss" onclick={() => lastError = null}>×</button>
+      <span class="error-inner"><TriangleAlert size={13} strokeWidth={2.5} /> {lastError}</span>
+      <button class="error-dismiss" onclick={() => lastError = null}><X size={14} strokeWidth={2.5} /></button>
     </div>
   {/if}
   <div class="rooms-header">
@@ -145,7 +146,11 @@
     </div>
     {#if utekeReady}
       <button class="btn-new" onclick={toggleCreateForm}>
-        {showCreateForm ? '✕ Cancel' : '+ New Room'}
+        {#if showCreateForm}
+          <X size={13} strokeWidth={2.5} /> Cancel
+        {:else}
+          <Plus size={13} strokeWidth={2.5} /> New Room
+        {/if}
       </button>
     {/if}
   </div>
@@ -205,7 +210,7 @@
                   onclick={() => showDeleteConfirm = true}
                   title="Delete this room"
                 >
-                  🗑 Delete
+                  <Trash2 size={12} strokeWidth={2} /> Delete
                 </button>
               {:else}
                 <div class="delete-confirm">
@@ -276,14 +281,15 @@
 
 <style>
   .rooms-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: rgba(230,69,83,0.12); color: #e64553; font-size: 0.8rem; border-bottom: 1px solid rgba(230,69,83,0.3); }
-  .error-dismiss { background: none; border: none; color: inherit; font-size: 1.1rem; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: var(--color-red-bg); color: var(--red); font-size: 0.8rem; border-bottom: 1px solid var(--color-red-line); }
+  .error-inner { display: inline-flex; align-items: center; gap: 6px; }
+  .error-dismiss { background: none; border: none; color: inherit; cursor: pointer; padding: 0 4px; line-height: 1; display: inline-flex; align-items: center; }
   .rooms-header { padding: 16px 24px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }
   .header-left { display: flex; align-items: baseline; gap: 12px; }
   h2 { font-size: 1.1rem; }
   .count { font-size: 0.8rem; color: var(--text-muted); }
 
-  .btn-new { font-size: 0.8rem; padding: 4px 12px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
+  .btn-new { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; padding: 4px 12px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: var(--radius); cursor: pointer; font-weight: 500; }
   .btn-new:hover { opacity: 0.85; }
 
   .layout { flex: 1; display: flex; overflow: hidden; }
@@ -317,14 +323,14 @@
   .badge { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 10px; }
   .header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 
-  .btn-delete { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
-  .btn-delete:hover { color: #e64553; border-color: #e64553; }
+  .btn-delete { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+  .btn-delete:hover { color: var(--red); border-color: var(--red); }
 
   .delete-confirm { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
   .delete-label { color: var(--text-secondary); }
-  .btn-confirm-delete { font-size: 0.75rem; padding: 3px 10px; background: #e64553; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-  .btn-confirm-delete:hover { background: #c7374a; }
-  .btn-cancel-del { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .btn-confirm-delete { font-size: 0.75rem; padding: 3px 10px; background: var(--red); color: var(--bg-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; }
+  .btn-confirm-delete:hover { opacity: 0.85; }
+  .btn-cancel-del { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
 
   /* Tabs */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; flex-shrink: 0; }
@@ -354,7 +360,7 @@
   .mem-meta { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
   .tag { font-size: 0.7rem; padding: 2px 6px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
-  .ns { font-size: 0.7rem; padding: 2px 6px; background: rgba(137,180,250,0.15); color: var(--accent); border-radius: 3px; }
+  .ns { font-size: 0.7rem; padding: 2px 6px; background: var(--color-blue-bg); color: var(--accent); border-radius: var(--radius-sm); }
 
   /* General */
   .msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; gap: 8px; }

@@ -271,14 +271,17 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius);
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: filter 0.15s var(--ease-out), transform 0.08s var(--ease-out);
   }
 
   .primary-btn:hover {
-    opacity: 0.85;
+    filter: brightness(1.12);
+  }
+  .primary-btn:active {
+    transform: translateY(1px);
   }
 </style>

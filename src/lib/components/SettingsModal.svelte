@@ -6,6 +6,7 @@
   import ImportExport from './ImportExport.svelte';
   import AgentsSection from './settings/AgentsSection.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
+  import { Check, X } from 'lucide-svelte';
 
   interface Props {
     onclose: () => void;
@@ -82,7 +83,7 @@
 <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
   <header class="modal-header">
     <h2>⚙ Settings</h2>
-    <button class="close-btn" onclick={onclose} aria-label="Close settings" title="Close (Esc)">✕</button>
+    <button class="close-btn" onclick={onclose} aria-label="Close settings" title="Close (Esc)"><X size={14} strokeWidth={2.5} /></button>
   </header>
 
   <div class="modal-body">
@@ -132,7 +133,7 @@
             <button class="save-btn" onclick={handleSave} disabled={saving}>
               {saving ? 'Saving...' : 'Save Settings'}
             </button>
-            {#if savedMsg}<span class="saved-msg">✓ Saved</span>{/if}
+            {#if savedMsg}<span class="saved-msg"><Check size={12} strokeWidth={2.5} /> Saved</span>{/if}
           </div>
         </section>
 
@@ -184,7 +185,7 @@
 </div>
 
 <style>
-  .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); z-index: 100; }
+  .backdrop { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); z-index: 100; }
 
   .modal {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -227,7 +228,7 @@
   .action-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
   .save-btn { padding: 8px 20px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 4px; font-weight: 600; font-size: 0.85rem; }
   .save-btn:disabled { opacity: 0.5; }
-  .saved-msg { color: var(--green); font-size: 0.85rem; }
+  .saved-msg { color: var(--green); font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px; }
 
   .data-dir-info { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; }
   .data-dir-label { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 6px; }

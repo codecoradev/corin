@@ -1,6 +1,7 @@
 <script lang="ts">
   import { memory as memoryApi, system, utekeServer } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
+  import { X, TriangleAlert } from 'lucide-svelte';
 
   interface Props {
     memory: MemoryEntry | null;
@@ -163,7 +164,7 @@
   <div class="editor-dialog" onclick={(e) => e.stopPropagation()} role="presentation">
     <div class="editor-header">
       <h2>{memory ? 'Edit Memory' : 'New Memory'}</h2>
-      <button class="close-btn" onclick={onclose}>✕</button>
+      <button class="close-btn" onclick={onclose}><X size={16} strokeWidth={2} /></button>
     </div>
 
     <div class="editor-body">
@@ -234,7 +235,7 @@
 
       {#if duplicateWarning}
         <div class="dup-warning">
-          <div class="dup-header">⚠ Possible duplicate detected ({(duplicateWarning.score * 100).toFixed(0)}% match)</div>
+          <div class="dup-header"><TriangleAlert size={13} strokeWidth={2.5} /> Possible duplicate detected ({(duplicateWarning.score * 100).toFixed(0)}% match)</div>
           <div class="dup-content">{duplicateWarning.content.slice(0, 120)}</div>
           <div class="dup-actions">
             <button class="dup-cancel" onclick={async () => { duplicateWarning = null; await forceSave(); }}>Save anyway</button>
@@ -260,7 +261,7 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -373,22 +374,25 @@
     color: var(--red);
     font-size: 0.85rem;
     padding: 8px 12px;
-    background: rgba(243, 139, 168, 0.1);
-    border-radius: 4px;
+    background: var(--color-red-bg);
+    border-radius: var(--radius-sm);
   }
 
   .dup-warning {
     margin-top: 8px;
     padding: 12px;
-    background: rgba(250, 179, 135, 0.1);
-    border: 1px solid rgba(250, 179, 135, 0.3);
-    border-radius: 6px;
+    background: var(--color-peach-bg);
+    border: 1px solid var(--color-peach-line);
+    border-radius: var(--radius);
   }
 
   .dup-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.85rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--peach);
     margin-bottom: 6px;
   }
 

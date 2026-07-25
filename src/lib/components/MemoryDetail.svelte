@@ -1,6 +1,7 @@
 <script lang="ts">
   import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
+  import { X, Link2 } from 'lucide-svelte';
 
   interface Neighbor {
     id: string;
@@ -79,7 +80,7 @@
 
 <div class="memory-detail">
   <div class="detail-header">
-    <button class="back-btn" onclick={onback}>✕ Close <kbd>Esc</kbd></button>
+    <button class="back-btn" onclick={onback}><X size={13} strokeWidth={2} /> Close <kbd>Esc</kbd></button>
     {#if memory}
       <div class="header-actions">
         <button class="edit-btn" onclick={() => onedit(memory!)}>Edit</button>
@@ -135,7 +136,7 @@
 
       <div class="neighbors-section">
         <div class="neighbors-header">
-          <h3>🔗 Connected ({neighbors.length})</h3>
+          <h3><Link2 size={14} strokeWidth={2} class="conn-icon" /> Connected ({neighbors.length})</h3>
         </div>
 
         {#if neighbors.length === 0}
@@ -230,7 +231,8 @@
 
   .neighbors-section { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
   .neighbors-header { margin-bottom: 12px; }
-  .neighbors-header h3 { font-size: 0.95rem; color: var(--text-secondary); }
+  .neighbors-header h3 { font-size: 0.95rem; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+  .neighbors-header :global(.conn-icon) { stroke: var(--text-secondary); }
 
   .neighbor-list { display: flex; flex-direction: column; gap: 6px; }
 
@@ -243,14 +245,14 @@
   .neighbor-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 
   .rel-badge {
-    font-size: 0.65rem; padding: 1px 6px; border-radius: 3px; text-transform: uppercase;
+    font-size: 0.65rem; padding: 1px 6px; border-radius: var(--radius-sm); text-transform: uppercase;
     font-weight: 600; letter-spacing: 0.3px;
   }
-  .rel-badge.refs { background: rgba(137,180,250,0.15); color: var(--accent); }
-  .rel-badge.super { background: rgba(249,226,175,0.15); color: var(--yellow); }
-  .rel-badge.reply { background: rgba(166,227,161,0.15); color: var(--green); }
-  .rel-badge.shared { background: rgba(203,166,247,0.15); color: var(--mauve); }
-  .rel-badge.sim { background: rgba(148,226,213,0.15); color: var(--teal); }
+  .rel-badge.refs { background: var(--color-blue-bg); color: var(--accent); }
+  .rel-badge.super { background: var(--color-yellow-bg); color: var(--yellow); }
+  .rel-badge.reply { background: var(--color-green-bg); color: var(--green); }
+  .rel-badge.shared { background: var(--color-mauve-bg); color: var(--mauve); }
+  .rel-badge.sim { background: var(--color-teal-bg); color: var(--teal); }
   .rel-badge.related { background: var(--bg-hover); color: var(--text-muted); }
 
   .rel-score { font-size: 0.65rem; color: var(--text-muted); }
@@ -259,12 +261,12 @@
 
   .neighbor-bottom { display: flex; justify-content: space-between; gap: 8px; }
   .shared-tags { display: flex; gap: 3px; }
-  .shared-tag { font-size: 0.6rem; padding: 1px 4px; background: rgba(203,166,247,0.15); color: var(--mauve); border-radius: 2px; }
+  .shared-tag { font-size: 0.6rem; padding: 1px 4px; background: var(--color-mauve-bg); color: var(--mauve); border-radius: 2px; }
 
   .no-neighbors { text-align: center; padding: 24px; color: var(--text-muted); }
   .no-neighbors .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
 
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .modal-overlay { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 200; }
   .confirm-dialog { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 360px; }
   .confirm-dialog h3 { margin-bottom: 8px; }
   .confirm-dialog p { color: var(--text-muted); margin-bottom: 16px; }

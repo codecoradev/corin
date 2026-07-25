@@ -4,6 +4,7 @@
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
+  import { FileText, Brain, X } from 'lucide-svelte';
 
   interface Props {
     namespace: string | null;
@@ -175,7 +176,7 @@
             searchQuery = '';
             searchResults = null;
             unifiedResults = null;
-          }}>✕</button
+          }}><X size={13} strokeWidth={2.5} /></button
         >
       {/if}
     </div>
@@ -229,7 +230,9 @@
                 onkeydown={(e) => e.key === 'Enter' && r.doc_slug && ondocumentclick(r.doc_slug)}
               >
                 <div class="card-content">
-                  <span class="type-badge doc">📄 Doc</span>
+                  <span class="type-badge doc">
+                    <FileText size={10} strokeWidth={2.5} /> Doc
+                  </span>
                   <strong>{r.doc_title ?? r.doc_slug}</strong>
                   {#if r.chunk_heading}
                     <span class="chunk-heading"> — {r.chunk_heading.replace(/^#+\s*/, '')}</span>
@@ -249,7 +252,9 @@
                 onkeydown={(e) => e.key === 'Enter' && r.memory_id && onmemoryclick(r.memory_id)}
               >
                 <div class="card-content">
-                  <span class="type-badge mem">💾 Memory</span>
+                  <span class="type-badge mem">
+                    <Brain size={10} strokeWidth={2.5} /> Memory
+                  </span>
                   {r.content.slice(0, 200)}
                 </div>
                 <div class="semantic-score">{(r.score * 100).toFixed(0)}% match</div>
@@ -423,9 +428,9 @@
     font-size: 0.7rem;
     font-weight: 600;
     color: var(--green);
-    background: rgba(166, 227, 161, 0.12);
+    background: var(--color-green-bg);
     padding: 2px 8px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .card-content {
@@ -465,16 +470,15 @@
   .namespace {
     font-size: 0.7rem;
     padding: 2px 6px;
-    background: rgba(137, 180, 250, 0.15);
+    background: var(--color-blue-bg);
     color: var(--accent);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .importance {
     font-size: 0.7rem;
     color: var(--yellow);
   }
-
   .load-more {
     display: flex;
     justify-content: center;
@@ -528,24 +532,26 @@
   }
   .mode-btn.active {
     background: var(--accent);
-    color: #1e1e2e;
+    color: var(--bg-primary);
     font-weight: 600;
   }
   .type-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
     margin-right: 6px;
     vertical-align: middle;
   }
   .type-badge.doc {
-    background: rgba(137, 180, 250, 0.15);
-    color: #89b4fa;
+    background: var(--color-blue-bg);
+    color: var(--accent);
   }
   .type-badge.mem {
-    background: rgba(166, 227, 161, 0.15);
-    color: #a6e3a1;
+    background: var(--color-green-bg);
+    color: var(--green);
   }
   .doc-card .doc-snippet {
     color: var(--text-muted);

@@ -23,6 +23,7 @@
     Download,
     Trash2,
     Plus,
+    X,
   } from 'lucide-svelte';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { slide } from 'svelte/transition';
@@ -31,50 +32,73 @@
   import { formatDate, getWordCount, getReadingTime } from '../utils/format';
 
   // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
+  // Colors reference the app's CSS custom properties (src/app.css) so the
+  // editor stays in lockstep with the rest of the UI. Resolved once at module
+  // load; CodeMirror accepts these as opaque CSS strings.
+  const root = typeof document !== 'undefined' ? document.documentElement : null;
+  const v = (name: string, fallback: string): string =>
+    root ? getComputedStyle(root).getPropertyValue(name).trim() || fallback : fallback;
+
+  const INK = v('--color-text', '#cdd6f4');
+  const SURFACE = v('--color-crust', '#1e1e2e');
+  const MANTLE = v('--color-mantle', '#181825');
+  const OVERLAY = v('--color-overlay', '#6c7086');
+  const ROSE = v('--color-red', '#f38ba8');
+  const BLUE = v('--color-blue', '#89b4fa');
+  const GREEN = v('--color-green', '#a6e3a1');
+  const YELLOW = v('--color-yellow', '#f9e2af');
+  const PEACH = v('--color-peach', '#fab387');
+  const MAUVE = v('--color-mauve', '#cba6f7');
+  const TEAL = v('--color-teal', '#94e2d5');
+  const SUBTEXT = v('--color-subtext', '#a6adc8');
+  const SURFACE0 = v('--color-surface0', '#313244');
+  const SURFACE1 = v('--color-surface1', '#45475a');
+  const CARET = v('--color-rosewater', '#f5e0dc');
+
   const catppuccinDarkTheme = EditorView.theme({
-    '&': { color: '#cdd6f4', backgroundColor: '#1e1e2e', height: '100%' },
-    '.cm-content': { caretColor: '#f5e0dc' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#f5e0dc' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: '#45475a !important' },
-    '.cm-panels': { backgroundColor: '#181825', color: '#cdd6f4' },
-    '.cm-panels.cm-panels-top': { borderBottom: '2px solid #313244' },
-    '.cm-searchMatch': { backgroundColor: 'rgba(249,226,175,0.2)', outline: '1px solid rgba(249,226,175,0.4)' },
-    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': { backgroundColor: 'rgba(137,180,250,0.3)', outline: '1px solid #89b4fa' },
-    '.cm-activeLine': { backgroundColor: 'rgba(69,71,90,0.3)' },
-    '.cm-selectionMatch': { backgroundColor: 'rgba(137,180,250,0.15)' },
+    '&': { color: INK, backgroundColor: SURFACE, height: '100%' },
+    '.cm-content': { caretColor: CARET },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: CARET },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: `${SURFACE1} !important` },
+    '.cm-panels': { backgroundColor: MANTLE, color: INK },
+    '.cm-panels.cm-panels-top': { borderBottom: `2px solid ${SURFACE0}` },
+    '.cm-searchMatch': { backgroundColor: `color-mix(in srgb, ${YELLOW} 20%, transparent)`, outline: `1px solid color-mix(in srgb, ${YELLOW} 40%, transparent)` },
+    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': { backgroundColor: `color-mix(in srgb, ${BLUE} 30%, transparent)`, outline: `1px solid ${BLUE}` },
+    '.cm-activeLine': { backgroundColor: `color-mix(in srgb, ${SURFACE1} 30%, transparent)` },
+    '.cm-selectionMatch': { backgroundColor: `color-mix(in srgb, ${BLUE} 15%, transparent)` },
   }, { dark: true });
 
   const catppuccinDarkHighlighting = HighlightStyle.define([
-    { tag: tags.heading1, color: '#cba6f7', fontWeight: 'bold', fontSize: '1.2em' },
-    { tag: tags.heading2, color: '#cba6f7', fontWeight: 'bold', fontSize: '1.1em' },
-    { tag: tags.heading3, color: '#cba6f7', fontWeight: 'bold' },
-    { tag: tags.heading4, color: '#cba6f7' },
-    { tag: tags.heading5, color: '#cba6f7' },
-    { tag: tags.heading6, color: '#cba6f7' },
-    { tag: tags.emphasis, color: '#f9e2af', fontStyle: 'italic' },
-    { tag: tags.strong, color: '#fab387', fontWeight: 'bold' },
+    { tag: tags.heading1, color: MAUVE, fontWeight: 'bold', fontSize: '1.2em' },
+    { tag: tags.heading2, color: MAUVE, fontWeight: 'bold', fontSize: '1.1em' },
+    { tag: tags.heading3, color: MAUVE, fontWeight: 'bold' },
+    { tag: tags.heading4, color: MAUVE },
+    { tag: tags.heading5, color: MAUVE },
+    { tag: tags.heading6, color: MAUVE },
+    { tag: tags.emphasis, color: YELLOW, fontStyle: 'italic' },
+    { tag: tags.strong, color: PEACH, fontWeight: 'bold' },
     { tag: tags.strikethrough, textDecoration: 'line-through' },
-    { tag: tags.link, color: '#89b4fa' },
-    { tag: tags.url, color: '#89b4fa', textDecoration: 'underline' },
-    { tag: tags.monospace, color: '#a6e3a1', fontFamily: 'var(--font-mono)' },
-    { tag: tags.quote, color: '#a6adc8', fontStyle: 'italic' },
-    { tag: tags.meta, color: '#9399b2' },
-    { tag: tags.processingInstruction, color: '#f38ba8' },
-    { tag: tags.comment, color: '#6c7086', fontStyle: 'italic' },
-    { tag: tags.keyword, color: '#cba6f7' },
-    { tag: tags.string, color: '#a6e3a1' },
-    { tag: tags.number, color: '#fab387' },
-    { tag: tags.bool, color: '#fab387' },
-    { tag: tags.null, color: '#9399b2' },
-    { tag: tags.propertyName, color: '#89b4fa' },
-    { tag: tags.variableName, color: '#cdd6f4' },
-    { tag: tags.operator, color: '#89dceb' },
-    { tag: tags.punctuation, color: '#9399b2' },
-    { tag: tags.bracket, color: '#9399b2' },
-    { tag: tags.atom, color: '#fab387' },
-    { tag: tags.content, color: '#cdd6f4' },
-    { tag: tags.contentSeparator, color: '#585b70' },
-    { tag: tags.list, color: '#89b4fa' },
+    { tag: tags.link, color: BLUE },
+    { tag: tags.url, color: BLUE, textDecoration: 'underline' },
+    { tag: tags.monospace, color: GREEN, fontFamily: 'var(--font-mono)' },
+    { tag: tags.quote, color: SUBTEXT, fontStyle: 'italic' },
+    { tag: tags.meta, color: OVERLAY },
+    { tag: tags.processingInstruction, color: ROSE },
+    { tag: tags.comment, color: OVERLAY, fontStyle: 'italic' },
+    { tag: tags.keyword, color: MAUVE },
+    { tag: tags.string, color: GREEN },
+    { tag: tags.number, color: PEACH },
+    { tag: tags.bool, color: PEACH },
+    { tag: tags.null, color: OVERLAY },
+    { tag: tags.propertyName, color: BLUE },
+    { tag: tags.variableName, color: INK },
+    { tag: tags.operator, color: TEAL },
+    { tag: tags.punctuation, color: OVERLAY },
+    { tag: tags.bracket, color: OVERLAY },
+    { tag: tags.atom, color: PEACH },
+    { tag: tags.content, color: INK },
+    { tag: tags.contentSeparator, color: OVERLAY },
+    { tag: tags.list, color: BLUE },
   ]);
 
   // ─── Props ─────────────────────────────────────────────────────────
@@ -628,13 +652,13 @@
   {#if error}
     <div class="error-bar">
       <span class="error-text">{error}</span>
-      <button class="dismiss-btn" onclick={() => (error = '')}>✕</button>
+      <button class="dismiss-btn" onclick={() => (error = '')}><X size={13} strokeWidth={2.5} /></button>
     </div>
   {/if}
   {#if success}
     <div class="success-bar">
       <span class="success-text">{success}</span>
-      <button class="dismiss-btn success-dismiss" onclick={() => (success = '')}>✕</button>
+      <button class="dismiss-btn success-dismiss" onclick={() => (success = '')}><X size={13} strokeWidth={2.5} /></button>
     </div>
   {/if}
 
@@ -650,7 +674,7 @@
           oninput={onSearchInput}
         />
         {#if searchQuery}
-          <button class="search-clear" onclick={() => { searchQuery = ''; showSearchResults = false; searchResults = []; }}>✕</button>
+          <button class="search-clear" onclick={() => { searchQuery = ''; showSearchResults = false; searchResults = []; }}><X size={13} strokeWidth={2.5} /></button>
         {/if}
       </div>
 
@@ -679,7 +703,7 @@
         <div class="msg"><span class="spinner"></span> Loading...</div>
       {:else if rootDocs.length === 0}
         <div class="empty-tree">
-          <div class="empty-tree-icon">📄</div>
+          <div class="empty-tree-icon"><FileText size={28} strokeWidth={1.5} /></div>
           <p>No documents yet</p>
           <button class="action-btn new-btn small" onclick={newDoc}><Plus size={12} strokeWidth={2.5} /> Create first doc</button>
         </div>
@@ -812,7 +836,7 @@
         </div>
       {:else}
         <div class="empty-state">
-          <div class="empty-icon">📄</div>
+          <div class="empty-icon"><FileText size={32} strokeWidth={1.5} /></div>
           <p class="empty-title">Select a document to view</p>
           <p class="empty-sub">or create a new one with <strong>+ New</strong></p>
         </div>
@@ -914,8 +938,8 @@
      ═══════════════════════════════════════════════════════════════════ */
   .error-bar {
     padding: 8px 20px;
-    background: rgba(243, 139, 168, 0.1);
-    border-bottom: 1px solid rgba(243, 139, 168, 0.25);
+    background: var(--color-red-bg);
+    border-bottom: 1px solid var(--color-red-line);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -924,8 +948,8 @@
   }
   .success-bar {
     padding: 8px 20px;
-    background: rgba(166, 227, 161, 0.1);
-    border-bottom: 1px solid rgba(166, 227, 161, 0.25);
+    background: var(--color-green-bg);
+    border-bottom: 1px solid var(--color-green-line);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -934,8 +958,8 @@
   }
   .version-banner {
     padding: 10px 20px;
-    background: rgba(245, 208, 135, 0.12);
-    border-bottom: 1px solid rgba(245, 208, 135, 0.3);
+    background: var(--color-yellow-bg);
+    border-bottom: 1px solid var(--color-yellow-line);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -959,7 +983,7 @@
   .vb-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } }
   .error-text {
-    color: #f38ba8;
+    color: var(--red);
     font-size: 0.8rem;
     flex: 1;
     min-width: 0;
@@ -968,7 +992,7 @@
     white-space: nowrap;
   }
   .success-text {
-    color: #a6e3a1;
+    color: var(--green);
     font-size: 0.8rem;
     font-weight: 500;
     flex: 1;
@@ -980,12 +1004,14 @@
   .dismiss-btn {
     background: none;
     border: none;
-    color: #f38ba8;
+    color: var(--red);
     cursor: pointer;
     padding: 0 2px;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
   }
-  .dismiss-btn.success-dismiss { color: #a6e3a1; }
+  .dismiss-btn.success-dismiss { color: var(--green); }
 
   /* ═══════════════════════════════════════════════════════════════════
      Left Panel — Tree
@@ -1220,7 +1246,7 @@
     color: var(--text-muted);
     font-size: 0.7rem;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: background-color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), color 0.15s var(--ease-out);
   }
   .mode-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
   .mode-btn.active { color: var(--accent); background: var(--bg-tertiary); }
@@ -1312,11 +1338,11 @@
     border-radius: var(--radius);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.12s;
+    transition: background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
   }
   .icon-btn:hover { background: var(--bg-hover); border-color: var(--border); color: var(--text-primary); }
   .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .icon-btn.danger:hover { color: #f38ba8; background: rgba(243,139,168,0.1); }
+  .icon-btn.danger:hover { color: var(--red); background: var(--color-red-bg); }
 
   /* ── Content area ── */
   .content-area {
@@ -1371,22 +1397,22 @@
     line-height: 1.65;
     font-size: 0.9rem;
   }
-  .markdown-body :global(h1) { color: #cba6f7; font-size: 1.6em; font-weight: 700; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-  .markdown-body :global(h2) { color: #cba6f7; font-size: 1.3em; font-weight: 600; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(49,50,68,0.5); }
-  .markdown-body :global(h3) { color: #cba6f7; font-size: 1.1em; font-weight: 600; margin: 20px 0 6px; }
-  .markdown-body :global(h4), .markdown-body :global(h5), .markdown-body :global(h6) { color: #cba6f7; font-weight: 600; margin: 16px 0 4px; }
+  .markdown-body :global(h1) { color: var(--mauve); font-size: 1.6em; font-weight: 700; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .markdown-body :global(h2) { color: var(--mauve); font-size: 1.3em; font-weight: 600; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .markdown-body :global(h3) { color: var(--mauve); font-size: 1.1em; font-weight: 600; margin: 20px 0 6px; }
+  .markdown-body :global(h4), .markdown-body :global(h5), .markdown-body :global(h6) { color: var(--mauve); font-weight: 600; margin: 16px 0 4px; }
   .markdown-body :global(p) { margin: 0 0 10px; }
-  .markdown-body :global(a) { color: #89b4fa; text-decoration: none; }
+  .markdown-body :global(a) { color: var(--accent); text-decoration: none; }
   .markdown-body :global(a:hover) { text-decoration: underline; }
   .markdown-body :global(a[data-internal]) { color: var(--mauve); cursor: pointer; }
   .markdown-body :global(a[data-internal]:hover) { text-decoration: underline; }
-  .markdown-body :global(strong) { color: #fab387; font-weight: 600; }
-  .markdown-body :global(em) { color: #f9e2af; }
+  .markdown-body :global(strong) { color: var(--peach); font-weight: 600; }
+  .markdown-body :global(em) { color: var(--yellow); }
   .markdown-body :global(code) {
-    color: #a6e3a1;
-    background: rgba(30,30,46,0.8);
+    color: var(--green);
+    background: var(--bg-secondary);
     padding: 2px 5px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.85em;
   }
@@ -1409,7 +1435,7 @@
     margin: 12px 0;
     padding: 4px 16px;
     color: var(--text-secondary);
-    background: rgba(137,180,250,0.04);
+    background: var(--color-blue-bg);
     border-radius: 0 var(--radius) var(--radius) 0;
   }
   .markdown-body :global(ul), .markdown-body :global(ol) { padding-left: 24px; margin: 8px 0; }
@@ -1451,8 +1477,8 @@
   }
   .action-btn:hover { background: var(--bg-tertiary); border-color: var(--text-muted); }
   .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .action-btn.danger { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
-  .action-btn.danger:hover { background: rgba(243,139,168,0.12); }
+  .action-btn.danger { color: var(--red); border-color: var(--color-red-line); }
+  .action-btn.danger:hover { background: var(--color-red-bg); }
   .action-btn.small { padding: 4px 10px; font-size: 0.72rem; }
   .new-btn { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
   .new-btn:hover { opacity: 0.85; border-color: var(--accent); }
@@ -1488,7 +1514,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim);
     display: flex;
     align-items: center;
     justify-content: center;

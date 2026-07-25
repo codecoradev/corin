@@ -186,8 +186,8 @@
     margin-left: auto;
     font-size: 0.7rem;
     padding: 1px 4px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
   }
 
@@ -253,7 +253,6 @@
   }
   .online .status-dot {
     background: var(--green);
-    box-shadow: 0 0 6px rgba(166, 227, 161, 0.5);
     animation: pulse 2s infinite;
   }
   @keyframes pulse {
