@@ -86,41 +86,45 @@ pub fn detect_uteke_serve_url() -> String {
         return DEFAULT_SERVE_URL.to_string();
     };
 
-    // Try both config files: uteke.toml first, then config.toml.
-    for name in &["uteke.toml", "config.toml"] {
-        let path = home.join(format!(".uteke/{name}"));
-        let Ok(contents) = fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(parsed) = contents.parse::<toml::Value>() else {
-            continue;
-        };
+    // Candidate uteke data dirs: new default (~/.codecora/uteke, uteke >=0.10.1)
+    // then legacy (~/.uteke). Uteke 0.10.1 migrated the default data dir.
+    for base in &[".codecora/uteke", ".uteke"] {
+        // Try both config files: uteke.toml first, then config.toml.
+        for name in &["uteke.toml", "config.toml"] {
+            let path = home.join(format!("{base}/{name}"));
+            let Ok(contents) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(parsed) = contents.parse::<toml::Value>() else {
+                continue;
+            };
 
-        // Uteke uses [server] section with `host` and `port` keys.
-        // Also check [serve] as a fallback for alternative spellings.
-        let section = parsed.get("server").or_else(|| parsed.get("serve"));
-        let Some(section) = section else {
-            continue;
-        };
+            // Uteke uses [server] section with `host` and `port` keys.
+            // Also check [serve] as a fallback for alternative spellings.
+            let section = parsed.get("server").or_else(|| parsed.get("serve"));
+            let Some(section) = section else {
+                continue;
+            };
 
-        let port = section.get("port").and_then(|p| {
-            p.as_integer()
-                .map(|i| i.to_string())
-                .or_else(|| p.as_str().map(String::from))
-        });
+            let port = section.get("port").and_then(|p| {
+                p.as_integer()
+                    .map(|i| i.to_string())
+                    .or_else(|| p.as_str().map(String::from))
+            });
 
-        // Port found — build the URL.
-        if let Some(port) = port {
-            let host = section
-                .get("host")
-                .or_else(|| section.get("bind"))
-                .and_then(|h| h.as_str())
-                .unwrap_or("127.0.0.1");
-            return format!("http://{host}:{port}");
+            // Port found — build the URL.
+            if let Some(port) = port {
+                let host = section
+                    .get("host")
+                    .or_else(|| section.get("bind"))
+                    .and_then(|h| h.as_str())
+                    .unwrap_or("127.0.0.1");
+                return format!("http://{host}:{port}");
+            }
+
+            // Section exists but port not set — section is commented out.
+            // Continue to next config file or fall through to default.
         }
-
-        // Section exists but port not set — section is commented out.
-        // Continue to next config file or fall through to default.
     }
 
     DEFAULT_SERVE_URL.to_string()
@@ -131,7 +135,7 @@ pub fn detect_uteke_serve_url() -> String {
 /// Priority:
 /// 1. Primary connection in DB (connections table, is_primary=1)
 /// 2. `UTEKE_SERVER_URL` environment variable
-/// 3. `~/.uteke/uteke.toml` / `config.toml` [server] section
+/// 3. `~/.codecora/uteke/` (uteke >=0.10.1) or legacy `~/.uteke/` — `uteke.toml`/`config.toml` [server] section
 /// 4. `DEFAULT_SERVE_URL` fallback
 ///
 /// Returns (url, auth_token).
@@ -183,17 +187,22 @@ pub fn uteke_symlink_path() -> Result<PathBuf, ConfigError> {
 /// Resolve the ONNX model directory.
 ///
 /// Priority:
-/// 1. `~/.uteke/models/embeddinggemma-q4/` — reuse Uteke's model (no duplicate download)
+/// 1. Uteke's model dir — `~/.codecora/uteke/models/...` (uteke >=0.10.1) then
+///    legacy `~/.uteke/models/...` (reuse Uteke's model, no duplicate download)
 /// 2. `~/.codecora/uteke/models/embeddinggemma-q4/` — CorIn standalone copy
 ///
 /// Returns the first path that contains the model files.
 pub fn resolve_model_dir() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
 
-    // 1. Try Uteke's model directory first
-    let uteke_models = home.join(".uteke/models/embeddinggemma-q4");
-    if uteke_models.join("onnx/model_q4.onnx").exists() {
-        return Some(uteke_models);
+    // 1. Try Uteke's model directory. Check the new default (~/.codecora/uteke,
+    //    uteke >=0.10.1) first, then legacy (~/.uteke), so we reuse Uteke's
+    //    migrated model instead of re-downloading a CorIn standalone copy.
+    for base in &[".codecora/uteke", ".uteke"] {
+        let uteke_models = home.join(format!("{base}/models/embeddinggemma-q4"));
+        if uteke_models.join("onnx/model_q4.onnx").exists() {
+            return Some(uteke_models);
+        }
     }
 
     // 2. Try CorIn's standalone model directory
@@ -213,33 +222,39 @@ pub fn corin_model_dir() -> Result<PathBuf, ConfigError> {
 
 /// Detect if Uteke is installed on this machine.
 ///
-/// Checks common locations:
-/// - `~/.uteke/uteke.db`
-/// - Custom path from `~/.uteke/config.toml` `[store].path`
+/// Checks common locations (new default first, then legacy):
+/// - `~/.codecora/uteke/uteke.db` (uteke >=0.10.1) or `~/.uteke/uteke.db` (legacy)
+/// - Custom path from that dir's `config.toml` `[store].path`
 ///
 /// Returns the path to the Uteke data directory if found.
 pub fn detect_uteke() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let default_uteke = home.join(".uteke");
 
-    // Check default location
-    if default_uteke.join("uteke.db").exists() {
-        return Some(default_uteke);
-    }
+    // Candidate uteke data dirs: new default (~/.codecora/uteke, uteke >=0.10.1)
+    // then legacy (~/.uteke). Uteke 0.10.1 migrated the default data dir via
+    // atomic rename, so ~/.uteke no longer exists after migration.
+    for base in &[".codecora/uteke", ".uteke"] {
+        let default_uteke = home.join(base);
 
-    // Check config.toml for custom path
-    let config = default_uteke.join("config.toml");
-    if config.exists()
-        && let Ok(contents) = fs::read_to_string(&config)
-        && let Ok(parsed) = contents.parse::<toml::Value>()
-        && let Some(path) = parsed
-            .get("store")
-            .and_then(|s| s.get("path"))
-            .and_then(|p| p.as_str())
-    {
-        let expanded = expand_tilde(path);
-        if expanded.join("uteke.db").exists() {
-            return Some(expanded);
+        // Check default location
+        if default_uteke.join("uteke.db").exists() {
+            return Some(default_uteke);
+        }
+
+        // Check config.toml for custom path
+        let config = default_uteke.join("config.toml");
+        if config.exists()
+            && let Ok(contents) = fs::read_to_string(&config)
+            && let Ok(parsed) = contents.parse::<toml::Value>()
+            && let Some(path) = parsed
+                .get("store")
+                .and_then(|s| s.get("path"))
+                .and_then(|p| p.as_str())
+        {
+            let expanded = expand_tilde(path);
+            if expanded.join("uteke.db").exists() {
+                return Some(expanded);
+            }
         }
     }
 

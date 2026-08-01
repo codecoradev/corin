@@ -8,7 +8,9 @@
 //! dependency. All operations (memory CRUD, graph, rooms) go through
 //! the HTTP API.
 //!
-//! Compatibility: verified against uteke 0.7.x–0.9.x (released + develop).
+//! Compatibility: verified against uteke 0.7.x–0.10.x (released + develop).
+//! Note: uteke 0.10.1 migrated the default data dir from `~/.uteke` to
+//! `~/.codecora/uteke`; `config.rs` resolves both (new first, legacy fallback).
 //! The `/recall` (plain, no `search_type`) and `/search` endpoints return
 //! the stable `[{memory, score}]` shape across these versions, so no
 //! API-version prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document`
