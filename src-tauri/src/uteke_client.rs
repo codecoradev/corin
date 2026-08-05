@@ -632,21 +632,6 @@ impl UtekeClient {
         resp.json().await.map_err(|e| e.to_string())
     }
 
-    /// Get graph statistics only (no nodes/edges).
-    pub async fn graph_stats(&self) -> Result<GraphStats, String> {
-        let resp = self
-            .authed(self.client.get(format!("{}/graph/stats", self.base_url)))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if !resp.status().is_success() {
-            return Err(format!("server returned {}", resp.status()));
-        }
-
-        resp.json().await.map_err(|e| e.to_string())
-    }
-
     /// List rooms.
     pub async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<UtekeRoom>, String> {
         let mut req = self.authed(self.client.get(format!("{}/room/list", self.base_url)));
