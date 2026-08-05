@@ -507,6 +507,9 @@ pub fn run() {
             commands::doc_search,
             commands::doc_delete,
             commands::doc_move,
+            // Cross-entity linking (#207)
+            commands::memory_doc_refs,
+            commands::doc_mem_refs,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

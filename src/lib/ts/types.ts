@@ -105,6 +105,18 @@ export interface DocSearchResult {
   mode: string | null;
 }
 
+// Cross-entity linking (#207): documents that reference a memory.
+export interface MemoryDocRefsResponse {
+  memory_id: string;
+  doc_slugs: string[];
+}
+
+// Cross-entity linking (#207): memories that reference a document.
+export interface DocMemRefsResponse {
+  doc_slug: string;
+  memory_ids: string[];
+}
+
 // Stats response
 export interface StatsResponse {
   total_memories: number;

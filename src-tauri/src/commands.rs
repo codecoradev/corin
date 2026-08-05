@@ -3037,6 +3037,44 @@ pub async fn doc_move(
     Ok(result)
 }
 
+/// Cross-entity linking: documents that reference a memory (POST /memory/doc-refs).
+#[tauri::command]
+pub async fn memory_doc_refs(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    memory_id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .memory_doc_refs(&memory_id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Cross-entity linking: memories that reference a document (POST /doc/mem-refs).
+#[tauri::command]
+pub async fn doc_mem_refs(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    doc_slug: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .doc_mem_refs(&doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {
