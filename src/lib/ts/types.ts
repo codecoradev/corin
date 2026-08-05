@@ -125,3 +125,11 @@ export interface StatsResponse {
   total_edges: number;
   db_size_bytes: number;
 }
+
+// Trust feedback response (POST /memory/feedback)
+export interface MemoryFeedbackResponse {
+  id: string;
+  feedback: string;
+  delta: number;
+  importance: number;
+}

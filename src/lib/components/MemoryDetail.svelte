@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke, utekeServer, memoryDocRefs } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer, memoryDocRefs, memoryFeedback } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
-  import { X, Link2, FileText } from 'lucide-svelte';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown } from 'lucide-svelte';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface Neighbor {
@@ -33,6 +33,11 @@
   let loading = $state(true);
   let showDeleteConfirm = $state(false);
 
+  // Trust feedback state (#207)
+  let feedbackGiven = $state<'helpful' | 'unhelpful' | null>(null);
+  let feedbackDelta = $state<number | null>(null);
+  let submittingFeedback = $state(false);
+
   async function load() {
     loading = true;
     try {
@@ -60,6 +65,10 @@
 
   $effect(() => {
     memoryId;
+    // Reset feedback state when switching memories (#207 security fix).
+    feedbackGiven = null;
+    feedbackDelta = null;
+    submittingFeedback = false;
     load();
   });
 
@@ -98,6 +107,26 @@
   // Click handler for doc slug links — navigation wiring comes later (#207 phase 2).
   function handleDocClick(slug: string) {
     console.log('[MemoryDetail] doc slug clicked (navigation not yet wired):', slug);
+  }
+
+  // Trust feedback handler (#207)
+  async function handleFeedback(type: 'helpful' | 'unhelpful') {
+    if (submittingFeedback || feedbackGiven === type) return;
+    submittingFeedback = true;
+    try {
+      const res = await memoryFeedback(memoryId, type);
+      feedbackGiven = type;
+      feedbackDelta = res.delta;
+      if (type === 'helpful') {
+        toastStore.success('Marked as helpful');
+      } else {
+        toastStore.info('Marked as unhelpful — importance reduced');
+      }
+    } catch (e) {
+      toastStore.error(`Feedback failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      submittingFeedback = false;
+    }
   }
 </script>
 
@@ -182,6 +211,33 @@
               </a>
             {/each}
           </div>
+        {/if}
+      </div>
+
+      <div class="feedback-section">
+        <span class="feedback-label">Was this helpful?</span>
+        <div class="feedback-buttons">
+          <button
+            class="feedback-btn up {feedbackGiven === 'helpful' ? 'active' : ''}"
+            disabled={submittingFeedback || feedbackGiven !== null}
+            onclick={() => handleFeedback('helpful')}
+            title="Helpful (+0.05 importance)"
+          >
+            <ThumbsUp size={14} strokeWidth={2} />
+          </button>
+          <button
+            class="feedback-btn down {feedbackGiven === 'unhelpful' ? 'active' : ''}"
+            disabled={submittingFeedback || feedbackGiven !== null}
+            onclick={() => handleFeedback('unhelpful')}
+            title="Unhelpful (-0.10 importance)"
+          >
+            <ThumbsDown size={14} strokeWidth={2} />
+          </button>
+        </div>
+        {#if feedbackDelta !== null}
+          <span class="feedback-delta {feedbackDelta > 0 ? 'positive' : 'negative'}">
+            {feedbackDelta > 0 ? '+' : ''}{(feedbackDelta * 100).toFixed(0)}%
+          </span>
         {/if}
       </div>
 
@@ -287,6 +343,28 @@
   }
   .doc-link:hover { border-color: var(--accent); }
   .no-docs { text-align: center; padding: 12px; color: var(--text-muted); font-size: 0.85rem; }
+
+  .feedback-section {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 16px; padding: 10px 14px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .feedback-label { font-size: 0.8rem; color: var(--text-muted); }
+  .feedback-buttons { display: flex; gap: 6px; }
+  .feedback-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 4px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+  }
+  .feedback-btn:disabled { opacity: 0.5; cursor: default; }
+  .feedback-btn.up.active { background: var(--color-green-bg); color: var(--green); border-color: var(--green); }
+  .feedback-btn.down.active { background: var(--color-red-bg, rgba(255,0,0,0.1)); color: var(--red); border-color: var(--red); }
+  .feedback-btn:not(:disabled):hover { border-color: var(--accent); color: var(--text-primary); }
+  .feedback-delta { font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .feedback-delta.positive { color: var(--green); }
+  .feedback-delta.negative { color: var(--red); }
 
   .neighbors-section { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
   .neighbors-header { margin-bottom: 12px; }
