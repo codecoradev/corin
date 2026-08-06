@@ -1,3 +1,10 @@
+# Changelog
+
+All notable changes to CorIn will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [0.3.4] — 2026-07-21
 
 Hotfix release: makes auto-update functional. v0.3.3's release pipeline had
@@ -213,12 +220,7 @@ Stable patch release. Promotes v0.3.1-beta.1 (identical contents) to a full rele
 ### Changed
 - **uteke-core v0.6.4** — pinned to crates.io with `default-features = false` (ONNX gate). Resolves CI build failures on all platforms. No longer uses git branch pin.
 
-# Changelog
-
-All notable changes to CorIn will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+---
 
 ## [0.1.1] — 2026-06-22
 

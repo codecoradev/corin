@@ -36,7 +36,7 @@ Local-first desktop app for managing memories, knowledge graphs, rooms, and docu
 - [x] Dream cycle — one-command maintenance (lint, dedup, orphan detection)
 - [x] Namespace filter — multi-select dropdown with 3-state checkbox
 - [x] Room management — create and delete rooms
-- [x] Multi-product dashboard — stats overview across connections
+- [x] Dashboard stats — namespace overview, recent memories, server status
 - [x] Auto-updater (signed platform updates)
 - [x] AI agent detection — detect and generate agent metadata
 
@@ -49,28 +49,28 @@ Local-first desktop app for managing memories, knowledge graphs, rooms, and docu
 - [x] **Shared utils** — `format.ts` + `markdown.ts` with 29 unit tests
 - [x] **Documents page** — 3-mode toggle (Edit/Split/Preview), markdown rendering with GFM breaks, internal/external link navigation, tree auto-expand, native `.md` export
 - [x] **Auto-update** — silent check on startup, one-click download + install
-- [x] **Dynamic version** — reads app version at runtime
-- [x] **Lucide icons** — consistent icon system across all views
+- [x] **Unified search** — memories + documents in a single search (v0.3.3, requires uteke 0.9.0+)
+- [x] **HTTP-only version gate** — no CLI probes, reads server `/health` directly (v0.3.2+)
 
 ### Pipeline (next)
 
 - [ ] Complete Uteke client coverage (tags, pin, timeline, edges UI)
-- [ ] Kanban integration (via Hermes dashboard REST API)
+- [ ] Adopt uteke 0.8-0.10 endpoints (trust feedback, room/remember, cross-entity) (#207)
 
 ## Development
 
 ```bash
-# Prerequisites: Rust (stable), Node.js 22+, npm
-# Also: uteke-serve running (auto-started by Corin)
+# Prerequisites: Rust (stable), Node.js 22+, bun
+# Also: uteke-serve running (auto-started by CorIn)
 
 # Install frontend deps
-npm install
+bun install
 
 # Run in dev mode
-npm run tauri dev
+bun run tauri dev
 
 # Build for production
-npm run tauri build
+bun run tauri build
 ```
 
 See [AGENTS.md](./AGENTS.md) for pre-push checklist and conventions.

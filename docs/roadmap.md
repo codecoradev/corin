@@ -1,7 +1,7 @@
 # Corin — Feature Roadmap
 
 > Reference: Uteke features that Corin integrates with or exposes via UI.
-> Updated: 2026-07-06 (Uteke v0.6.7)
+> Updated: 2026-07-21 (Uteke v0.9.0, CorIn v0.3.4)
 
 ## 🔍 Search & Retrieval
 
@@ -46,7 +46,7 @@
 |---------|-------------|--------|
 | Document Engine | Store full markdown documents. Auto-chunk per heading, each chunk gets own embedding. | ✅ Tree nav + CodeMirror 6 + CRUD |
 | Markdown Chunker | Split documents by heading. Code blocks not split. | ✅ via uteke-serve |
-| Document Update | Update existing document content. | ⬚ Uses upsert (`POST /doc/create`), dedicated `POST /doc/update` pending (uteke issue) |
+| Document Update | Update existing document content. | ✅ Save flow tries `POST /doc/update` first, falls back to `/doc/create` (upsert) on 404 for older uteke servers |
 | Document Move | Move documents between tree locations. | ✅ `doc_move` command |
 
 ## 🔌 Integration & Server
@@ -77,8 +77,8 @@
 |-------|-------|--------|
 | **Phase 1** (v0.1.0) | MVP: Memory CRUD, graph (tag-based), namespaces, rooms, CI, centralized storage | ✅ Done |
 | **Phase 2** (v0.2.0) | Uteke HTTP integration: hybrid search, graph edges, auto-linking, document engine, connection manager, import/export, dream cycle | ✅ Done |
-| **Phase 3** (v0.3.0) | Pipeline: doc update endpoint, tags/pin/timeline UI, kanban integration | 🔄 In progress |
-| **Phase 4** | Multi-product dashboard enhancements, advanced settings | ⬚ Planned |
+| **Phase 3** (v0.3.0) | UI/UX overhaul: design system, animation, Tailwind v4, component refactoring, document engine, auto-update, unified search | ✅ Done |
+| **Phase 4** | Pipeline: tags/pin/timeline UI, kanban integration, multi-product dashboard enhancements, advanced settings | 🔄 Planned |
 | **Phase 5** | Mobile companion app | ⬚ Planned |
 
 ---
@@ -89,9 +89,9 @@ Active development tracked via [codecoradev/corin issues](https://github.com/cod
 
 | Issue | Title | Phase |
 |-------|-------|-------|
-| #139 | `POST /doc/update` endpoint for document editing | 3 |
-| #123 | Release v0.3.0 sync develop→main | 3 |
-| #116 | Kanban integration via Hermes dashboard | 3 |
+| #207 | Adopt uteke 0.8-0.10 endpoints (trust feedback, room/remember, room-doc junction, cross-entity, context) | 4 |
+| #206 | `UtekeClient::graph_stats()` dead code calling non-existent endpoint | 4 |
+| #116 | Kanban integration via Hermes dashboard | 4 |
 | #25 | Mobile companion app | 5 |
-| #21 | Web API for remote/mobile access | 4 |
+| #21 | Web API for remote/mobile access | 5 |
 | #20 | Cora review history viewer | 4 |
