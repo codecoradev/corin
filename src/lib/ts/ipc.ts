@@ -4,6 +4,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
   MemoryEntry, SearchResult, UnifiedSearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
+  MemoryDocRefsResponse, DocMemRefsResponse,
 } from './types';
 
 export const memory = {
@@ -347,3 +348,16 @@ export const docs = {
     await writeTextFile(filePath, content);
   },
 };
+
+// Cross-entity linking (#207) — memory ↔ document references.
+// Top-level (not nested in an object) since these bridge two domains.
+
+/** Documents that reference a given memory (POST /memory/doc-refs). */
+export async function memoryDocRefs(memoryId: string): Promise<MemoryDocRefsResponse> {
+  return invoke<MemoryDocRefsResponse>('memory_doc_refs', { memoryId });
+}
+
+/** Memories that reference a given document (POST /doc/mem-refs). */
+export async function docMemRefs(docSlug: string): Promise<DocMemRefsResponse> {
+  return invoke<DocMemRefsResponse>('doc_mem_refs', { docSlug });
+}

@@ -1252,4 +1252,43 @@ impl UtekeClient {
             .map_err(|e| e.to_string())?;
         Self::json_checked(resp, "/doc/move").await
     }
+
+    /// Cross-entity linking: documents that reference a memory (POST /memory/doc-refs).
+    pub async fn memory_doc_refs(&self, memory_id: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "memory_id": memory_id,
+        });
+
+        self.authed(
+            self.client
+                .post(format!("{}/memory/doc-refs", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// Cross-entity linking: memories that reference a document (POST /doc/mem-refs).
+    pub async fn doc_mem_refs(&self, doc_slug: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "doc_slug": doc_slug,
+        });
+
+        self.authed(self.client.post(format!("{}/doc/mem-refs", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
 }

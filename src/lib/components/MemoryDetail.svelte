@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer, memoryDocRefs } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
-  import { X, Link2 } from 'lucide-svelte';
+  import { X, Link2, FileText } from 'lucide-svelte';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface Neighbor {
@@ -29,6 +29,7 @@
 
   let memory = $state<MemoryEntry | null>(null);
   let neighbors = $state<Neighbor[]>([]);
+  let docSlugs = $state<string[]>([]);
   let loading = $state(true);
   let showDeleteConfirm = $state(false);
 
@@ -42,6 +43,14 @@
       }
       // Load neighbors from Uteke (shared tags + explicit edges)
       neighbors = await uteke.neighbors(memoryId, 20).catch(() => []);
+      // Cross-entity linking (#207): documents that reference this memory.
+      // Non-fatal — older uteke-serve builds lack the endpoint.
+      try {
+        const refs = await memoryDocRefs(memoryId);
+        docSlugs = refs.doc_slugs ?? [];
+      } catch {
+        docSlugs = [];
+      }
     } catch {
       memory = null;
     } finally {
@@ -84,6 +93,11 @@
     if (rel.startsWith('shared_tag')) return 'shared';
     if (rel.startsWith('similar')) return 'sim';
     return 'related';
+  }
+
+  // Click handler for doc slug links — navigation wiring comes later (#207 phase 2).
+  function handleDocClick(slug: string) {
+    console.log('[MemoryDetail] doc slug clicked (navigation not yet wired):', slug);
   }
 </script>
 
@@ -141,6 +155,34 @@
             </div>
           {/if}
         </div>
+      </div>
+
+      <div class="docs-section">
+        <div class="docs-header">
+          <h3><FileText size={14} strokeWidth={2} class="doc-icon" /> Referenced Documents ({docSlugs.length})</h3>
+        </div>
+
+        {#if docSlugs.length === 0}
+          <div class="no-docs">
+            <p>No linked documents.</p>
+          </div>
+        {:else}
+          <div class="doc-list">
+            {#each docSlugs as slug}
+              <a
+                href="#"
+                class="doc-link"
+                onclick={(e) => {
+                  e.preventDefault();
+                  handleDocClick(slug);
+                }}
+              >
+                <FileText size={12} strokeWidth={2} />
+                {slug}
+              </a>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       <div class="neighbors-section">
@@ -230,6 +272,21 @@
   .tag { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
 
   .detail-body { overflow-y: auto; flex: 1; min-height: 0; padding: 0 24px 24px; }
+
+  .docs-section { margin-top: 20px; }
+  .docs-header { margin-bottom: 8px; }
+  .docs-header h3 { font-size: 0.95rem; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+  .docs-header :global(.doc-icon) { stroke: var(--text-secondary); }
+  .doc-list { display: flex; flex-direction: column; gap: 4px; }
+  .doc-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.85rem; color: var(--accent); text-decoration: none;
+    padding: 6px 10px; background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 4px; cursor: pointer; transition: border-color 0.1s;
+    font-family: var(--font-mono);
+  }
+  .doc-link:hover { border-color: var(--accent); }
+  .no-docs { text-align: center; padding: 12px; color: var(--text-muted); font-size: 0.85rem; }
 
   .neighbors-section { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
   .neighbors-header { margin-bottom: 12px; }
