@@ -510,6 +510,8 @@ pub fn run() {
             // Cross-entity linking (#207)
             commands::memory_doc_refs,
             commands::doc_mem_refs,
+            // Trust feedback (#207)
+            commands::memory_feedback,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

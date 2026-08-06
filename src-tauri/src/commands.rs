@@ -3075,6 +3075,33 @@ pub async fn doc_mem_refs(
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
+/// Trust feedback on a memory (POST /memory/feedback).
+/// Submits "helpful" or "unhelpful" signal for ranking.
+#[tauri::command]
+pub async fn memory_feedback(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    feedback: String,
+) -> Result<serde_json::Value, CommandError> {
+    // Validate feedback at IPC boundary — only accept known values.
+    match feedback.as_str() {
+        "helpful" | "unhelpful" => {}
+        _ => return Err(CommandError::Uteke("invalid feedback value".into())),
+    }
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .memory_feedback(&id, &feedback)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {

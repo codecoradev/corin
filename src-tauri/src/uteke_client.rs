@@ -1291,4 +1291,27 @@ impl UtekeClient {
             .await
             .map_err(|e| e.to_string())
     }
+
+    /// Submit trust feedback on a memory (POST /memory/feedback).
+    /// `feedback` must be "helpful" or "unhelpful".
+    pub async fn memory_feedback(
+        &self,
+        id: &str,
+        feedback: &str,
+    ) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "id": id,
+            "feedback": feedback,
+        });
+        let resp = self
+            .authed(
+                self.client
+                    .post(format!("{}/memory/feedback", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/memory/feedback").await
+    }
 }

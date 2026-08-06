@@ -4,7 +4,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
   MemoryEntry, SearchResult, UnifiedSearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
-  MemoryDocRefsResponse, DocMemRefsResponse,
+  MemoryDocRefsResponse, DocMemRefsResponse, MemoryFeedbackResponse,
 } from './types';
 
 export const memory = {
@@ -128,6 +128,10 @@ export const uteke = {
   neighbors: (id: string, limit?: number) =>
     invoke<{ id: string; content: string; tags: string[]; namespace: string | null; importance: number | null; content_type: string | null; created_at: string | null; relationship: string; score: number | null; shared_tags: string[] }[]>('uteke_neighbors', { id, limit: limit ?? null }),
 };
+
+// Trust feedback (POST /memory/feedback)
+export const memoryFeedback = (id: string, feedback: 'helpful' | 'unhelpful') =>
+  invoke<MemoryFeedbackResponse>('memory_feedback', { id, feedback });
 
 // Uteke Server Integration (HTTP — semantic search, auto-linking)
 export const utekeServer = {
