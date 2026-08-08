@@ -5,6 +5,7 @@ import type {
   MemoryEntry, SearchResult, UnifiedSearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
   MemoryDocRefsResponse, DocMemRefsResponse, MemoryFeedbackResponse,
+  TimelineEvent,
 } from './types';
 
 export const memory = {
@@ -364,4 +365,12 @@ export async function memoryDocRefs(memoryId: string): Promise<MemoryDocRefsResp
 /** Memories that reference a given document (POST /doc/mem-refs). */
 export async function docMemRefs(docSlug: string): Promise<DocMemRefsResponse> {
   return invoke<DocMemRefsResponse>('doc_mem_refs', { docSlug });
+}
+
+// Memory timeline (GET /timeline?id=...&limit=...)
+// Returns chronological event history for a memory (created, updated, recalled, etc.)
+
+/** Fetch timeline events for a memory. Returns empty array if server is unavailable. */
+export async function memoryTimeline(id: string, limit = 50): Promise<TimelineEvent[]> {
+  return invoke<TimelineEvent[]>('memory_timeline', { id, limit });
 }

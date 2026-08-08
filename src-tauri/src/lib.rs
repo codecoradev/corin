@@ -512,6 +512,8 @@ pub fn run() {
             commands::doc_mem_refs,
             // Trust feedback (#207)
             commands::memory_feedback,
+            // Timeline
+            commands::memory_timeline,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

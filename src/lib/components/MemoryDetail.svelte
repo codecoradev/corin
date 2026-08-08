@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke, utekeServer, memoryDocRefs, memoryFeedback } from '../ts/ipc';
-  import type { MemoryEntry } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown } from 'lucide-svelte';
+  import { memory as memoryApi, uteke, utekeServer, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
+  import type { MemoryEntry, TimelineEvent } from '../ts/types';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock } from 'lucide-svelte';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface Neighbor {
@@ -38,6 +38,11 @@
   let feedbackDelta = $state<number | null>(null);
   let submittingFeedback = $state(false);
 
+  // Timeline state
+  let timeline = $state<TimelineEvent[]>([]);
+  let timelineLoading = $state(false);
+  let timelineExpanded = $state(false);
+
   async function load() {
     loading = true;
     try {
@@ -56,6 +61,16 @@
       } catch {
         docSlugs = [];
       }
+      // Timeline events (created, updated, recalled, etc.)
+      // Non-fatal — older uteke-serve builds lack the endpoint.
+      try {
+        timelineLoading = true;
+        timeline = await memoryTimeline(memoryId, 50);
+      } catch {
+        timeline = [];
+      } finally {
+        timelineLoading = false;
+      }
     } catch {
       memory = null;
     } finally {
@@ -69,6 +84,9 @@
     feedbackGiven = null;
     feedbackDelta = null;
     submittingFeedback = false;
+    // Reset timeline state
+    timeline = [];
+    timelineExpanded = false;
     load();
   });
 
@@ -107,6 +125,39 @@
   // Click handler for doc slug links — navigation wiring comes later (#207 phase 2).
   function handleDocClick(_slug: string) {
     // Intentional no-op until document navigation is wired.
+  }
+
+  // Timeline event helpers
+  const EVENT_META: Record<string, { color: string; label: string }> = {
+    created:      { color: 'green',  label: 'Created' },
+    updated:      { color: 'blue',   label: 'Updated' },
+    recalled:     { color: 'mauve',  label: 'Recalled' },
+    consolidated: { color: 'yellow', label: 'Consolidated' },
+    tagged:       { color: 'peach',  label: 'Tagged' },
+    forgot:       { color: 'red',    label: 'Forgotten' },
+  };
+
+  function eventColor(type: string): string {
+    return EVENT_META[type]?.color ?? 'teal';
+  }
+
+  function eventLabel(type: string): string {
+    return EVENT_META[type]?.label ?? type;
+  }
+
+  function timeAgo(iso: string): string {
+    const diff = Date.now() - new Date(iso).getTime();
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return 'just now';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 30) return `${day}d ago`;
+    const mo = Math.floor(day / 30);
+    if (mo < 12) return `${mo}mo ago`;
+    return `${Math.floor(mo / 12)}y ago`;
   }
 
   // Trust feedback handler (#207)
@@ -241,6 +292,48 @@
         {/if}
       </div>
 
+      <div class="timeline-section">
+        <div class="timeline-header">
+          <h3>
+            <Clock size={14} strokeWidth={2} class="timeline-icon" />
+            Timeline ({timeline.length})
+          </h3>
+        </div>
+
+        {#if timelineLoading}
+          <div class="timeline-loading"><Spinner size={14} /> Loading events...</div>
+        {:else if timeline.length === 0}
+          <div class="no-timeline">
+            <p>No timeline events.</p>
+            <p class="sub">Event history appears when uteke-serve is connected.</p>
+          </div>
+        {:else}
+          <!-- Collapsed: show only first 5 events. Expanded: show all. -->
+          <div class="timeline-list">
+            {#each (timelineExpanded ? timeline : timeline.slice(0, 5)) as evt (evt.id)}
+              <div class="timeline-item">
+                <div class="timeline-dot {eventColor(evt.event_type)}"></div>
+                <div class="timeline-content">
+                  <div class="timeline-top">
+                    <span class="timeline-badge {eventColor(evt.event_type)}">{eventLabel(evt.event_type)}</span>
+                    <span class="timeline-time" title={new Date(evt.created_at).toLocaleString()}>{timeAgo(evt.created_at)}</span>
+                  </div>
+                  {#if evt.event_data}
+                    <div class="timeline-data">{evt.event_data}</div>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+
+          {#if timeline.length > 5}
+            <button class="timeline-toggle" onclick={() => (timelineExpanded = !timelineExpanded)}>
+              {timelineExpanded ? 'Show less' : `Show ${timeline.length - 5} more`}
+            </button>
+          {/if}
+        {/if}
+      </div>
+
       <div class="neighbors-section">
         <div class="neighbors-header">
           <h3><Link2 size={14} strokeWidth={2} class="conn-icon" /> Connected ({neighbors.length})</h3>
@@ -365,6 +458,75 @@
   .feedback-delta { font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
   .feedback-delta.positive { color: var(--green); }
   .feedback-delta.negative { color: var(--red); }
+
+  /* Timeline */
+  .timeline-section {
+    margin-top: 20px; padding: 14px 16px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .timeline-header { margin-bottom: 12px; }
+  .timeline-header h3 { font-size: 0.95rem; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+  .timeline-header :global(.timeline-icon) { stroke: var(--text-secondary); }
+
+  .timeline-loading { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.85rem; padding: 8px 0; }
+
+  .timeline-list { display: flex; flex-direction: column; gap: 0; position: relative; }
+  /* Vertical line */
+  .timeline-list::before {
+    content: ''; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 1px;
+    background: var(--border);
+  }
+
+  .timeline-item { display: flex; gap: 12px; padding: 6px 0; position: relative; }
+  .timeline-dot {
+    width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0;
+    margin-top: 3px; border: 2px solid var(--bg-tertiary); position: relative; z-index: 1;
+  }
+  /* Dot colors per event type */
+  .timeline-dot.green  { background: var(--green); }
+  .timeline-dot.blue   { background: var(--accent); }
+  .timeline-dot.mauve  { background: var(--mauve); }
+  .timeline-dot.yellow { background: var(--yellow); }
+  .timeline-dot.peach  { background: var(--peach, #fab387); }
+  .timeline-dot.red    { background: var(--red); }
+  .timeline-dot.teal   { background: var(--teal); }
+
+  .timeline-content { flex: 1; min-width: 0; }
+  .timeline-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+  .timeline-badge {
+    font-size: 0.65rem; padding: 1px 6px; border-radius: var(--radius-sm);
+    text-transform: uppercase; font-weight: 600; letter-spacing: 0.3px;
+  }
+  .timeline-badge.green  { background: var(--color-green-bg); color: var(--green); }
+  .timeline-badge.blue   { background: var(--color-blue-bg); color: var(--accent); }
+  .timeline-badge.mauve  { background: var(--color-mauve-bg); color: var(--mauve); }
+  .timeline-badge.yellow { background: var(--color-yellow-bg); color: var(--yellow); }
+  .timeline-badge.peach  { background: rgba(250, 179, 135, 0.15); color: var(--peach, #fab387); }
+  .timeline-badge.red    { background: var(--color-red-bg, rgba(255,0,0,0.1)); color: var(--red); }
+  .timeline-badge.teal   { background: var(--color-teal-bg); color: var(--teal); }
+
+  .timeline-time {
+    font-size: 0.7rem; color: var(--text-muted); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .timeline-data {
+    font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .timeline-toggle {
+    width: 100%; margin-top: 8px; padding: 4px 8px;
+    background: transparent; border: none; color: var(--text-muted);
+    font-size: 0.8rem; cursor: pointer; text-align: center;
+    transition: color 0.1s;
+  }
+  .timeline-toggle:hover { color: var(--accent); }
+
+  .no-timeline { text-align: center; padding: 12px; color: var(--text-muted); font-size: 0.85rem; }
+  .no-timeline .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }
 
   .neighbors-section { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
   .neighbors-header { margin-bottom: 12px; }
