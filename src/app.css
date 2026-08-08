@@ -159,3 +159,21 @@ button {
 button:active:not(:disabled) {
   transition: transform 0.08s var(--ease-out);
 }
+
+/* ── Reduced motion: respect user preference ──────────────────────
+   Users with vestibular disorders or motion sensitivity expect
+   apps to minimise movement. We disable all CSS animations and
+   transitions globally, and components that use JS-driven
+   animation frames (e.g. GraphView physics) should check this
+   media query via window.matchMedia('(prefers-reduced-motion: reduce)').
+   ─────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

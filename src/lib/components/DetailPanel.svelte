@@ -11,19 +11,56 @@
 
   let { memoryId, onclose, onneighborclick, onedit, children }: Props = $props();
 
+  let panelEl: HTMLElement | null = null;
+  let previouslyFocused: HTMLElement | null = null;
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
       onclose();
+      return;
+    }
+    // Focus trap: cycle Tab/Shift+Tab within the dialog.
+    if (e.key !== 'Tab' || !panelEl) return;
+    const focusable = panelEl.querySelectorAll<HTMLElement>(
+      'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first || !panelEl!.contains(document.activeElement)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   }
 
   onMount(() => {
+    previouslyFocused = document.activeElement as HTMLElement;
     window.addEventListener('keydown', handleKeydown);
+    // Move focus into the panel on open so screen readers announce it.
+    if (panelEl) {
+      const first = panelEl.querySelector<HTMLElement>(
+        'button, [href], input, [tabindex]:not([tabindex="-1"])',
+      );
+      if (first) {
+        first.focus();
+      } else {
+        panelEl.focus();
+      }
+    }
   });
   onDestroy(() => {
     window.removeEventListener('keydown', handleKeydown);
+    // Restore focus to the element that opened the panel.
+    previouslyFocused?.focus();
   });
 </script>
 
@@ -35,7 +72,7 @@
 ></div>
 
 <!-- Slide-in panel -->
-<aside class="detail-panel" role="dialog" aria-modal="true">
+<aside class="detail-panel" bind:this={panelEl} role="dialog" aria-modal="true" tabindex="-1">
   {@render children?.()}
 </aside>
 
