@@ -72,6 +72,13 @@
   let calmFrames = 0;
   let needRedraw = true;
 
+  // Respect user's reduced-motion preference. When true, physics is
+  // skipped entirely — nodes render at their initial positions and
+  // the RAF loop only redraws on hover/expand, not continuously.
+  const prefersReducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   const INITIAL_SEED = 30;
   const EXPAND_LIMIT = 5;
   // ─── Initial seed: fetch recent memories ───────────────────────────
@@ -250,7 +257,7 @@
       console.error('[GraphView] loadSeed() failed', err);
     }
     loading = false;
-    physicsActive = true;
+    physicsActive = !prefersReducedMotion;
     calmFrames = 0;
     needRedraw = true;
     updateCounts();
@@ -478,7 +485,8 @@
     }
 
     // Always redraw if there are un-expanded nodes (they have pulse animation)
-    const hasPulse = nodes.some(n => !n.expanded);
+    // Skip pulse animation entirely when reduced motion is preferred.
+    const hasPulse = !prefersReducedMotion && nodes.some(n => !n.expanded);
     if (needRedraw || hasPulse) {
       draw(ctx);
       if (!physicsActive) needRedraw = false;

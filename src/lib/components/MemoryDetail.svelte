@@ -105,8 +105,8 @@
   }
 
   // Click handler for doc slug links — navigation wiring comes later (#207 phase 2).
-  function handleDocClick(slug: string) {
-    console.log('[MemoryDetail] doc slug clicked (navigation not yet wired):', slug);
+  function handleDocClick(_slug: string) {
+    // Intentional no-op until document navigation is wired.
   }
 
   // Trust feedback handler (#207)
