@@ -3102,6 +3102,32 @@ pub async fn memory_feedback(
     Ok(result)
 }
 
+/// Get timeline events for a memory (created, updated, recalled, etc.).
+/// Returns chronological event history from uteke-serve.
+#[tauri::command]
+pub async fn memory_timeline(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::uteke_client::TimelineEvent>, CommandError> {
+    let limit = limit.unwrap_or(50);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    let events = client
+        .timeline(&id, limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(events)
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {

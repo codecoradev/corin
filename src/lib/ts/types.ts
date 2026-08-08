@@ -117,6 +117,15 @@ export interface DocMemRefsResponse {
   memory_ids: string[];
 }
 
+// Timeline event for a memory (created, updated, recalled, etc.)
+export interface TimelineEvent {
+  id: number;
+  memory_id: string;
+  event_type: string;
+  event_data: string | null;
+  created_at: string;
+}
+
 // Stats response
 export interface StatsResponse {
   total_memories: number;
