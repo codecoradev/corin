@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
     lifecycleStatus,
     lifecycleCycle,
@@ -65,11 +64,7 @@
     }
   }
 
-  onMount(() => {
-    loadData();
-  });
-
-  // Reload when namespace changes
+  // Load on mount + reload when namespace changes
   $effect(() => {
     namespace;
     loadData();
