@@ -3128,6 +3128,163 @@ pub async fn memory_timeline(
     Ok(events)
 }
 
+// ── Endpoint Gap Commands (#216 + #231) ─────────────────────────────────
+
+/// Update a memory via PUT /memory (#216)
+#[tauri::command]
+pub async fn memory_update(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    content: Option<String>,
+    tags: Option<Vec<String>>,
+    metadata: Option<serde_json::Value>,
+    importance: Option<f64>,
+    pinned: Option<bool>,
+    memory_type: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .memory_update(
+            &id,
+            content.as_deref(),
+            tags.as_deref(),
+            metadata.as_ref(),
+            importance,
+            pinned,
+            memory_type.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Remember into a room via POST /room/remember (#216)
+#[tauri::command]
+pub async fn room_remember(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    content: String,
+    tags: Vec<String>,
+    namespace: Option<String>,
+    memory_type: Option<String>,
+    author: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .room_remember(
+            &room_id,
+            &content,
+            &tags,
+            namespace.as_deref(),
+            memory_type.as_deref(),
+            author.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Import JSONL data via POST /import (#216)
+#[tauri::command]
+pub async fn uteke_import(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    jsonl_content: String,
+    namespace: Option<String>,
+) -> Result<uteke_client::ImportResult, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .import(&jsonl_content, namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Export memories as JSONL via GET /export (#216)
+#[tauri::command]
+pub async fn uteke_export(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<String, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .export(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Build context summary via POST /context (#216)
+#[tauri::command]
+pub async fn uteke_context(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<String, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .context(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// List documents linked to a room (#231)
+#[tauri::command]
+pub async fn room_doc_list(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<Vec<String>, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .room_doc_list(&room_id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Link a document to a room (#231)
+#[tauri::command]
+pub async fn room_doc_add(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    doc_slug: String,
+) -> Result<(), CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    client
+        .room_doc_add(&room_id, &doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(())
+}
+
+/// Unlink a document from a room (#231)
+#[tauri::command]
+pub async fn room_doc_remove(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    doc_slug: String,
+) -> Result<(), CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    client
+        .room_doc_remove(&room_id, &doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(())
+}
+
+/// List rooms linked to a document (#231)
+#[tauri::command]
+pub async fn doc_room_list(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    doc_slug: String,
+) -> Result<Vec<String>, CommandError> {
+    let (client, _) = get_uteke_client(&state)?;
+    let result = client
+        .doc_room_list(&doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {

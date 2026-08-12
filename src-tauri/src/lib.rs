@@ -514,6 +514,16 @@ pub fn run() {
             commands::memory_feedback,
             // Timeline
             commands::memory_timeline,
+            // Endpoint gaps (#216 + #231)
+            commands::memory_update,
+            commands::room_remember,
+            commands::uteke_import,
+            commands::uteke_export,
+            commands::uteke_context,
+            commands::room_doc_list,
+            commands::room_doc_add,
+            commands::room_doc_remove,
+            commands::doc_room_list,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

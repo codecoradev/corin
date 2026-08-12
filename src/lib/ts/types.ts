@@ -1,5 +1,5 @@
 // View type for navigation
-export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'documents' | 'settings';
+export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'documents' | 'settings' | 'tools';
 
 // Memory entry from uteke-serve (HTTP API)
 export interface MemoryEntry {
@@ -141,4 +141,33 @@ export interface MemoryFeedbackResponse {
   feedback: string;
   delta: number;
   importance: number;
+}
+
+// ── Endpoint Gap Types (#216 + #231) ────────────────────────────────────
+
+// Import result (POST /import)
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+}
+
+// Memory update params (PUT /memory) — all fields optional except id
+export interface MemoryUpdateParams {
+  id: string;
+  content?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  importance?: number;
+  pinned?: boolean;
+  memory_type?: string;
+}
+
+// Room remember params (POST /room/remember)
+export interface RoomRememberParams {
+  room_id: string;
+  content: string;
+  tags: string[];
+  namespace?: string;
+  memory_type?: string;
+  author?: string;
 }

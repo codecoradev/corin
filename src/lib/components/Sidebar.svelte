@@ -9,6 +9,7 @@
     MessagesSquare,
     FileText,
     Settings,
+    Wrench,
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
@@ -53,6 +54,7 @@
     { view: 'graph', label: 'Graph', icon: Share2 },
     { view: 'rooms', label: 'Rooms', icon: MessagesSquare },
     { view: 'documents', label: 'Documents', icon: FileText },
+    { view: 'tools', label: 'Tools', icon: Wrench },
   ];
 
   const bottomItems: { view: View; label: string; icon: IconComp }[] = [
