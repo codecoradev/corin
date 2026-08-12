@@ -514,6 +514,12 @@ pub fn run() {
             commands::memory_feedback,
             // Timeline
             commands::memory_timeline,
+            // Lifecycle (uteke ≥ 0.13.0) — #227, #228
+            commands::lifecycle_status,
+            commands::lifecycle_cycle,
+            commands::lifecycle_promote,
+            commands::find_orphans,
+            commands::consolidate_memories,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

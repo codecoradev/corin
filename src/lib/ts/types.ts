@@ -1,5 +1,5 @@
 // View type for navigation
-export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'documents' | 'settings';
+export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'documents' | 'lifecycle' | 'settings';
 
 // Memory entry from uteke-serve (HTTP API)
 export interface MemoryEntry {
@@ -141,4 +141,32 @@ export interface MemoryFeedbackResponse {
   feedback: string;
   delta: number;
   importance: number;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle types (uteke ≥ 0.13.0) — issue #227, #228
+// ─────────────────────────────────────────────────────────────────
+
+/** Response from GET /lifecycle/status */
+export interface LifecycleStatus {
+  active: number;
+  deprecated: number;
+  pruned: number;
+}
+
+/** Response from POST /lifecycle/cycle */
+export interface LifecycleCycleResult {
+  deprecated: number;
+  pruned: number;
+  skipped: number;
+}
+
+/** Orphaned memory from POST /orphans */
+export interface OrphanMemory {
+  id: string;
+  content: string;
+  tags: string[];
+  namespace: string;
+  importance: number;
+  created_at: string;
 }

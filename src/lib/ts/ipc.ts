@@ -6,6 +6,7 @@ import type {
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
   MemoryDocRefsResponse, DocMemRefsResponse, MemoryFeedbackResponse,
   TimelineEvent,
+  LifecycleStatus, LifecycleCycleResult, OrphanMemory,
 } from './types';
 
 export const memory = {
@@ -373,4 +374,41 @@ export async function docMemRefs(docSlug: string): Promise<DocMemRefsResponse> {
 /** Fetch timeline events for a memory. Returns empty array if server is unavailable. */
 export async function memoryTimeline(id: string, limit = 50): Promise<TimelineEvent[]> {
   return invoke<TimelineEvent[]>('memory_timeline', { id, limit });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle IPC wrappers (uteke ≥ 0.13.0) — issues #227, #228
+// ─────────────────────────────────────────────────────────────────
+
+/** Get lifecycle status: counts of active vs deprecated memories. */
+export async function lifecycleStatus(namespace?: string): Promise<LifecycleStatus> {
+  return invoke<LifecycleStatus>('lifecycle_status', { namespace: namespace ?? null });
+}
+
+/** Run lifecycle cycle: deprecate aged memories, prune expired ones. */
+export async function lifecycleCycle(namespace?: string): Promise<LifecycleCycleResult> {
+  return invoke<LifecycleCycleResult>('lifecycle_cycle', { namespace: namespace ?? null });
+}
+
+/** Restore a deprecated memory back to active. */
+export async function lifecyclePromote(id: string): Promise<unknown> {
+  return invoke('lifecycle_promote', { id });
+}
+
+/** Find orphaned memories (no room, no edges). */
+export async function findOrphans(namespace?: string): Promise<OrphanMemory[]> {
+  return invoke<OrphanMemory[]>('find_orphans', { namespace: namespace ?? null });
+}
+
+/** Consolidate (merge preview) similar memories. Always dry_run from Corin. */
+export async function consolidateMemories(opts?: {
+  threshold?: number;
+  dryRun?: boolean;
+  namespace?: string;
+}): Promise<unknown> {
+  return invoke('consolidate_memories', {
+    threshold: opts?.threshold ?? null,
+    dryRun: opts?.dryRun ?? true,
+    namespace: opts?.namespace ?? null,
+  });
 }

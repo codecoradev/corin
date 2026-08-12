@@ -3128,6 +3128,107 @@ pub async fn memory_timeline(
     Ok(events)
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle commands (uteke ≥ 0.13.0) — issues #227, #228
+// ─────────────────────────────────────────────────────────────────
+
+/// Get lifecycle status: active vs deprecated memory counts.
+#[tauri::command]
+pub async fn lifecycle_status(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<crate::uteke_client::LifecycleStatus, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_status(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Run lifecycle cycle: deprecate aged, prune expired.
+#[tauri::command]
+pub async fn lifecycle_cycle(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<crate::uteke_client::LifecycleCycleResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_cycle(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Restore a deprecated memory back to active.
+#[tauri::command]
+pub async fn lifecycle_promote(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_promote(&id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Find orphaned memories (no room, no edges).
+#[tauri::command]
+pub async fn find_orphans(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<Vec<crate::uteke_client::OrphanMemory>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .find_orphans(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Consolidate (merge) similar memories. Always dry_run from Corin.
+#[tauri::command]
+pub async fn consolidate_memories(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    threshold: Option<f64>,
+    dry_run: Option<bool>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .consolidate(threshold, dry_run.unwrap_or(true), namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
 /// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {
