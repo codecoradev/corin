@@ -142,7 +142,7 @@
         onclick={() => loadData()}
         disabled={loading}
       >
-        <RefreshCw size={15} strokeWidth={2} class:spinning={loading} />
+        <span class:spinning={loading}><RefreshCw size={15} strokeWidth={2} /></span>
         <span>Refresh</span>
       </button>
       <button
@@ -150,7 +150,7 @@
         onclick={() => (showConfirmCycle = true)}
         disabled={cycling || loading}
       >
-        <RotateCcw size={15} strokeWidth={2} class:spinning={cycling} />
+        <span class:spinning={cycling}><RotateCcw size={15} strokeWidth={2} /></span>
         <span>Run Cycle</span>
       </button>
     </div>
@@ -275,7 +275,7 @@
                 disabled={promotingIds.has(orphan.id)}
               >
                 {#if promotingIds.has(orphan.id)}
-                  <RefreshCw size={13} class:spinning={true} />
+                  <span class="spinning"><RefreshCw size={13} /></span>
                   <span>Restoring…</span>
                 {:else}
                   <RotateCcw size={13} />

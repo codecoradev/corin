@@ -1325,8 +1325,10 @@ impl UtekeClient {
         &self,
         namespace: Option<&str>,
     ) -> Result<LifecycleStatus, String> {
-        let mut req = self
-            .authed(self.client.get(format!("{}/lifecycle/status", self.base_url)));
+        let mut req = self.authed(
+            self.client
+                .get(format!("{}/lifecycle/status", self.base_url)),
+        );
         if let Some(ns) = namespace {
             req = req.query(&[("namespace", ns)]);
         }
@@ -1350,43 +1352,43 @@ impl UtekeClient {
         if let Some(ns) = namespace {
             body["namespace"] = serde_json::Value::String(ns.to_string());
         }
-        self.authed(self.client.post(format!("{}/lifecycle/cycle", self.base_url)))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+        self.authed(
+            self.client
+                .post(format!("{}/lifecycle/cycle", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
     }
 
     /// Promote (restore) a deprecated memory back to active.
     /// (POST /lifecycle/promote)
-    pub async fn lifecycle_promote(
-        &self,
-        id: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn lifecycle_promote(&self, id: &str) -> Result<serde_json::Value, String> {
         let body = serde_json::json!({ "id": id });
-        self.authed(self.client.post(format!("{}/lifecycle/promote", self.base_url)))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())
+        self.authed(
+            self.client
+                .post(format!("{}/lifecycle/promote", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
     }
 
     /// Find orphaned memories (no room, no edges).
     /// (POST /orphans)
-    pub async fn find_orphans(
-        &self,
-        namespace: Option<&str>,
-    ) -> Result<Vec<OrphanMemory>, String> {
+    pub async fn find_orphans(&self, namespace: Option<&str>) -> Result<Vec<OrphanMemory>, String> {
         let mut body = serde_json::json!({});
         if let Some(ns) = namespace {
             body["namespace"] = serde_json::Value::String(ns.to_string());
