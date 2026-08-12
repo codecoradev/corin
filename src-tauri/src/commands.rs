@@ -3133,7 +3133,7 @@ pub async fn memory_timeline(
 /// Update a memory via PUT /memory (#216)
 #[tauri::command]
 pub async fn memory_update(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     id: String,
     content: Option<String>,
     tags: Option<Vec<String>>,
@@ -3142,7 +3142,13 @@ pub async fn memory_update(
     pinned: Option<bool>,
     memory_type: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .memory_update(
             &id,
@@ -3161,7 +3167,7 @@ pub async fn memory_update(
 /// Remember into a room via POST /room/remember (#216)
 #[tauri::command]
 pub async fn room_remember(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
     content: String,
     tags: Vec<String>,
@@ -3169,7 +3175,13 @@ pub async fn room_remember(
     memory_type: Option<String>,
     author: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .room_remember(
             &room_id,
@@ -3187,11 +3199,17 @@ pub async fn room_remember(
 /// Import JSONL data via POST /import (#216)
 #[tauri::command]
 pub async fn uteke_import(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     jsonl_content: String,
     namespace: Option<String>,
-) -> Result<uteke_client::ImportResult, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+) -> Result<crate::uteke_client::ImportResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .import(&jsonl_content, namespace.as_deref())
         .await
@@ -3202,10 +3220,16 @@ pub async fn uteke_import(
 /// Export memories as JSONL via GET /export (#216)
 #[tauri::command]
 pub async fn uteke_export(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
 ) -> Result<String, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .export(namespace.as_deref())
         .await
@@ -3216,10 +3240,16 @@ pub async fn uteke_export(
 /// Build context summary via POST /context (#216)
 #[tauri::command]
 pub async fn uteke_context(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     namespace: Option<String>,
 ) -> Result<String, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .context(namespace.as_deref())
         .await
@@ -3230,10 +3260,16 @@ pub async fn uteke_context(
 /// List documents linked to a room (#231)
 #[tauri::command]
 pub async fn room_doc_list(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
 ) -> Result<Vec<String>, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .room_doc_list(&room_id)
         .await
@@ -3244,11 +3280,17 @@ pub async fn room_doc_list(
 /// Link a document to a room (#231)
 #[tauri::command]
 pub async fn room_doc_add(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
     doc_slug: String,
 ) -> Result<(), CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     client
         .room_doc_add(&room_id, &doc_slug)
         .await
@@ -3259,11 +3301,17 @@ pub async fn room_doc_add(
 /// Unlink a document from a room (#231)
 #[tauri::command]
 pub async fn room_doc_remove(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     room_id: String,
     doc_slug: String,
 ) -> Result<(), CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     client
         .room_doc_remove(&room_id, &doc_slug)
         .await
@@ -3274,10 +3322,16 @@ pub async fn room_doc_remove(
 /// List rooms linked to a document (#231)
 #[tauri::command]
 pub async fn doc_room_list(
-    state: State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     doc_slug: String,
 ) -> Result<Vec<String>, CommandError> {
-    let (client, _) = get_uteke_client(&state)?;
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
     let result = client
         .doc_room_list(&doc_slug)
         .await
