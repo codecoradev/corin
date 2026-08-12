@@ -321,7 +321,7 @@
       <div class="inline-form">
         <input bind:value={importNs} placeholder="namespace (optional)" />
       </div>
-      <textarea bind:value={importData} rows="6" placeholder='{"content": "...", "tags": ["a"], "namespace": "default"}'></textarea>
+      <textarea bind:value={importData} rows="6" placeholder="One JSON object per line, e.g. content, tags, namespace fields"></textarea>
       <div class="actions">
         <button class="btn-primary" onclick={handleImport} disabled={importing}>
           {#if importing}<span class="spinner-inline"><Spinner size={14} /></span>{/if}
