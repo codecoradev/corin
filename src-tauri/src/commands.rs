@@ -3132,6 +3132,7 @@ pub async fn memory_timeline(
 
 /// Update a memory via PUT /memory (#216)
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn memory_update(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     id: String,

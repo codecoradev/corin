@@ -1317,6 +1317,7 @@ impl UtekeClient {
 
     // ── Endpoint Gap: PUT /memory — update memory (#216) ──────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn memory_update(
         &self,
         id: &str,
