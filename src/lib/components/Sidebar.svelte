@@ -9,7 +9,6 @@
     MessagesSquare,
     FileText,
     Settings,
-    Wrench,
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
@@ -56,7 +55,8 @@
     { view: 'rooms', label: 'Rooms', icon: MessagesSquare },
     { view: 'documents', label: 'Documents', icon: FileText },
     { view: 'lifecycle', label: 'Lifecycle', icon: HeartPulse },
-    { view: 'tools', label: 'Tools', icon: Wrench },
+    // Tools hidden from nav — features being reworked (#244). Route still reachable.
+    // { view: 'tools', label: 'Tools', icon: Wrench },
   ];
 
   const bottomItems: { view: View; label: string; icon: IconComp }[] = [
