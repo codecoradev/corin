@@ -13,6 +13,7 @@
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
+    HeartPulse,
   } from 'lucide-svelte';
 
   interface Props {
@@ -54,6 +55,7 @@
     { view: 'graph', label: 'Graph', icon: Share2 },
     { view: 'rooms', label: 'Rooms', icon: MessagesSquare },
     { view: 'documents', label: 'Documents', icon: FileText },
+    { view: 'lifecycle', label: 'Lifecycle', icon: HeartPulse },
     { view: 'tools', label: 'Tools', icon: Wrench },
   ];
 

@@ -1315,6 +1315,124 @@ impl UtekeClient {
         Self::json_checked(resp, "/memory/feedback").await
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Lifecycle endpoints (uteke ≥ 0.13.0) — issue #227, #228
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get lifecycle status: counts of active vs deprecated memories.
+    /// (GET /lifecycle/status)
+    pub async fn lifecycle_status(
+        &self,
+        namespace: Option<&str>,
+    ) -> Result<LifecycleStatus, String> {
+        let mut req = self.authed(
+            self.client
+                .get(format!("{}/lifecycle/status", self.base_url)),
+        );
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+        req.send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Run lifecycle cycle: deprecate aged memories, prune expired ones.
+    /// (POST /lifecycle/cycle)
+    pub async fn lifecycle_cycle(
+        &self,
+        namespace: Option<&str>,
+    ) -> Result<LifecycleCycleResult, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        self.authed(
+            self.client
+                .post(format!("{}/lifecycle/cycle", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// Promote (restore) a deprecated memory back to active.
+    /// (POST /lifecycle/promote)
+    pub async fn lifecycle_promote(&self, id: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({ "id": id });
+        self.authed(
+            self.client
+                .post(format!("{}/lifecycle/promote", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// Find orphaned memories (no room, no edges).
+    /// (POST /orphans)
+    pub async fn find_orphans(&self, namespace: Option<&str>) -> Result<Vec<OrphanMemory>, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        self.authed(self.client.post(format!("{}/orphans", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Consolidate (merge) similar/duplicate memories.
+    /// Always called with dry_run=true from Corin for preview mode.
+    /// (POST /consolidate)
+    pub async fn consolidate(
+        &self,
+        threshold: Option<f64>,
+        dry_run: bool,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({ "dry_run": dry_run });
+        if let Some(t) = threshold {
+            body["threshold"] = serde_json::json!(t);
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        self.authed(self.client.post(format!("{}/consolidate", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     // ── Endpoint Gap: PUT /memory — update memory (#216) ──────────────
 
     #[allow(clippy::too_many_arguments)]
@@ -1546,6 +1664,48 @@ impl UtekeClient {
             .unwrap_or_default();
         Ok(rooms)
     }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle types (uteke ≥ 0.13.0)
+// ─────────────────────────────────────────────────────────────────
+
+/// Response from GET /lifecycle/status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleStatus {
+    #[serde(default)]
+    pub active: usize,
+    #[serde(default)]
+    pub deprecated: usize,
+    #[serde(default)]
+    pub pruned: usize,
+}
+
+/// Response from POST /lifecycle/cycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleCycleResult {
+    #[serde(default)]
+    pub deprecated: usize,
+    #[serde(default)]
+    pub pruned: usize,
+    #[serde(default)]
+    pub skipped: usize,
+}
+
+/// Orphaned memory from POST /orphans.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrphanMemory {
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub namespace: String,
+    #[serde(default)]
+    pub importance: f32,
+    #[serde(default)]
+    pub created_at: String,
 }
 
 // ── Import Result struct (#216) ─────────────────────────────────────────
