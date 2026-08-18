@@ -144,7 +144,8 @@
         max="0.95"
         step="0.05"
         bind:value={threshold}
-        disabled={scanning || merging}
+        disabled={scanning || merging || pairs !== null}
+        title={pairs !== null ? 'Rescan to change threshold' : ''}
       />
       <div class="threshold-scale">
         <span>0.50 (loose)</span>
