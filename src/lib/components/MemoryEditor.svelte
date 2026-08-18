@@ -220,6 +220,8 @@
             list="ns-list"
             bind:value={ns}
             placeholder="default"
+            disabled={memory !== null}
+            title={memory !== null ? 'Namespace cannot be changed on update (PUT /memory)' : ''}
           />
           <datalist id="ns-list">
             {#each namespaces as n}
