@@ -7,7 +7,10 @@
     Copy,
     RefreshCw,
     Terminal,
-  } from 'lucide-svelte';
+    Hash,
+    FileText,
+    Rows3,
+} from 'lucide-svelte';
 
   interface Props {
     namespace: string | null;
@@ -52,8 +55,7 @@
     }
   }
 
-  // On mount: default the selector to the app's active namespace,
-  // then auto-load the context once (cheap: single small string).
+  // On mount: default selector to the app's active namespace, auto-load once.
   let loadedOnce = $state(false);
   $effect(() => {
     if (!selectedNs) {
@@ -68,12 +70,10 @@
   // ─── Helpers ───────────────────────────────────────────────────────
   function tokenEstimate(text: string | null): number {
     if (!text) return 0;
-    // Rough approximation: ~4 chars per token for English prose
     return Math.ceil(text.length / 4);
   }
 
   function memoryCount(text: string | null): number | null {
-    // First line pattern: "Project memory: N memories in namespace 'x'"
     if (!text) return null;
     const match = text.match(/Project memory:\s+(\d+)\s+memor/);
     return match ? parseInt(match[1], 10) : null;
@@ -86,13 +86,13 @@
 </script>
 
 <section class="context-section">
-  <div class="section-head">
-    <div class="section-title-row">
-      <BrainCircuit size={18} strokeWidth={1.75} />
-      <h2 class="section-title">Context Preview</h2>
-      <span class="preview-hint">exactly what your agent's LLM sees</span>
-    </div>
-    <div class="section-actions">
+  <div class="section-header">
+    <BrainCircuit size={18} strokeWidth={1.75} />
+    <h2>Context Preview</h2>
+    {#if contextText}
+      <span class="badge">{selectedNs || 'default'}</span>
+    {/if}
+    <div class="header-actions">
       <select
         class="ns-select"
         bind:value={selectedNs}
@@ -106,7 +106,7 @@
         {/each}
       </select>
       <button class="btn btn-secondary btn-sm" onclick={loadContext} disabled={loading}>
-        <span class:spinning={loading}><RefreshCw size={14} /></span>
+        <span class:spinning={loading}><RefreshCw size={13} /></span>
         <span>Refresh</span>
       </button>
       <button
@@ -116,42 +116,61 @@
         title="Copy context to clipboard"
       >
         {#if copied}
-          <Check size={14} />
+          <Check size={13} />
           <span>Copied</span>
         {:else}
-          <Copy size={14} />
+          <Copy size={13} />
           <span>Copy</span>
         {/if}
       </button>
     </div>
   </div>
+  <p class="section-desc">
+    Exactly what your agent's LLM sees when uteke injects memory context.
+  </p>
 
   {#if error}
     <div class="error-banner">
       <Terminal size={16} />
       <span>{error}</span>
-      <button class="btn btn-sm btn-ghost" onclick={loadContext} disabled={loading}>Retry</button>
+      <button class="btn btn-sm btn-secondary" onclick={loadContext} disabled={loading}>
+        Retry
+      </button>
     </div>
   {:else if loading && !contextText}
-    <div class="loading-state"><span class="spinning"><RefreshCw size={16} /></span> Building context…</div>
+    <div class="loading-state">
+      <span class="spinning"><RefreshCw size={20} /></span>
+      <p>Building context…</p>
+    </div>
   {:else if contextText}
-    <!-- ─── Summary strip ───────────────────────────────────────── -->
-    <div class="summary-strip">
-      <div class="summary-item">
-        <span class="summary-value">~{tokenEstimate(contextText)}</span>
-        <span class="summary-label">tokens est.</span>
+    <!-- ─── Summary cards (LifecycleView pattern) ───────────────── -->
+    <div class="status-grid">
+      <div class="status-card card-tokens">
+        <div class="card-icon">
+          <Hash size={20} strokeWidth={1.75} />
+        </div>
+        <div class="card-body">
+          <span class="card-value">~{tokenEstimate(contextText)}</span>
+          <span class="card-label">Tokens (est.)</span>
+        </div>
       </div>
-      <div class="summary-item">
-        <span class="summary-value">{memoryCount(contextText) ?? '—'}</span>
-        <span class="summary-label">memories</span>
+      <div class="status-card card-memories">
+        <div class="card-icon">
+          <BrainCircuit size={20} strokeWidth={1.75} />
+        </div>
+        <div class="card-body">
+          <span class="card-value">{memoryCount(contextText) ?? '—'}</span>
+          <span class="card-label">Memories</span>
+        </div>
       </div>
-      <div class="summary-item">
-        <span class="summary-value">{lineCount(contextText)}</span>
-        <span class="summary-label">lines</span>
-      </div>
-      <div class="summary-item summary-ns">
-        <span class="summary-value">{selectedNs || 'default'}</span>
-        <span class="summary-label">namespace</span>
+      <div class="status-card card-lines">
+        <div class="card-icon">
+          <Rows3 size={20} strokeWidth={1.75} />
+        </div>
+        <div class="card-body">
+          <span class="card-value">{lineCount(contextText)}</span>
+          <span class="card-label">Lines</span>
+        </div>
       </div>
     </div>
 
@@ -159,9 +178,9 @@
     <pre class="context-block">{contextText}</pre>
   {:else}
     <div class="empty-state">
-      <BrainCircuit size={26} strokeWidth={1.5} />
+      <FileText size={26} strokeWidth={1.5} />
       <p>No context loaded.</p>
-      <button class="btn btn-sm btn-primary" onclick={loadContext} disabled={loading}>
+      <button class="btn btn-primary btn-sm" onclick={loadContext} disabled={loading}>
         Load Context
       </button>
     </div>
@@ -170,102 +189,174 @@
 
 <style>
   .context-section {
-    margin-top: 1.5rem;
+    margin-top: 1.75rem;
   }
 
-  .section-head {
+  /* ─── Section header (LifecycleView pattern) ────────────────────── */
+  .section-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.75rem;
-  }
-
-  .section-title-row {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
     color: var(--text-primary);
   }
 
-  .section-title {
+  .section-header h2 {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
   }
 
-  .preview-hint {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    font-style: italic;
-  }
-
-  .section-actions {
+  .header-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 0.45rem;
+    border-radius: 10px;
+    background: var(--bg-hover);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+
+  .section-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0.1rem 0 1rem 1.7rem;
   }
 
   .ns-select {
     font-size: 0.78rem;
-    padding: 0.35rem 0.5rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #ddd);
-    background: var(--bg-secondary, #f5f5f5);
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
     color: var(--text-primary);
     max-width: 160px;
+    cursor: pointer;
   }
 
-  /* ─── Summary strip ──────────────────────────────────────────── */
-  .summary-strip {
+  /* ─── Buttons (LifecycleView pattern) ───────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border-color: var(--accent);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    opacity: 0.88;
+  }
+
+  .btn-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  /* ─── Status cards (LifecycleView pattern) ──────────────────────── */
+  .status-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.6rem;
-    margin-bottom: 0.75rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.85rem;
+    margin-bottom: 1rem;
   }
 
-  .summary-item {
-    background: var(--bg-secondary, #f5f5f5);
-    border-radius: 8px;
-    padding: 0.55rem 0.75rem;
+  .status-card {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1rem 1.15rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  .card-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md);
+    flex-shrink: 0;
+  }
+
+  .card-tokens .card-icon {
+    background: rgba(137, 180, 250, 0.1);
+    color: var(--color-blue);
+  }
+
+  .card-memories .card-icon {
+    background: rgba(166, 227, 161, 0.1);
+    color: var(--color-green);
+  }
+
+  .card-lines .card-icon {
+    background: rgba(203, 166, 247, 0.1);
+    color: var(--color-mauve);
+  }
+
+  .card-body {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
-    min-width: 0;
   }
 
-  .summary-value {
-    font-size: 1.05rem;
-    font-weight: 600;
+  .card-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.1;
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .summary-label {
-    font-size: 0.68rem;
+  .card-label {
+    font-size: 0.78rem;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    margin-top: 0.1rem;
   }
 
-  .summary-ns .summary-value {
-    font-size: 0.85rem;
-    font-family: ui-monospace, monospace;
-  }
-
-  /* ─── Context block ──────────────────────────────────────────── */
+  /* ─── Context block ─────────────────────────────────────────────── */
   .context-block {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.76rem;
     line-height: 1.55;
     color: var(--text-primary);
-    background: var(--bg-code, #f7f7f8);
-    border: 1px solid var(--border-color, #e2e2e4);
-    border-radius: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
     padding: 1rem 1.15rem;
     margin: 0;
     white-space: pre-wrap;
@@ -274,12 +365,13 @@
     overflow-y: auto;
   }
 
-  /* ─── States ─────────────────────────────────────────────────── */
+  /* ─── States ────────────────────────────────────────────────────── */
   .loading-state {
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 0.6rem;
-    padding: 1.25rem;
+    padding: 2rem 0;
     color: var(--text-muted);
     font-size: 0.85rem;
   }
@@ -288,24 +380,22 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1.5rem 1rem;
+    gap: 0.6rem;
+    padding: 2rem 0;
     color: var(--text-muted);
     font-size: 0.85rem;
-    border: 1px dashed var(--border-color, #ddd);
-    border-radius: 10px;
   }
 
   .error-banner {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    background: color-mix(in srgb, #d93f0b 8%, transparent);
-    border: 1px solid color-mix(in srgb, #d93f0b 25%, transparent);
-    color: #d93f0b;
-    font-size: 0.82rem;
+    padding: 0.85rem 1rem;
+    background: rgba(243, 139, 168, 0.08);
+    border: 1px solid rgba(243, 139, 168, 0.25);
+    border-radius: var(--radius-md);
+    color: var(--color-red);
+    font-size: 0.85rem;
   }
 
   .error-banner .btn {
