@@ -52,10 +52,16 @@
     }
   }
 
-  // Load on mount; default selector to active namespace
+  // On mount: default the selector to the app's active namespace,
+  // then auto-load the context once (cheap: single small string).
+  let loadedOnce = $state(false);
   $effect(() => {
     if (!selectedNs) {
       selectedNs = namespace ?? '';
+    }
+    if (!loadedOnce) {
+      loadedOnce = true;
+      loadContext();
     }
   });
 
