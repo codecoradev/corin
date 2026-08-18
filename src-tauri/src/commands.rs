@@ -3229,8 +3229,6 @@ pub async fn consolidate_memories(
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
-/// Mask an auth token for safe logging.
-
 // ── Endpoint Gap Commands (#216 + #231) ─────────────────────────────────
 
 /// Update a memory via PUT /memory (#216)

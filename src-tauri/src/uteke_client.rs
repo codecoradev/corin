@@ -1315,7 +1315,6 @@ impl UtekeClient {
         Self::json_checked(resp, "/memory/feedback").await
     }
 
-
     // ─────────────────────────────────────────────────────────────
     // Lifecycle endpoints (uteke ≥ 0.13.0) — issue #227, #228
     // ─────────────────────────────────────────────────────────────
@@ -1666,7 +1665,6 @@ impl UtekeClient {
         Ok(rooms)
     }
 }
-
 
 // ─────────────────────────────────────────────────────────────────
 // Lifecycle types (uteke ≥ 0.13.0)
