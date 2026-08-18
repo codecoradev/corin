@@ -21,7 +21,6 @@
   let pairs = $state<SimilarPairUI[] | null>(null);
   let scanning = $state(false);
   let merging = $state(false);
-  let skipped = $state<Set<number>>(new Set());
   let mergeResult = $state<ConsolidationResultUI | null>(null);
   let showConfirmMerge = $state(false);
   let error = $state<string | null>(null);
@@ -47,7 +46,6 @@
     error = null;
     pairs = null;
     mergeResult = null;
-    skipped = new Set();
     try {
       const raw = (await consolidateMemories({
         threshold,
@@ -74,7 +72,6 @@
       mergeResult = raw;
       toastStore.success(`Merged ${raw.merged} duplicate pair${raw.merged === 1 ? '' : 's'}`);
       pairs = null;
-      skipped = new Set();
     } catch (e) {
       toastStore.error(`Merge failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -82,25 +79,9 @@
     }
   }
 
-  function toggleSkip(index: number) {
-    const next = new Set(skipped);
-    if (next.has(index)) {
-      next.delete(index);
-    } else {
-      next.add(index);
-    }
-    skipped = next;
-  }
-
-  function pendingCount(): number {
-    if (!pairs) return 0;
-    return pairs.length - skipped.size;
-  }
-
   function resetScan() {
     pairs = null;
     mergeResult = null;
-    skipped = new Set();
     error = null;
   }
 
@@ -121,7 +102,7 @@
     <GitMerge size={18} strokeWidth={1.75} />
     <h2>Duplicate Detector</h2>
     {#if pairs}
-      <span class="badge">{pendingCount()} pending</span>
+      <span class="badge">{pairs.length} pairs</span>
     {/if}
   </div>
   <p class="section-desc">
@@ -193,15 +174,14 @@
         <button
           class="btn btn-primary"
           onclick={() => (showConfirmMerge = true)}
-          disabled={merging || pendingCount() === 0}
-          title={pendingCount() === 0 ? 'All pairs skipped' : ''}
+          disabled={merging}
         >
           {#if merging}
             <span class="spinning"><RefreshCw size={15} /></span>
             <span>Merging…</span>
           {:else}
             <GitMerge size={15} />
-            <span>Merge All ({pendingCount()})</span>
+            <span>Merge All ({pairs.length})</span>
           {/if}
         </button>
       </div>
@@ -222,28 +202,15 @@
     {:else}
       <div class="summary-line">
         <Copy size={14} />
-        <span>
-          {pairs.length} pair{pairs.length === 1 ? '' : 's'} found,
-          {skipped.size} skipped
-        </span>
+        <span>{pairs.length} duplicate pair{pairs.length === 1 ? '' : 's'} found</span>
       </div>
       <div class="pairs-list">
-        {#each pairs as pair, i (pair.id_a + pair.id_b)}
-          <div class="pair-card" class:skipped={skipped.has(i)}>
+        {#each pairs as pair (pair.id_a + pair.id_b)}
+          <div class="pair-card">
             <div class="pair-header">
               <span class="similarity-badge {similarityClass(pair.similarity)}">
                 {similarityPercent(pair.similarity)} cosine
               </span>
-              <div class="pair-actions">
-                <button
-                  class="btn btn-sm btn-ghost"
-                  onclick={() => toggleSkip(i)}
-                  disabled={merging}
-                  title={skipped.has(i) ? 'Un-skip this pair' : 'Skip this pair'}
-                >
-                  {skipped.has(i) ? 'Unskip' : 'Skip'}
-                </button>
-              </div>
             </div>
             <div class="pair-contents">
               <div class="pair-side">
@@ -265,8 +232,9 @@
       </div>
       <p class="merge-note">
         <AlertTriangle size={14} />
-        Merging keeps the older memory's identity, merges content, and removes the newer duplicate.
-        Server-side merge applies to all non-skipped pairs — review carefully.
+        Merging is all-or-nothing at this threshold: the older memory keeps its identity, content
+        is merged, and every duplicate shown above is removed. If some pairs should survive, use a
+        higher threshold and re-scan.
       </p>
     {/if}
   {/if}
@@ -289,24 +257,22 @@
         <div class="modal-icon">
           <GitMerge size={28} strokeWidth={1.5} />
         </div>
-        <h3>Merge {pendingCount()} pair{pendingCount() === 1 ? '' : 's'}?</h3>
+        <h3>Merge {pairs?.length ?? 0} pair{(pairs?.length ?? 0) === 1 ? '' : 's'}?</h3>
         <p class="modal-desc">
-          This will merge all non-skipped duplicate pairs at threshold
-          {threshold.toFixed(2)}. The older memory is kept and enriched; newer duplicates are
-          permanently removed. This cannot be undone.
+          This will merge <strong>every</strong> duplicate pair found at threshold
+          {threshold.toFixed(2)} — all-or-nothing. The older memory is kept and enriched; newer
+          duplicates are permanently removed. This cannot be undone.
         </p>
-        {#if skipped.size > 0}
-          <p class="modal-warn">
-            <strong>{skipped.size}</strong> pair{skipped.size === 1 ? '' : 's'} will be skipped.
-          </p>
-        {/if}
+        <p class="modal-warn">
+          To keep some pairs, cancel, raise the threshold, and re-scan.
+        </p>
         <div class="modal-actions">
           <button class="btn btn-secondary" onclick={() => (showConfirmMerge = false)}>
             Cancel
           </button>
           <button class="btn btn-primary" onclick={mergeAll} disabled={merging}>
             <GitMerge size={15} />
-            Merge {pendingCount()}
+            Merge {pairs?.length ?? 0}
           </button>
         </div>
       </div>
@@ -458,11 +424,6 @@
     border: 1px solid var(--border-color, #ddd);
     border-radius: 10px;
     padding: 0.85rem 1rem;
-    transition: opacity 0.15s ease;
-  }
-
-  .pair-card.skipped {
-    opacity: 0.45;
   }
 
   .pair-header {
