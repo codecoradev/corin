@@ -5,7 +5,7 @@ import type {
   MemoryEntry, SearchResult, UnifiedSearchResult, GraphData, GraphEdge,
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
   MemoryDocRefsResponse, DocMemRefsResponse, MemoryFeedbackResponse,
-  TimelineEvent,
+  TimelineEvent, ImportResult, MemoryUpdateParams, RoomRememberParams,
 } from './types';
 
 export const memory = {
@@ -373,4 +373,73 @@ export async function docMemRefs(docSlug: string): Promise<DocMemRefsResponse> {
 /** Fetch timeline events for a memory. Returns empty array if server is unavailable. */
 export async function memoryTimeline(id: string, limit = 50): Promise<TimelineEvent[]> {
   return invoke<TimelineEvent[]>('memory_timeline', { id, limit });
+}
+
+// ── Endpoint Gap IPC Wrappers (#216 + #231) ─────────────────────────────
+
+// #216 — Fill UtekeClient gaps
+
+/** Update a memory (PUT /memory). Returns updated memory as JSON. */
+export async function memoryUpdate(params: MemoryUpdateParams): Promise<Record<string, unknown>> {
+  return invoke<Record<string, unknown>>('memory_update', {
+    id: params.id,
+    content: params.content ?? null,
+    tags: params.tags ?? null,
+    metadata: params.metadata ?? null,
+    importance: params.importance ?? null,
+    pinned: params.pinned ?? null,
+    memoryType: params.memory_type ?? null,
+  });
+}
+
+/** Remember into a room (POST /room/remember). Returns created memory as JSON. */
+export async function roomRemember(params: RoomRememberParams): Promise<Record<string, unknown>> {
+  return invoke<Record<string, unknown>>('room_remember', {
+    roomId: params.room_id,
+    content: params.content,
+    tags: params.tags,
+    namespace: params.namespace ?? null,
+    memoryType: params.memory_type ?? null,
+    author: params.author ?? null,
+  });
+}
+
+/** Import JSONL data (POST /import). Returns import/skip counts. */
+export async function utekeImport(jsonlContent: string, namespace?: string): Promise<ImportResult> {
+  return invoke<ImportResult>('uteke_import', {
+    jsonlContent,
+    namespace: namespace ?? null,
+  });
+}
+
+/** Export memories as JSONL (GET /export). Returns JSONL string. */
+export async function utekeExport(namespace?: string): Promise<string> {
+  return invoke<string>('uteke_export', { namespace: namespace ?? null });
+}
+
+/** Build context summary (POST /context). Returns context text. */
+export async function utekeContext(namespace?: string): Promise<string> {
+  return invoke<string>('uteke_context', { namespace: namespace ?? null });
+}
+
+// #231 — Room-Document linking
+
+/** List documents linked to a room (POST /room/document/list). */
+export async function roomDocList(roomId: string): Promise<string[]> {
+  return invoke<string[]>('room_doc_list', { roomId });
+}
+
+/** Link a document to a room (PUT /room/document/add). */
+export async function roomDocAdd(roomId: string, docSlug: string): Promise<void> {
+  await invoke('room_doc_add', { roomId, docSlug });
+}
+
+/** Unlink a document from a room (DELETE /room/document/remove). */
+export async function roomDocRemove(roomId: string, docSlug: string): Promise<void> {
+  await invoke('room_doc_remove', { roomId, docSlug });
+}
+
+/** List rooms linked to a document (POST /doc/room/list). */
+export async function docRoomList(docSlug: string): Promise<string[]> {
+  return invoke<string[]>('doc_room_list', { docSlug });
 }
