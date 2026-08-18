@@ -1315,6 +1315,7 @@ impl UtekeClient {
         Self::json_checked(resp, "/memory/feedback").await
     }
 
+
     // ─────────────────────────────────────────────────────────────
     // Lifecycle endpoints (uteke ≥ 0.13.0) — issue #227, #228
     // ─────────────────────────────────────────────────────────────
@@ -1432,7 +1433,240 @@ impl UtekeClient {
             .await
             .map_err(|e| e.to_string())
     }
+
+    // ── Endpoint Gap: PUT /memory — update memory (#216) ──────────────
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn memory_update(
+        &self,
+        id: &str,
+        content: Option<&str>,
+        tags: Option<&[String]>,
+        metadata: Option<&serde_json::Value>,
+        importance: Option<f64>,
+        pinned: Option<bool>,
+        memory_type: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({ "id": id });
+        if let Some(c) = content {
+            body["content"] = serde_json::Value::String(c.to_string());
+        }
+        if let Some(tg) = tags {
+            body["tags"] = serde_json::json!(tg);
+        }
+        if let Some(md) = metadata {
+            body["metadata"] = md.clone();
+        }
+        if let Some(imp) = importance {
+            body["importance"] = serde_json::json!(imp);
+        }
+        if let Some(p) = pinned {
+            body["pinned"] = serde_json::json!(p);
+        }
+        if let Some(mt) = memory_type {
+            body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        let resp = self
+            .authed(self.client.put(format!("{}/memory", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
+    }
+
+    // ── Endpoint Gap: POST /room/remember (#216) ─────────────────────
+
+    pub async fn room_remember(
+        &self,
+        room_id: &str,
+        content: &str,
+        tags: &[String],
+        namespace: Option<&str>,
+        memory_type: Option<&str>,
+        author: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({
+            "room_id": room_id,
+            "content": content,
+            "tags": tags,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(mt) = memory_type {
+            body["type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(a) = author {
+            body["author"] = serde_json::Value::String(a.to_string());
+        }
+        let resp = self
+            .authed(self.client.post(format!("{}/room/remember", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
+    }
+
+    // ── Endpoint Gap: POST /import (#216) ────────────────────────────
+
+    pub async fn import(
+        &self,
+        jsonl_content: &str,
+        namespace: Option<&str>,
+    ) -> Result<ImportResult, String> {
+        let mut body = serde_json::json!({ "content": jsonl_content });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        let resp = self
+            .authed(self.client.post(format!("{}/import", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/import").await?;
+        Ok(ImportResult {
+            imported: val.get("imported").and_then(|v| v.as_u64()).unwrap_or(0),
+            skipped: val.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0),
+        })
+    }
+
+    // ── Endpoint Gap: GET /export (#216) ─────────────────────────────
+
+    pub async fn export(&self, namespace: Option<&str>) -> Result<String, String> {
+        let url = match namespace {
+            Some(ns) => format!("{}/export?namespace={}", self.base_url, ns),
+            None => format!("{}/export", self.base_url),
+        };
+        let resp = self
+            .authed(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .text()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
+    }
+
+    // ── Endpoint Gap: POST /context (#216) ───────────────────────────
+
+    pub async fn context(&self, namespace: Option<&str>) -> Result<String, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        let resp = self
+            .authed(self.client.post(format!("{}/context", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/context").await?;
+        let ctx = val
+            .get("context")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok(ctx)
+    }
+
+    // ── Endpoint Gap: Room-Document linking (#231) ───────────────────
+
+    pub async fn room_doc_list(&self, room_id: &str) -> Result<Vec<String>, String> {
+        let body = serde_json::json!({ "room_id": room_id });
+        let resp = self
+            .authed(
+                self.client
+                    .post(format!("{}/room/document/list", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/room/document/list").await?;
+        let slugs = val
+            .get("doc_slugs")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(slugs)
+    }
+
+    pub async fn room_doc_add(&self, room_id: &str, doc_slug: &str) -> Result<(), String> {
+        let body = serde_json::json!({ "room_id": room_id, "doc_slug": doc_slug });
+        let resp = self
+            .authed(
+                self.client
+                    .put(format!("{}/room/document/add", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+        let _ = resp.bytes().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn room_doc_remove(&self, room_id: &str, doc_slug: &str) -> Result<(), String> {
+        let body = serde_json::json!({ "room_id": room_id, "doc_slug": doc_slug });
+        let resp = self
+            .authed(
+                self.client
+                    .delete(format!("{}/room/document/remove", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+        let _ = resp.bytes().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn doc_room_list(&self, doc_slug: &str) -> Result<Vec<String>, String> {
+        let body = serde_json::json!({ "doc_slug": doc_slug });
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/room/list", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/doc/room/list").await?;
+        let rooms = val
+            .get("room_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(rooms)
+    }
 }
+
 
 // ─────────────────────────────────────────────────────────────────
 // Lifecycle types (uteke ≥ 0.13.0)
@@ -1474,4 +1708,12 @@ pub struct OrphanMemory {
     pub importance: f32,
     #[serde(default)]
     pub created_at: String,
+}
+
+// ── Import Result struct (#216) ─────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImportResult {
+    pub imported: u64,
+    pub skipped: u64,
 }

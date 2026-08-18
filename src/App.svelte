@@ -15,6 +15,7 @@
   import NamespacesView from './lib/components/NamespacesView.svelte';
   import DocumentsView from './lib/components/DocumentsView.svelte';
   import LifecycleView from './lib/components/LifecycleView.svelte';
+  import ToolsView from './lib/components/ToolsView.svelte';
   import { Notification } from './lib/ui';
   import { toastStore } from './lib/ui';
   import { fadeQuick } from './lib/transitions';
@@ -186,6 +187,8 @@
             <DocumentsView />
           {:else if activeView === 'lifecycle'}
             <LifecycleView {namespace} />
+          {:else if activeView === 'tools'}
+            <ToolsView />
           {/if}
         </div>
       {/key}

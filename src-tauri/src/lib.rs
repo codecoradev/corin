@@ -520,6 +520,16 @@ pub fn run() {
             commands::lifecycle_promote,
             commands::find_orphans,
             commands::consolidate_memories,
+            // Endpoint gaps (#216 + #231)
+            commands::memory_update,
+            commands::room_remember,
+            commands::uteke_import,
+            commands::uteke_export,
+            commands::uteke_context,
+            commands::room_doc_list,
+            commands::room_doc_add,
+            commands::room_doc_remove,
+            commands::doc_room_list,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

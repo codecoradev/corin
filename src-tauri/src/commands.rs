@@ -3230,6 +3230,220 @@ pub async fn consolidate_memories(
 }
 
 /// Mask an auth token for safe logging.
+
+// ── Endpoint Gap Commands (#216 + #231) ─────────────────────────────────
+
+/// Update a memory via PUT /memory (#216)
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn memory_update(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    content: Option<String>,
+    tags: Option<Vec<String>>,
+    metadata: Option<serde_json::Value>,
+    importance: Option<f64>,
+    pinned: Option<bool>,
+    memory_type: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .memory_update(
+            &id,
+            content.as_deref(),
+            tags.as_deref(),
+            metadata.as_ref(),
+            importance,
+            pinned,
+            memory_type.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Remember into a room via POST /room/remember (#216)
+#[tauri::command]
+pub async fn room_remember(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    content: String,
+    tags: Vec<String>,
+    namespace: Option<String>,
+    memory_type: Option<String>,
+    author: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .room_remember(
+            &room_id,
+            &content,
+            &tags,
+            namespace.as_deref(),
+            memory_type.as_deref(),
+            author.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Import JSONL data via POST /import (#216)
+#[tauri::command]
+pub async fn uteke_import(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    jsonl_content: String,
+    namespace: Option<String>,
+) -> Result<crate::uteke_client::ImportResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .import(&jsonl_content, namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Export memories as JSONL via GET /export (#216)
+#[tauri::command]
+pub async fn uteke_export(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<String, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .export(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Build context summary via POST /context (#216)
+#[tauri::command]
+pub async fn uteke_context(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<String, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .context(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// List documents linked to a room (#231)
+#[tauri::command]
+pub async fn room_doc_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<Vec<String>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .room_doc_list(&room_id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Link a document to a room (#231)
+#[tauri::command]
+pub async fn room_doc_add(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    doc_slug: String,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    client
+        .room_doc_add(&room_id, &doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(())
+}
+
+/// Unlink a document from a room (#231)
+#[tauri::command]
+pub async fn room_doc_remove(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    doc_slug: String,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    client
+        .room_doc_remove(&room_id, &doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(())
+}
+
+/// List rooms linked to a document (#231)
+#[tauri::command]
+pub async fn doc_room_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    doc_slug: String,
+) -> Result<Vec<String>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .doc_room_list(&doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Mask an auth token for safe logging.
 /// Returns `"none"` when absent, or `"<redacted>"` with a short prefix.
 fn mask_token_log(token: Option<&str>) -> String {
     match token {
