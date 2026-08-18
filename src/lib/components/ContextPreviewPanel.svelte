@@ -95,7 +95,7 @@
         onchange={() => loadContext()}
       >
         <option value="">default</option>
-        {#each namespaces as ns}
+        {#each namespaces.filter((ns) => ns && ns !== 'default') as ns}
           <option value={ns}>{ns}</option>
         {/each}
       </select>
