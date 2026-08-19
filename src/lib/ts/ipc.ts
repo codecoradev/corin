@@ -6,7 +6,7 @@ import type {
   RoomEntry, StatsResponse, DocEntry, DocSearchResult, VersionStatus,
   MemoryDocRefsResponse, DocMemRefsResponse, MemoryFeedbackResponse,
   TimelineEvent,
-  LifecycleStatus, LifecycleCycleResult, OrphanMemory,
+  LifecycleStatus, LifecycleCycleResult, OrphanMemory, DeprecatedListResponse,
   ImportResult, MemoryUpdateParams, RoomRememberParams,
 } from './types';
 
@@ -394,6 +394,17 @@ export async function lifecycleCycle(namespace?: string): Promise<LifecycleCycle
 /** Restore a deprecated memory back to active. */
 export async function lifecyclePromote(id: string): Promise<unknown> {
   return invoke('lifecycle_promote', { id });
+}
+
+/** List deprecated memories (the recycle bin). */
+export async function lifecycleDeprecated(
+  namespace?: string,
+  limit?: number,
+): Promise<DeprecatedListResponse> {
+  return invoke<DeprecatedListResponse>('lifecycle_deprecated', {
+    namespace: namespace ?? null,
+    limit: limit ?? null,
+  });
 }
 
 /** Find orphaned memories (no room, no edges). */

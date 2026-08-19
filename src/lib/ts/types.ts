@@ -171,6 +171,24 @@ export interface OrphanMemory {
   created_at: string;
 }
 
+/** One deprecated-memory entry from GET /lifecycle/deprecated */
+export interface DeprecatedMemoryInfo {
+  id: string;
+  content: string;
+  memory_type: string;
+  namespace: string;
+  tags: string[];
+  importance: number;
+  deprecated_at: string | null;
+  deprecate_reason: string | null;
+}
+
+/** Response from GET /lifecycle/deprecated */
+export interface DeprecatedListResponse {
+  deprecated: DeprecatedMemoryInfo[];
+  count: number;
+}
+
 // ── Endpoint Gap Types (#216 + #231) ────────────────────────────────────
 
 // Import result (POST /import)

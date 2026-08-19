@@ -3189,6 +3189,26 @@ pub async fn lifecycle_promote(
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
+/// List deprecated memories (the recycle bin).
+#[tauri::command]
+pub async fn lifecycle_deprecated(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<u32>,
+) -> Result<crate::uteke_client::DeprecatedListResponse, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_deprecated(namespace.as_deref(), limit.unwrap_or(100))
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
 /// Find orphaned memories (no room, no edges).
 #[tauri::command]
 pub async fn find_orphans(
