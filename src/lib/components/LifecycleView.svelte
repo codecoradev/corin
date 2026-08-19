@@ -3,12 +3,14 @@
     lifecycleStatus,
     lifecycleCycle,
     lifecyclePromote,
+    lifecycleDeprecated,
     findOrphans,
   } from '../ts/ipc';
   import type {
     LifecycleStatus,
     LifecycleCycleResult,
     OrphanMemory,
+    DeprecatedMemoryInfo,
   } from '../ts/types';
   import { Spinner } from '../ui';
   import { toastStore } from '../ui';
@@ -20,7 +22,6 @@
     RotateCcw,
     AlertTriangle,
     CheckCircle2,
-    Package,
   } from 'lucide-svelte';
 
   interface Props {
@@ -31,6 +32,7 @@
 
   // ─── State ─────────────────────────────────────────────────────────
   let status = $state<LifecycleStatus | null>(null);
+  let deprecatedItems = $state<DeprecatedMemoryInfo[]>([]);
   let orphans = $state<OrphanMemory[]>([]);
   let loading = $state(true);
   let cycling = $state(false);
@@ -45,13 +47,15 @@
     error = null;
     try {
       const ns = namespace ?? undefined;
-      const [s, o] = await Promise.all([
+      const [s, d, o] = await Promise.all([
         lifecycleStatus(ns).catch((e) => {
           throw e;
         }),
+        lifecycleDeprecated(ns, 100).catch(() => ({ deprecated: [], count: 0 })),
         findOrphans(ns).catch(() => [] as OrphanMemory[]),
       ]);
       status = s;
+      deprecatedItems = d.deprecated;
       orphans = o;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -107,7 +111,7 @@
   // ─── Helpers ───────────────────────────────────────────────────────
   function totalMemories(): number {
     if (!status) return 0;
-    return status.active + status.deprecated + status.pruned;
+    return status.active + status.deprecated;
   }
 
   function activePercent(): number {
@@ -183,15 +187,6 @@
           <span class="card-label">Deprecated</span>
         </div>
       </div>
-      <div class="status-card card-pruned">
-        <div class="card-icon">
-          <Trash2 size={20} strokeWidth={1.75} />
-        </div>
-        <div class="card-body">
-          <span class="card-value">{status?.pruned ?? 0}</span>
-          <span class="card-label">Pruned</span>
-        </div>
-      </div>
     </div>
 
     <!-- ─── Health Bar ──────────────────────────────────────────── -->
@@ -230,47 +225,48 @@
       </div>
     {/if}
 
-    <!-- ─── Orphans Panel ───────────────────────────────────────── -->
+    <!-- ─── Recycle Bin (Deprecated) ────────────────────── -->
     <section class="orphans-section">
       <div class="section-header">
-        <Package size={18} strokeWidth={1.75} />
-        <h2>Orphaned Memories</h2>
-        <span class="badge">{orphans.length}</span>
+        <Trash2 size={18} strokeWidth={1.75} />
+        <h2>Recycle Bin</h2>
+        <span class="badge">{deprecatedItems.length}</span>
       </div>
       <p class="section-desc">
-        Memories with no room assignment and no graph edges. Candidates for review or cleanup.
+        Deprecated memories — hidden from search, kept until pruned past their TTL. Restore to
+        make them active again.
       </p>
 
-      {#if orphans.length === 0}
+      {#if deprecatedItems.length === 0}
         <div class="empty-state">
           <CheckCircle2 size={28} strokeWidth={1.5} />
-          <p>No orphaned memories found.</p>
+          <p>Recycle bin is empty.</p>
         </div>
       {:else}
         <div class="orphans-list">
-          {#each orphans as orphan (orphan.id)}
+          {#each deprecatedItems as item (item.id)}
             <div class="orphan-item">
               <div class="orphan-content">
-                <p class="orphan-text">{orphan.content.slice(0, 200)}</p>
+                <p class="orphan-text">{item.content.slice(0, 200)}</p>
                 <div class="orphan-meta">
-                  <code class="orphan-id">{orphan.id.slice(0, 12)}…</code>
-                  {#if orphan.namespace}
-                    <span class="tag tag-ns">{orphan.namespace}</span>
+                  <code class="orphan-id">{item.id.slice(0, 12)}…</code>
+                  {#if item.namespace}
+                    <span class="tag tag-ns">{item.namespace}</span>
                   {/if}
-                  {#each orphan.tags.slice(0, 3) as tag}
+                  {#if item.deprecate_reason}
+                    <span class="tag" title="Why this was deprecated">{item.deprecate_reason}</span>
+                  {/if}
+                  {#each item.tags.slice(0, 3) as tag}
                     <span class="tag">{tag}</span>
                   {/each}
-                  <span class="orphan-importance">
-                    {(orphan.importance * 100).toFixed(0)}% importance
-                  </span>
                 </div>
               </div>
               <button
                 class="btn btn-sm btn-primary"
-                onclick={() => promoteMemory(orphan.id)}
-                disabled={promotingIds.has(orphan.id)}
+                onclick={() => promoteMemory(item.id)}
+                disabled={promotingIds.has(item.id)}
               >
-                {#if promotingIds.has(orphan.id)}
+                {#if promotingIds.has(item.id)}
                   <span class="spinning"><RefreshCw size={13} /></span>
                   <span>Restoring…</span>
                 {:else}
@@ -281,6 +277,11 @@
             </div>
           {/each}
         </div>
+        {#if deprecatedItems.length >= 100}
+          <p class="section-desc">
+            Showing the 100 most recent — older entries still count toward the total.
+          </p>
+        {/if}
       {/if}
     </section>
 
@@ -333,6 +334,9 @@
 
 <style>
   .lifecycle-view {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
     padding: 1.5rem 2rem;
     max-width: 900px;
     margin: 0 auto;
@@ -476,11 +480,6 @@
   .card-deprecated .card-icon {
     background: rgba(249, 226, 175, 0.1);
     color: var(--color-yellow);
-  }
-
-  .card-pruned .card-icon {
-    background: rgba(243, 139, 168, 0.08);
-    color: var(--color-red);
   }
 
   .card-body {

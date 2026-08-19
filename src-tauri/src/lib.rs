@@ -518,6 +518,7 @@ pub fn run() {
             commands::lifecycle_status,
             commands::lifecycle_cycle,
             commands::lifecycle_promote,
+            commands::lifecycle_deprecated,
             commands::find_orphans,
             commands::consolidate_memories,
             // Endpoint gaps (#216 + #231)

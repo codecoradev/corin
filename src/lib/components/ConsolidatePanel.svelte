@@ -3,11 +3,12 @@
   import { Spinner, toastStore } from '../ui';
   import {
     Copy,
-    GitMerge,
     RefreshCw,
     Search,
     CheckCircle2,
     AlertTriangle,
+    ArrowRight,
+    Trash2,
   } from 'lucide-svelte';
 
   interface Props {
@@ -70,10 +71,10 @@
         namespace: namespace ?? undefined,
       })) as ConsolidationResultUI;
       mergeResult = raw;
-      toastStore.success(`Merged ${raw.merged} duplicate pair${raw.merged === 1 ? '' : 's'}`);
+      toastStore.success(`Removed ${raw.merged} duplicate pair${raw.merged === 1 ? '' : 's'}`);
       pairs = null;
     } catch (e) {
-      toastStore.error(`Merge failed: ${e instanceof Error ? e.message : String(e)}`);
+      toastStore.error(`Dedup removal failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       merging = false;
     }
@@ -99,7 +100,7 @@
 
 <div class="consolidate-panel">
   <div class="section-header">
-    <GitMerge size={18} strokeWidth={1.75} />
+    <Trash2 size={18} strokeWidth={1.75} />
     <h2>Duplicate Detector</h2>
     {#if pairs}
       <span class="badge">{pairs.length} pairs</span>
@@ -107,7 +108,7 @@
   </div>
   <p class="section-desc">
     Find near-duplicate memories via cosine similarity. Preview first — review every pair before
-    merging.
+    removing duplicates.
   </p>
 
   {#if error}
@@ -118,11 +119,12 @@
   {/if}
 
   {#if mergeResult}
-    <div class="merge-result-banner">
+    <div class="dedup-result-banner">
       <CheckCircle2 size={18} />
       <span>
-        Merge complete: <strong>{mergeResult.merged}</strong> merged,
-        <strong>{mergeResult.removed_ids.length}</strong> duplicates removed
+        Dedup complete: <strong>{mergeResult.removed_ids.length}</strong> duplicate
+        pair{mergeResult.removed_ids.length === 1 ? '' : 's'} removed,
+        <strong>{mergeResult.kept_ids.length}</strong> kept
       </span>
       <button class="btn btn-sm btn-secondary" onclick={resetScan}>
         <RefreshCw size={13} />
@@ -179,10 +181,10 @@
         >
           {#if merging}
             <span class="spinning"><RefreshCw size={15} /></span>
-            <span>Merging…</span>
+            <span>Removing…</span>
           {:else}
-            <GitMerge size={15} />
-            <span>Merge All ({pairs.length})</span>
+            <Trash2 size={15} />
+            <span>Remove All ({pairs.length})</span>
           {/if}
         </button>
       </div>
@@ -215,15 +217,15 @@
             </div>
             <div class="pair-contents">
               <div class="pair-side">
-                <span class="side-label">Older</span>
+                <span class="side-label">Removed (older)</span>
                 <p class="side-text">{pair.content_a}</p>
                 <code class="side-id">{pair.id_a.slice(0, 12)}…</code>
               </div>
               <div class="pair-divider">
-                <GitMerge size={14} strokeWidth={2} />
+                <ArrowRight size={14} strokeWidth={2} />
               </div>
               <div class="pair-side">
-                <span class="side-label">Newer</span>
+                <span class="side-label">Kept (newer)</span>
                 <p class="side-text">{pair.content_b}</p>
                 <code class="side-id">{pair.id_b.slice(0, 12)}…</code>
               </div>
@@ -231,16 +233,16 @@
           </div>
         {/each}
       </div>
-      <p class="merge-note">
+      <p class="dedup-note">
         <AlertTriangle size={14} />
-        Merging is all-or-nothing at this threshold: the older memory keeps its identity, content
-        is merged, and every duplicate shown above is removed. If some pairs should survive, use a
-        higher threshold and re-scan.
+        Removal is all-or-nothing at this threshold: in each pair the newer memory is kept as-is
+        and the older one is removed (deprecated, restorable from Lifecycle). If some pairs should
+        survive, use a higher threshold and re-scan.
       </p>
     {/if}
   {/if}
 
-  <!-- ─── Confirm Merge Modal ───────────────────────────────────── -->
+  <!-- ─── Confirm Removal Modal ───────────────────────────────────── -->
   {#if showConfirmMerge}
     <div
       class="modal-overlay"
@@ -256,13 +258,13 @@
         onkeydown={(e) => e.key === 'Escape' && (showConfirmMerge = false)}
       >
         <div class="modal-icon">
-          <GitMerge size={28} strokeWidth={1.5} />
+          <Trash2 size={28} strokeWidth={1.5} />
         </div>
-        <h3>Merge {pairs?.length ?? 0} pair{(pairs?.length ?? 0) === 1 ? '' : 's'}?</h3>
+        <h3>Remove {pairs?.length ?? 0} duplicate pair{(pairs?.length ?? 0) === 1 ? '' : 's'}?</h3>
         <p class="modal-desc">
-          This will merge <strong>every</strong> duplicate pair found at threshold
-          {threshold.toFixed(2)} — all-or-nothing. The older memory is kept and enriched; newer
-          duplicates are permanently removed. This cannot be undone.
+          In every duplicate pair found at threshold {threshold.toFixed(2)} the newer memory is
+          kept as-is and the older one is removed — all-or-nothing. Removed memories are
+          deprecated and can be restored from the Lifecycle view.
         </p>
         <p class="modal-warn">
           To keep some pairs, cancel, raise the threshold, and re-scan.
@@ -272,8 +274,8 @@
             Cancel
           </button>
           <button class="btn btn-primary" onclick={mergeAll} disabled={merging}>
-            <GitMerge size={15} />
-            Merge {pairs?.length ?? 0}
+            <Trash2 size={15} />
+            Remove {pairs?.length ?? 0}
           </button>
         </div>
       </div>
@@ -328,7 +330,7 @@
     margin-bottom: 1rem;
   }
 
-  .merge-result-banner {
+  .dedup-result-banner {
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -341,7 +343,7 @@
     margin-bottom: 1rem;
   }
 
-  .merge-result-banner .btn {
+  .dedup-result-banner .btn {
     margin-left: auto;
   }
 
@@ -501,7 +503,7 @@
     color: var(--text-muted, #bbb);
   }
 
-  .merge-note {
+  .dedup-note {
     display: flex;
     align-items: center;
     gap: 0.45rem;

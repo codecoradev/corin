@@ -1386,6 +1386,31 @@ impl UtekeClient {
         .map_err(|e| e.to_string())
     }
 
+    /// List deprecated memories (the recycle bin).
+    /// (GET /lifecycle/deprecated)
+    pub async fn lifecycle_deprecated(
+        &self,
+        namespace: Option<&str>,
+        limit: u32,
+    ) -> Result<DeprecatedListResponse, String> {
+        let mut req = self.authed(
+            self.client
+                .get(format!("{}/lifecycle/deprecated", self.base_url)),
+        );
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+        req = req.query(&[("limit", limit)]);
+        req.send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     /// Find orphaned memories (no room, no edges).
     /// (POST /orphans)
     pub async fn find_orphans(&self, namespace: Option<&str>) -> Result<Vec<OrphanMemory>, String> {
@@ -1679,6 +1704,35 @@ pub struct LifecycleStatus {
     pub deprecated: usize,
     #[serde(default)]
     pub pruned: usize,
+}
+
+/// One deprecated-memory entry from GET /lifecycle/deprecated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeprecatedMemoryInfo {
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub memory_type: String,
+    #[serde(default)]
+    pub namespace: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub importance: f64,
+    #[serde(default)]
+    pub deprecated_at: Option<String>,
+    #[serde(default)]
+    pub deprecate_reason: Option<String>,
+}
+
+/// Response from GET /lifecycle/deprecated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeprecatedListResponse {
+    #[serde(default)]
+    pub deprecated: Vec<DeprecatedMemoryInfo>,
+    #[serde(default)]
+    pub count: usize,
 }
 
 /// Response from POST /lifecycle/cycle.
