@@ -12,6 +12,7 @@
   } from '../ts/types';
   import { Spinner } from '../ui';
   import { toastStore } from '../ui';
+  import ConsolidatePanel from './ConsolidatePanel.svelte';
   import {
     HeartPulse,
     RefreshCw,
@@ -282,6 +283,9 @@
         </div>
       {/if}
     </section>
+
+    <!-- ─── Consolidate Panel (#230) ──────────────────────── -->
+    <ConsolidatePanel {namespace} />
   {/if}
 
   <!-- ─── Confirm Cycle Modal ──────────────────────────────────────── -->
