@@ -1,6 +1,7 @@
 <script lang="ts">
   import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
-  import { getStats } from '../stores/cache.svelte';
+  import { getStats, getNamespaces } from '../stores/cache.svelte';
+  import ContextPreviewPanel from './ContextPreviewPanel.svelte';
   import type {
     StatsResponse,
     MemoryEntry,
@@ -21,14 +22,17 @@
   let searchQuery = $state('');
   let loading = $state(true);
   let serverOnline = $state(false);
+  let namespacesList = $state<string[]>([]);
 
   async function loadData() {
     loading = true;
     try {
-      const [s, status] = await Promise.all([
+      const [s, status, nss] = await Promise.all([
         getStats(),
         utekeServer.status().catch(() => ({ available: false })),
+        getNamespaces().catch(() => [] as string[]),
       ]);
+      namespacesList = nss;
       stats = s;
       serverOnline = status.available;
 
@@ -109,6 +113,9 @@
         </div>
       </div>
     </section>
+
+    <!-- Context preview (#234) -->
+    <ContextPreviewPanel {namespace} namespaces={namespacesList} />
 
     <!-- Recent memories -->
     <div class="recent-section">
