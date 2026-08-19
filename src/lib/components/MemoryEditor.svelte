@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { memory as memoryApi, system, utekeServer } from '../ts/ipc';
+  import { memory as memoryApi, system, utekeServer, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
   import { X, TriangleAlert } from 'lucide-svelte';
 
@@ -84,17 +84,28 @@
       }
 
       if (memory) {
-        // Edit existing: create new first, then delete old (avoid data loss on failure)
-        const newId = await memoryApi.remember(content, {
-          tags,
-          content_type: contentType,
-          importance,
-          namespace: ns || undefined,
-        });
-
-        // Only delete old after successful creation
-        if (newId) {
-          await memoryApi.forget(memory.id);
+        // Edit existing: in-place PUT /memory (stable ID, auto re-embed).
+        // uteke requires UUID ids — anything else (shouldn't happen, HTTP-only
+        // architecture) falls back to create+delete.
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memory.id);
+        if (isUuid) {
+          await memoryUpdate({
+            id: memory.id,
+            content,
+            tags,
+            importance,
+            memory_type: contentType,
+          });
+        } else {
+          const newId = await memoryApi.remember(content, {
+            tags,
+            content_type: contentType,
+            importance,
+            namespace: ns || undefined,
+          });
+          if (newId) {
+            await memoryApi.forget(memory.id);
+          }
         }
       } else {
         await memoryApi.remember(content, {
@@ -209,6 +220,8 @@
             list="ns-list"
             bind:value={ns}
             placeholder="default"
+            disabled={memory !== null}
+            title={memory !== null ? 'Namespace cannot be changed on update (PUT /memory)' : ''}
           />
           <datalist id="ns-list">
             {#each namespaces as n}
