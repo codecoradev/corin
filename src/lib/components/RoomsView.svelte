@@ -164,8 +164,7 @@
       {#if utekeReady}
         <p>No rooms yet.</p>
         <p class="sub">Rooms are shared workspaces for multi-agent collaboration.<br>
-        Create one via Uteke CLI: <code>uteke room create --id "sprint-1"</code><br>
-        Or click "New Room" above to create one from here.</p>
+        Click "New Room" above to create one from here.</p>
       {:else}
         <p>Uteke not installed.</p>
         <p class="sub">Install from https://github.com/codecoradev/uteke</p>

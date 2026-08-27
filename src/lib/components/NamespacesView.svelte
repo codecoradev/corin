@@ -45,7 +45,7 @@
 <div class="ns-view">
   <div class="ns-header">
     <h2>Namespaces</h2>
-    <span class="count">{namespaces.length} namespaces</span>
+    <span class="count">{namespaces.length} namespace{namespaces.length === 1 ? '' : 's'}</span>
   </div>
 
   {#if loading}

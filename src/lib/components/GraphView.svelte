@@ -595,7 +595,7 @@
 <div class="graph-view">
   <div class="graph-toolbar">
     {#if !loading && totalNodesShown > 0}
-      <span class="graph-info">{totalNodesShown} nodes · {totalEdgesShown} edges</span>
+      <span class="graph-info">{totalNodesShown} node{totalNodesShown === 1 ? '' : 's'} · {totalEdgesShown} edge{totalEdgesShown === 1 ? '' : 's'}</span>
       {#if serverOnline}
         <span class="mode-tag semantic">Semantic</span>
       {:else}

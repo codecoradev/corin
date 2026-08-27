@@ -424,7 +424,8 @@ function primaryConnection(status: string): ConnectionInfo {
     id: 'web-proxy',
     name: 'Uteke (via proxy web dev)',
     product_type: 'uteke',
-    url: API,
+    // Bukan URL yang bisa diedit — koneksi ini implisit lewat proxy Vite.
+    url: '/api (dev proxy)',
     has_token: false,
     capabilities: { read: true, write: true, search: true, realtime: false },
     status,

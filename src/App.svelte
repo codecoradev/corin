@@ -223,7 +223,7 @@
         <div class="view-container" transition:fadeQuick>
           {#if activeView === 'dashboard'}
             {#key refreshKey}
-              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} />
+              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} onnewmemory={newMemory} />
             {/key}
           {:else if activeView === 'memories'}
             {#key refreshKey}
