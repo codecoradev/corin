@@ -135,11 +135,31 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.ctrlKey && e.key === 'b') {
       e.preventDefault();
-      sidebarCollapsed = !sidebarCollapsed;
+      toggleSidebar();
     }
     if (e.ctrlKey && e.key === 'n' && !showEditor) {
       e.preventDefault();
       newMemory();
+    }
+  }
+
+  // Auto-collapse to the icon rail on narrow viewports (web in a small
+  // window, narrow desktop windows). A manual toggle cancels the auto
+  // restore so we never fight the user's explicit choice.
+  let autoCollapsed = false;
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    autoCollapsed = false;
+  }
+
+  function handleViewportChange() {
+    if (window.innerWidth < 900 && !sidebarCollapsed) {
+      sidebarCollapsed = true;
+      autoCollapsed = true;
+    } else if (window.innerWidth >= 900 && autoCollapsed) {
+      sidebarCollapsed = false;
+      autoCollapsed = false;
     }
   }
 
@@ -160,12 +180,15 @@
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
     window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('resize', handleViewportChange);
     const initial = viewFromHash();
     if (initial) activeView = initial;
+    handleViewportChange();
     initDataDir();
     return () => {
       window.removeEventListener('keydown', handleKeydown);
       window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('resize', handleViewportChange);
     };
   });
 </script>
@@ -187,7 +210,7 @@
       collapsed={sidebarCollapsed}
       onnavigate={navigate}
       onnewmemory={newMemory}
-      oncollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+      oncollapse={toggleSidebar}
     />
 
     <!--
