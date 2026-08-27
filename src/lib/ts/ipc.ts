@@ -50,7 +50,8 @@ export const graph = {
       edge_type: opts?.edgeType ?? null,
       weight: opts?.weight ?? null,
     }),
-  removeEdge: (id: number) => call<void>('remove_edge', { id }),
+  removeEdge: (source: string, target: string, relation?: string) =>
+    call<void>('remove_edge', { source, target, relation }),
 };
 
 export const room = {

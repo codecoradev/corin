@@ -481,10 +481,10 @@ export const webHandlers: Record<string, Handler> = {
     return 0;
   },
   remove_edge: async (p) => {
-    if (typeof p.source === 'string' && typeof p.target === 'string') {
-      await req('DELETE', '/graph/edge', { query: { source: p.source, target: p.target, relation: (p.relation as string) ?? undefined } });
+    if (typeof p.source !== 'string' || typeof p.target !== 'string') {
+      throw new Error('remove_edge butuh source & target (bukan id)');
     }
-    // Desktop juga gagal bila hanya diberi `{id}` (signature Rust: source/target) — biarkan konsisten.
+    await req('DELETE', '/graph/edge', { query: { source: p.source, target: p.target, relation: (p.relation as string) ?? undefined } });
   },
 
   // Rooms
@@ -574,9 +574,13 @@ export const webHandlers: Record<string, Handler> = {
       };
     }));
   },
-  uteke_room_recall: async (p) =>
-    (await recallRows('', String(p.roomId), typeof p.limit === 'number' ? p.limit : 20).catch(() => []))
-      .map((r) => toMemory(r.memory)),
+  uteke_room_recall: async (p) => {
+    // Endpoint khusus room — /recall generik memakai namespace, bukan room.
+    const rows = await req<RecallRow[]>('POST', '/room/recall', {
+      body: { room_id: p.roomId as string, query: '', limit: (typeof p.limit === 'number' ? p.limit : 20) },
+    });
+    return rows.map((r) => toMemory(r.memory));
+  },
   uteke_room_memories: async (p) => {
     try {
       const rows = await req<UtekeMemoryRaw[]>('GET', '/room/memories', {
