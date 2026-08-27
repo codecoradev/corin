@@ -747,10 +747,12 @@ export const webHandlers: Record<string, Handler> = {
   // Endpoint-gap wrappers (#216 + #231)
   memory_update: async (p) =>
     req<Record<string, unknown>>('PUT', '/memory', {
-      body: body({
+      // Tanpa body(): null di sini disengaja — artinya "hapus field ini"
+      // (semantik PUT /memory desktop), bukan nilai yang perlu dibuang.
+      body: {
         id: p.id, content: p.content ?? null, tags: p.tags ?? null, metadata: p.metadata ?? null,
         importance: p.importance ?? null, pinned: p.pinned ?? null, memory_type: p.memoryType ?? null,
-      }) as Payload,
+      } as Payload,
     }),
   room_remember: async (p) =>
     req<Record<string, unknown>>('POST', '/room/remember', {

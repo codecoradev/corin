@@ -50,6 +50,9 @@ export const graph = {
       edge_type: opts?.edgeType ?? null,
       weight: opts?.weight ?? null,
     }),
+  // Signature mirrors the desktop command remove_edge(source, target, relation?).
+  // Belum ada pemanggil UI (hapus-edge di graf belum diwire); jangan kembalikan
+  // ke {id} — Tauri command menolaknya (lihat issue #261).
   removeEdge: (source: string, target: string, relation?: string) =>
     call<void>('remove_edge', { source, target, relation }),
 };
