@@ -348,8 +348,7 @@ async function aggregateStats(): Promise<StatsResponse> {
 }
 
 /** Normalized /room/list row — desktop maps these into RoomEntry & uteke.rooms. */
-interface RawRoomRow { id: string; name: string; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }
-async function roomsRaw(): Promise<RawRoomRow[]> {
+interface RawRoomRow { id: string; name: string; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }async function roomsRaw(): Promise<RawRoomRow[]> {
   const rows = await req<Array<Partial<Record<string, unknown>>>>('GET', '/room/list');
   return rows.map((r) => ({
     id: String(r.id ?? r.room_id ?? ''),
@@ -394,6 +393,8 @@ interface DreamHistoryRow { id: number; ran_at: string; success: boolean; total_
 // ── Import/export (pragmatic browser ports of commands.rs engines) ──────
 
 async function exportData(format: string, namespace: string | null): Promise<string> {
+  // Cap 100_000 = paritas penuh dengan export desktop (commands.rs export_data
+  // memakai list(ns, None, 100_000, 0)) — dump penuh, bukan pagination.
   const memories = (await listNs(namespace, null, 100_000, 0)).map(toMemory);
   if (format === 'csv') {
     const esc = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -560,7 +561,10 @@ export const webHandlers: Record<string, Handler> = {
   uteke_rooms: async (p) => {
     const base = await roomsRaw();
     const nsFilter = p.namespace as string | null;
-    const filtered = !nsFilter ? base : base.filter((r) => r.namespace === 'default' || r.namespace === nsFilter);
+    // Filter ketat — desktop (list_rooms) tidak menerima filter namespace,
+    // jadi tidak ada kasus khusus; caller yang mengirim filter memang
+    // mengharapkan hanya namespace itu.
+    const filtered = !nsFilter ? base : base.filter((r) => r.namespace === nsFilter);
     return Promise.all(filtered.slice(0, 100).map(async (r) => {
       const stats = await req<{ memory_count?: number; participant_count?: number }>('POST', '/room/stats', { body: { room_id: r.id } }).catch(() => null);
       return {
