@@ -2,6 +2,7 @@
   import { system } from '../ts/ipc';
   import { open, save } from '@tauri-apps/plugin-dialog';
   import { readTextFile } from '@tauri-apps/plugin-fs';
+  import { isWebMode } from '../ts/transport';
 
   interface Props {
     namespaces: string[];
@@ -61,20 +62,23 @@
         ? `corin-export-${exportNamespace}.${ext}`
         : `corin-export.${ext}`;
 
-      const filePath = await save({
-        defaultPath: name,
-        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-      });
+      // Web mode: no native save dialog — download straight away.
+      if (!isWebMode) {
+        const filePath = await save({
+          defaultPath: name,
+          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+        });
 
-      if (!filePath) {
-        exporting = false;
-        return;
+        if (!filePath) {
+          exporting = false;
+          return;
+        }
       }
 
       const data = await system.exportData(exportFormat, exportNamespace);
 
-      // Write via Tauri fs (use the shell plugin to write)
-      // For simplicity we use the browser download approach as fallback
+      // Both transports end with a browser-style Blob download
+      // (desktop uses it as its write path; web natively).
       const blob = new Blob([data], {
         type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
       });
@@ -95,6 +99,11 @@
 
   async function handlePickFile() {
     errorMsg = null;
+    // Web mode: hidden <input type="file"> instead of the native dialog.
+    if (isWebMode) {
+      fileInput?.click();
+      return;
+    }
     try {
       const filePath = await open({
         multiple: false,
@@ -113,6 +122,24 @@
       importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
 
       // Preview
+      importPreview = await system.importPreview(importFormat, importFileData);
+      importStep = 'preview';
+    } catch (e: any) {
+      errorMsg = e.toString();
+    }
+  }
+
+  /** Web-mode file input change handler. */
+  async function handleWebFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-picking the same file
+    if (!file) return;
+    errorMsg = null;
+    try {
+      importFileName = file.name;
+      importFileData = await file.text();
+      importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
       importPreview = await system.importPreview(importFormat, importFileData);
       importStep = 'preview';
     } catch (e: any) {
@@ -140,7 +167,18 @@
     markdown: 'Per-memory .md files with Obsidian-compatible YAML frontmatter.',
     csv: 'Flat table export. Compatible with spreadsheets and data tools.',
   };
+
+  // Web-mode hidden file input
+  let fileInput = $state<HTMLInputElement | null>(null);
 </script>
+
+<input
+  type="file"
+  accept=".json,.md"
+  bind:this={fileInput}
+  onchange={handleWebFile}
+  hidden
+/>
 
 <div class="import-export">
   <div class="mode-tabs">

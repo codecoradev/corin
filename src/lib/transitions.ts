@@ -3,8 +3,18 @@
 
 import { fade, fly, scale, slide } from 'svelte/transition';
 import type { TransitionConfig } from 'svelte/transition';
+import { isWebMode } from './ts/transport';
 
 type EasingFunc = (t: number) => number;
+
+// Web-mode guard: in a background browser pane, Svelte's out-transition
+// completion callbacks never fire — keyed swaps and overlay closes leave
+// stale DOM stacked forever. A zero-duration no-op keeps the API contract
+// (Svelte requires a function) while finishing instantly; desktop keeps
+// the real presets untouched.
+const noOp = (): TransitionConfig => ({ duration: 0 });
+type PresetFn = (node: Element, params?: never) => TransitionConfig;
+const guarded = (preset: PresetFn): PresetFn => (isWebMode ? noOp : preset);
 
 // Easing — cubic-bezier approximations for smooth UI motion
 export const easeOut: EasingFunc = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -18,8 +28,8 @@ export const springOut: EasingFunc = (t: number) => {
 // ── View & content transitions ──────────────────────────────────
 
 /** Quick fade for view switches (150ms) */
-export const fadeQuick = (node: Element): TransitionConfig =>
-  fade(node, { duration: 150 });
+export const fadeQuick = guarded((node: Element): TransitionConfig =>
+  fade(node, { duration: 150 }));
 
 /** Fade + subtle upward slide for list items / content (200ms) */
 export const fadeUp = (node: Element, delay = 0): TransitionConfig =>
@@ -32,16 +42,25 @@ export const slideDown = (node: Element): TransitionConfig =>
 // ── Modal & overlay transitions ─────────────────────────────────
 
 /** Scale + fade for modal dialogs (200ms, starts at 96%) */
-export const modalScale = (node: Element): TransitionConfig =>
-  scale(node, { duration: 200, start: 0.96, opacity: 0, easing: easeOut });
+export const modalScale = guarded((node: Element): TransitionConfig =>
+  scale(node, { duration: 200, start: 0.96, opacity: 0, easing: easeOut }));
 
 /** Scale + fade for confirm dialogs (slightly snappier) */
-export const dialogPop = (node: Element): TransitionConfig =>
-  scale(node, { duration: 150, start: 0.92, opacity: 0, easing: springOut });
+export const dialogPop = guarded((node: Element): TransitionConfig =>
+  scale(node, { duration: 150, start: 0.92, opacity: 0, easing: springOut }));
 
 /** Backdrop fade (120ms) */
-export const backdropFade = (node: Element): TransitionConfig =>
-  fade(node, { duration: 120 });
+export const backdropFade = guarded((node: Element): TransitionConfig =>
+  fade(node, { duration: 120 }));
+
+/** Plain fade for overlay wrappers (App-level detail/settings panels). */
+export const overlayFade = guarded(
+  (node: Element, params?: { duration?: number }): TransitionConfig =>
+    fade(node, { duration: params?.duration ?? 150 }));
+
+/** Fly for overlay wrappers (e.g. memory editor). */
+export const overlayFlyUp = guarded((node: Element): TransitionConfig =>
+  fly(node, { duration: 200, y: 20, opacity: 0 }));
 
 // ── Expand / collapse ───────────────────────────────────────────
 
