@@ -1,7 +1,7 @@
 <script lang="ts">
   import { system } from '../ts/ipc';
   import { open, save } from '@tauri-apps/plugin-dialog';
-  import { readTextFile } from '@tauri-apps/plugin-fs';
+  import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
   import { isWebMode } from '../ts/transport';
 
   interface Props {
@@ -62,9 +62,11 @@
         ? `corin-export-${exportNamespace}.${ext}`
         : `corin-export.${ext}`;
 
-      // Web mode: no native save dialog — download straight away.
+      // Desktop: native save dialog first — the chosen path is the write
+      // target. Web mode: no dialog, straight to a Blob download.
+      let filePath: string | null = null;
       if (!isWebMode) {
-        const filePath = await save({
+        filePath = await save({
           defaultPath: name,
           filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
         });
@@ -77,17 +79,19 @@
 
       const data = await system.exportData(exportFormat, exportNamespace);
 
-      // Both transports end with a browser-style Blob download
-      // (desktop uses it as its write path; web natively).
-      const blob = new Blob([data], {
-        type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (filePath) {
+        await writeTextFile(filePath, data);
+      } else {
+        const blob = new Blob([data], {
+          type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (e: any) {
       errorMsg = e.toString();
     } finally {
