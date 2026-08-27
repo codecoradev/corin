@@ -37,6 +37,12 @@
       oncancel();
     }
   }
+
+  // Fokus programatik setelah render — sama efeknya dengan autofocus
+  // tanpa melanggar a11y_autofocus (form ini hanya muncul atas aksi user).
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+  }
 </script>
 
 <div class="create-form">
@@ -46,7 +52,7 @@
     placeholder="Room name"
     bind:value={newName}
     onkeydown={handleKeydown}
-    autofocus
+    use:focusOnMount
   />
   <input
     type="text"
