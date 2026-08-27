@@ -18,6 +18,11 @@
 
   let { namespace, onmemoryclick, onnewmemory, ondocumentclick }: Props = $props();
 
+  // Cosine similarity can exceed 1; clamp so the badge never reads ">100%".
+  function scorePct(score: number): number {
+    return Math.min(100, Math.max(0, Math.round(score * 100)));
+  }
+
   // Multi-namespace filter. `null` = all (show every namespace),
   // `[]` = none, array = explicit. Takes precedence over the single
   // `namespace` prop when not null.
@@ -263,7 +268,7 @@
                 {#if r.chunk_snippet}
                   <div class="doc-snippet">{r.chunk_snippet.slice(0, 200)}</div>
                 {/if}
-                <div class="semantic-score">{(r.score * 100).toFixed(0)}% match</div>
+                <div class="semantic-score">{scorePct(r.score)}% match</div>
               </div>
             {:else}
               <div
@@ -279,7 +284,7 @@
                   </span>
                   {r.content.slice(0, 200)}
                 </div>
-                <div class="semantic-score">{(r.score * 100).toFixed(0)}% match</div>
+                <div class="semantic-score">{scorePct(r.score)}% match</div>
                 <div class="card-meta">
                   <div class="tags">
                     {#each r.tags.slice(0, 5) as tag}<span class="tag">{tag}</span>{/each}
@@ -315,7 +320,7 @@
         >
           <div class="card-content">{m.content.slice(0, 200)}</div>
           {#if m.score !== undefined}
-            <div class="semantic-score">{(m.score * 100).toFixed(0)}% match</div>
+            <div class="semantic-score">{scorePct(m.score)}% match</div>
           {/if}
           <div class="card-meta">
             <div class="tags">
@@ -371,11 +376,13 @@
     display: flex;
     gap: 8px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
   }
 
   .search-bar {
     flex: 1;
     position: relative;
+    min-width: 220px;
   }
 
   .search-bar input {
@@ -394,6 +401,10 @@
   }
 
   .clear-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: none;
     color: var(--text-muted);
@@ -455,6 +466,11 @@
     border-radius: var(--radius-sm);
   }
 
+  /* Keep content clear of the absolutely-positioned score badge. */
+  .memory-card:has(.semantic-score) .card-content {
+    padding-right: 88px;
+  }
+
   .card-content {
     font-size: 0.9rem;
     color: var(--text-primary);
@@ -467,6 +483,7 @@
     justify-content: space-between;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
   }
 
   .tags {
