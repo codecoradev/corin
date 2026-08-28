@@ -340,6 +340,27 @@ function formatRoomDocument(doc: Record<string, unknown>): string {
   return out;
 }
 
+/**
+ * Normalize a `/recall` row into UnifiedSearchResult. Newer servers return
+ * flattened unified rows as soon as `search_type` is present; older ones
+ * ignore the parameter and answer with plain `[{memory, score}]` rows.
+ */
+function toUnified(row: Record<string, unknown>): UnifiedSearchResult {
+  const mem = row.memory as UtekeMemoryRaw | undefined;
+  if (!mem) return row as unknown as UnifiedSearchResult;
+  return {
+    result_type: 'memory',
+    score: Number(row.score ?? 0),
+    content: String(mem.content ?? ''),
+    memory_id: mem.id,
+    tags: Array.isArray(mem.tags) ? mem.tags : [],
+    namespace: mem.namespace ?? undefined,
+    memory_type: (mem as { memory_type?: string | null }).memory_type ?? undefined,
+    importance: mem.importance ?? undefined,
+    pinned: (mem as { pinned?: boolean | null }).pinned ?? undefined,
+  };
+}
+
 async function aggregateStats(): Promise<StatsResponse> {
   if (!(await health()).ok) return { total_memories: 0, total_namespaces: 0, total_tags: 0, total_edges: 0, db_size_bytes: 0 };
   const s = await req<{ total_memories: number; unique_tags: number; db_size_bytes: number }>('GET', '/stats');
@@ -635,7 +656,7 @@ export const webHandlers: Record<string, Handler> = {
     const rows = await req<Array<Record<string, unknown>>>('POST', '/recall', {
       body: body({ query: p.query, search_type: stype, namespace: p.namespace ?? null, limit: typeof p.limit === 'number' ? p.limit : 20 }) as Payload,
     });
-    return rows as unknown as UnifiedSearchResult[];
+    return rows.map(toUnified);
   },
   uteke_remember: rememberWithDupCheck,
   uteke_forget: async (p) => { await req('DELETE', '/forget', { query: { id: p.id as string } }); },
@@ -653,6 +674,8 @@ export const webHandlers: Record<string, Handler> = {
   // Agents (desktop filesystem probing — stub untuk web)
   detect_agents: async () => [],
   generate_agent_md: async () => { throw new Error("Generate AGENT.md memeriksa filesystem lokal — hanya tersedia di aplikasi desktop."); },
+  // Alias agar kode yang memanggil salah satu nama tetap tersambung.
+  run_dream: (p) => webHandlers.run_dream_cycle(p),
   run_dream_cycle: async (p): Promise<DreamHistoryRow & { success: boolean; dry_run: boolean; hint?: string }> => {
     const started = Date.now();
     const result = await req<Record<string, unknown>>('POST', '/dream', {
