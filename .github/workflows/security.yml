@@ -23,9 +23,10 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
       - name: Run cargo audit
+        # Cargo.lock lives in src-tauri/ (Tauri workspace), not the repo root.
         # Add --ignore RUSTSEC-XXXX-NNNN flags here ONLY with a written
         # justification per advisory (see uteke's security.yml for examples).
-        run: cargo audit
+        run: cargo audit --file src-tauri/Cargo.lock
 
   npm-audit:
     name: npm Audit (prod deps)
