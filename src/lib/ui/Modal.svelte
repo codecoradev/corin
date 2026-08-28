@@ -26,7 +26,7 @@
 {#if open}
   <div class="modal-overlay" transition:fade={{ duration: 150 }}>
     <!-- backdrop -->
-    <div class="modal-backdrop" onclick={onclose}></div>
+    <div class="modal-backdrop" role="presentation" onclick={onclose}></div>
     <!-- dialog -->
     <div class="modal-dialog" style="--modal-width: {width}" transition:scale={{ duration: 200, start: 0.96, opacity: 0 }}>
       {#if title}

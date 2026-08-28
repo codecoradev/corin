@@ -27,6 +27,7 @@
   } from 'lucide-svelte';
   import { ConfirmDialog } from '../ui';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
+  import { isWebMode } from '../ts/transport';
   import { slide } from 'svelte/transition';
   import { pendingDocSlug } from '../stores/nav';
   import { renderMarkdown as renderMd } from '../utils/markdown';
@@ -537,7 +538,11 @@
       || href.startsWith('mailto:') || href.startsWith('tel:');
 
     if (isExternal) {
-      // Open in system default browser
+      // Web: let the browser handle it. Desktop: system default browser.
+      if (isWebMode) {
+        window.open(href, '_blank', 'noopener');
+        return;
+      }
       shellOpen(href).catch((err) => showError(`Cannot open link: ${err}`));
       return;
     }

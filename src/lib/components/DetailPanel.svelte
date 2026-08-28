@@ -72,9 +72,9 @@
 ></div>
 
 <!-- Slide-in panel -->
-<aside class="detail-panel" bind:this={panelEl} role="dialog" aria-modal="true" tabindex="-1">
+<div class="detail-panel" bind:this={panelEl} role="dialog" aria-modal="true" tabindex="-1">
   {@render children?.()}
-</aside>
+</div>
 
 <style>
   .detail-backdrop {

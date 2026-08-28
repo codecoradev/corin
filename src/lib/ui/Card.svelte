@@ -18,17 +18,22 @@
   }: Props = $props();
 </script>
 
-<div
-  class="card card-{padding}"
-  class:hoverable
-  class:active
-  role={onclick ? 'button' : undefined}
-  tabindex={onclick ? 0 : undefined}
-  {onclick}
-  onkeydown={(e) => onclick && (e.key === 'Enter' && onclick())}
->
-  {@render children()}
-</div>
+{#if onclick}
+  <!-- Clickable cards render a real <button>: Enter/Space and focus come for
+       free, and no a11y role/tabindex juggling is needed. -->
+  <button
+    class="card card-{padding} card-btn"
+    class:hoverable
+    class:active
+    {onclick}
+  >
+    {@render children()}
+  </button>
+{:else}
+  <div class="card card-{padding}" class:hoverable class:active>
+    {@render children()}
+  </div>
+{/if}
 
 <style>
   .card {
@@ -51,5 +56,14 @@
   }
   .active {
     border-color: var(--accent);
+  }
+
+  /* Reset <button> chrome so the clickable card keeps its look. */
+  .card-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
   }
 </style>

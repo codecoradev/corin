@@ -3,7 +3,9 @@
   import { getVersion } from '@tauri-apps/api/app';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { system } from '../ts/ipc';
+  import { isWebMode } from '../ts/transport';
   import ImportExport from './ImportExport.svelte';
+  import { version as APP_VERSION } from '../../../package.json';
   import AgentsSection from './settings/AgentsSection.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X } from 'lucide-svelte';
@@ -51,7 +53,11 @@
   onMount(async () => {
     loadSettings();
     loadDataDir();
-    try { appVersion = await getVersion(); } catch { appVersion = 'dev'; }
+    try {
+      appVersion = isWebMode ? APP_VERSION : await getVersion();
+    } catch {
+      appVersion = 'dev';
+    }
   });
 
   async function handleSave() {
@@ -104,6 +110,7 @@
           target="_blank"
           rel="noopener"
           onclick={(e) => {
+            if (isWebMode) return; // browser handles the link natively
             e.preventDefault();
             shellOpen('https://codecora.dev');
           }}>codecora.dev</a>
@@ -138,7 +145,7 @@
           </div>
         </section>
 
-        <UpdatesSection />
+        {#if !isWebMode}<UpdatesSection />{/if}
 
       {:else if activeTab === 'general'}
         <section class="content-section">

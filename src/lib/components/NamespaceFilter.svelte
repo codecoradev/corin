@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { uteke } from '../ts/ipc';
+  import { Layers } from 'lucide-svelte';
 
   interface Props {
     /**
@@ -105,14 +106,14 @@
 
 <div class="namespace-filter">
   <button class="trigger" onclick={handleTriggerClick} title="Filter namespaces">
-    <span class="ns-icon">◫</span>
+    <span class="ns-icon"><Layers size={14} strokeWidth={2} /></span>
     <span class="label">{label}</span>
     <span class="caret">{open ? '▴' : '▾'}</span>
   </button>
 
   {#if open}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="dropdown" role="menu" onclick={(e) => e.stopPropagation()}>
+    <div class="dropdown" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <div class="search">
         <input
           type="text"
@@ -177,6 +178,8 @@
 
   .ns-icon {
     opacity: 0.7;
+    display: inline-flex;
+    align-items: center;
   }
 
   .caret {

@@ -217,3 +217,26 @@ export interface RoomRememberParams {
   memory_type?: string;
   author?: string;
 }
+
+// ── Connection manager types (#37) ───────────────────────────────────────
+// Moved here from ipc.ts so both transports (desktop/web-routes) share them.
+
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  product_type: 'uteke';
+  url: string;
+  has_token: boolean;
+  capabilities: { read: boolean; write: boolean; search: boolean; realtime: boolean };
+  status: string;
+  is_primary: boolean;
+  created_at: string;
+  last_tested_at: string | null;
+}
+
+export interface HealthInfo {
+  success: boolean;
+  latency_ms: number;
+  version: string | null;
+  error: string | null;
+}

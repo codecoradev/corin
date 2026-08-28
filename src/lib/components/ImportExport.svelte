@@ -1,7 +1,8 @@
 <script lang="ts">
   import { system } from '../ts/ipc';
   import { open, save } from '@tauri-apps/plugin-dialog';
-  import { readTextFile } from '@tauri-apps/plugin-fs';
+  import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+  import { isWebMode } from '../ts/transport';
 
   interface Props {
     namespaces: string[];
@@ -61,29 +62,36 @@
         ? `corin-export-${exportNamespace}.${ext}`
         : `corin-export.${ext}`;
 
-      const filePath = await save({
-        defaultPath: name,
-        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-      });
+      // Desktop: native save dialog first — the chosen path is the write
+      // target. Web mode: no dialog, straight to a Blob download.
+      let filePath: string | null = null;
+      if (!isWebMode) {
+        filePath = await save({
+          defaultPath: name,
+          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+        });
 
-      if (!filePath) {
-        exporting = false;
-        return;
+        if (!filePath) {
+          exporting = false;
+          return;
+        }
       }
 
       const data = await system.exportData(exportFormat, exportNamespace);
 
-      // Write via Tauri fs (use the shell plugin to write)
-      // For simplicity we use the browser download approach as fallback
-      const blob = new Blob([data], {
-        type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (filePath) {
+        await writeTextFile(filePath, data);
+      } else {
+        const blob = new Blob([data], {
+          type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (e: any) {
       errorMsg = e.toString();
     } finally {
@@ -95,6 +103,11 @@
 
   async function handlePickFile() {
     errorMsg = null;
+    // Web mode: hidden <input type="file"> instead of the native dialog.
+    if (isWebMode) {
+      fileInput?.click();
+      return;
+    }
     try {
       const filePath = await open({
         multiple: false,
@@ -113,6 +126,24 @@
       importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
 
       // Preview
+      importPreview = await system.importPreview(importFormat, importFileData);
+      importStep = 'preview';
+    } catch (e: any) {
+      errorMsg = e.toString();
+    }
+  }
+
+  /** Web-mode file input change handler. */
+  async function handleWebFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-picking the same file
+    if (!file) return;
+    errorMsg = null;
+    try {
+      importFileName = file.name;
+      importFileData = await file.text();
+      importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
       importPreview = await system.importPreview(importFormat, importFileData);
       importStep = 'preview';
     } catch (e: any) {
@@ -140,7 +171,18 @@
     markdown: 'Per-memory .md files with Obsidian-compatible YAML frontmatter.',
     csv: 'Flat table export. Compatible with spreadsheets and data tools.',
   };
+
+  // Web-mode hidden file input
+  let fileInput = $state<HTMLInputElement | null>(null);
 </script>
+
+<input
+  type="file"
+  accept=".json,.md"
+  bind:this={fileInput}
+  onchange={handleWebFile}
+  hidden
+/>
 
 <div class="import-export">
   <div class="mode-tabs">

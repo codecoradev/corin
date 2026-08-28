@@ -18,9 +18,9 @@
   import ToolsView from './lib/components/ToolsView.svelte';
   import { Notification } from './lib/ui';
   import { toastStore } from './lib/ui';
-  import { fadeQuick } from './lib/transitions';
-  import { fade, fly } from 'svelte/transition';
+  import { fadeQuick, overlayFade, overlayFlyUp } from './lib/transitions';
   import DetailPanel from './lib/components/DetailPanel.svelte';
+  import { isWebMode } from './lib/ts/transport';
 
   // App state
   let dataDirInitialized = $state(false);
@@ -44,6 +44,9 @@
       dataDirInitialized = true;
     } catch (e) {
       console.error('Failed to init data dir:', e);
+      if (isWebMode) {
+        toastStore.error(String(e instanceof Error ? e.message : e));
+      }
     }
   }
 
@@ -55,6 +58,12 @@
     if (view === 'settings') {
       showSettings = true;
       return;
+    }
+
+    // Deep-linkable views (web mode): keep the hash in sync so a view can
+    // be opened directly via #memories, #lifecycle, etc.
+    if (isWebMode && location.hash !== `#${view}`) {
+      history.replaceState(null, '', `#${view}`);
     }
   }
 
@@ -126,7 +135,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.ctrlKey && e.key === 'b') {
       e.preventDefault();
-      sidebarCollapsed = !sidebarCollapsed;
+      toggleSidebar();
     }
     if (e.ctrlKey && e.key === 'n' && !showEditor) {
       e.preventDefault();
@@ -134,10 +143,53 @@
     }
   }
 
+  // Auto-collapse to the icon rail on narrow viewports (web in a small
+  // window, narrow desktop windows). A manual toggle cancels the auto
+  // restore so we never fight the user's explicit choice.
+  let autoCollapsed = false;
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    autoCollapsed = false;
+  }
+
+  function handleViewportChange() {
+    if (window.innerWidth < 900 && !sidebarCollapsed) {
+      sidebarCollapsed = true;
+      autoCollapsed = true;
+    } else if (window.innerWidth >= 900 && autoCollapsed) {
+      sidebarCollapsed = false;
+      autoCollapsed = false;
+    }
+  }
+
+  const VALID_HASH_VIEWS: View[] = [
+    'dashboard', 'memories', 'namespaces', 'graph', 'rooms', 'documents', 'lifecycle', 'tools',
+  ];
+
+  function viewFromHash(): View | null {
+    const h = location.hash.replace('#', '');
+    return (VALID_HASH_VIEWS as string[]).includes(h) ? (h as View) : null;
+  }
+
+  function handleHashChange() {
+    const v = viewFromHash();
+    if (v && v !== activeView) navigate(v);
+  }
+
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('resize', handleViewportChange);
+    const initial = viewFromHash();
+    if (initial) activeView = initial;
+    handleViewportChange();
     initDataDir();
-    return () => window.removeEventListener('keydown', handleKeydown);
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('resize', handleViewportChange);
+    };
   });
 </script>
 
@@ -158,7 +210,7 @@
       collapsed={sidebarCollapsed}
       onnavigate={navigate}
       onnewmemory={newMemory}
-      oncollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+      oncollapse={toggleSidebar}
     />
 
     <!--
@@ -171,7 +223,7 @@
         <div class="view-container" transition:fadeQuick>
           {#if activeView === 'dashboard'}
             {#key refreshKey}
-              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} />
+              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} onnewmemory={newMemory} />
             {/key}
           {:else if activeView === 'memories'}
             {#key refreshKey}
@@ -198,7 +250,7 @@
 
 <!-- Universal slide-in detail panel (used by all views) -->
 {#if detailId}
-  <div transition:fade={{ duration: 150 }}>
+  <div transition:overlayFade>
     <DetailPanel memoryId={detailId} onclose={closeDetail} onneighborclick={detailNavigate} onedit={editMemory}>
       <MemoryDetail
         memoryId={detailId}
@@ -212,13 +264,13 @@
 {/if}
 
 {#if showSettings}
-  <div transition:fade={{ duration: 150 }}>
+  <div transition:overlayFade>
     <SettingsModal onclose={closeSettings} />
   </div>
 {/if}
 
 {#if showEditor}
-  <div transition:fly={{ duration: 200, y: 20, opacity: 0 }}>
+  <div transition:overlayFlyUp>
     <MemoryEditor
       memory={editorMemory}
       {namespace}

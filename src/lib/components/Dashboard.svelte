@@ -2,6 +2,7 @@
   import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
   import { getStats, getNamespaces } from '../stores/cache.svelte';
   import ContextPreviewPanel from './ContextPreviewPanel.svelte';
+  import { isWebMode } from '../ts/transport';
   import type {
     StatsResponse,
     MemoryEntry,
@@ -12,9 +13,10 @@
     namespace: string | null;
     onmemoryclick: (id: string) => void;
     onquicksearch: (query: string) => void;
+    onnewmemory: () => void;
   }
 
-  let { namespace, onmemoryclick, onquicksearch }: Props = $props();
+  let { namespace, onmemoryclick, onquicksearch, onnewmemory }: Props = $props();
 
   // ─── Uteke stats + recent memories ─────────────────────────────────
   let stats = $state<StatsResponse | null>(null);
@@ -122,10 +124,11 @@
       <h2 class="section-title">Recent Memories</h2>
       {#if recent.length === 0}
         <div class="empty-state">
-          <p>
-            No memories yet. Create your first memory with
-            <kbd>Ctrl+N</kbd>
-          </p>
+          <p>No memories yet.</p>
+          <button class="empty-cta" onclick={onnewmemory}>Create your first memory</button>
+          {#if !isWebMode}
+            <p class="empty-hint">or press <kbd>Ctrl+N</kbd></p>
+          {/if}
         </div>
       {:else}
         <div class="recent-list">
@@ -309,6 +312,24 @@
     text-align: center;
     padding: 40px;
     color: var(--text-muted);
+  }
+
+  .empty-cta {
+    margin-top: 10px;
+    padding: 8px 16px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .empty-cta:hover { opacity: 0.9; }
+
+  .empty-hint {
+    margin-top: 8px;
+    font-size: 0.8rem;
   }
 
   .loading {

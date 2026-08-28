@@ -190,9 +190,10 @@
     margin-left: auto;
     font-size: 0.7rem;
     padding: 1px 4px;
-    background: var(--bg-primary);
+    border: 1px solid currentColor;
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
+    opacity: 0.75;
   }
 
   .nav { flex: 1; padding: 8px 0; display: flex; flex-direction: column; }
