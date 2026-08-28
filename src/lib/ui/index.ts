@@ -12,3 +12,4 @@ export { default as ConfirmDialog } from './ConfirmDialog.svelte';
 export { default as Notification } from './Notification.svelte';
 export { toastStore } from './toast.svelte.ts';
 export type { ToastType, Toast } from './toast.svelte.ts';
+export { focusTrap } from './focusTrap';

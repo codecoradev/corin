@@ -28,7 +28,7 @@
   import { ConfirmDialog } from '../ui';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { isWebMode } from '../ts/transport';
-  import { slide } from 'svelte/transition';
+  import { expandSlide } from '../transitions';
   import { pendingDocSlug } from '../stores/nav';
   import { renderMarkdown as renderMd } from '../utils/markdown';
   import { formatDate, getWordCount, getReadingTime } from '../utils/format';
@@ -901,7 +901,7 @@
       </button>
     </div>
     {#if expanded && kids.length > 0}
-      <div class="tree-children" transition:slide={{ duration: 180 }}>
+      <div class="tree-children" transition:expandSlide>
         {#each kids as child (child.id)}
           {@render treeNode(child)}
         {/each}

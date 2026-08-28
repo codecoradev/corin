@@ -617,7 +617,10 @@
     {#if loading}
       <div class="overlay">Loading graph...</div>
     {:else if totalNodesShown === 0}
-      <div class="overlay"><p>No memories to visualize.</p></div>
+      <div class="overlay">
+        <p>No memories to visualize yet.</p>
+        <p class="overlay-hint">Save a memory (Ctrl+N) — edges appear automatically as related memories accumulate.</p>
+      </div>
     {/if}
   </div>
 </div>
@@ -632,5 +635,6 @@
   .mode-tag.semantic { background: var(--color-green-bg); color: var(--green); }
   .mode-tag.local { background: var(--color-teal-bg); color: var(--teal); }
   .canvas-wrap { flex: 1; position: relative; overflow: hidden; }
-  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); pointer-events: none; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; text-align: center; color: var(--text-muted); pointer-events: none; }
+  .overlay .overlay-hint { font-size: 0.78rem; opacity: 0.7; max-width: 380px; }
 </style>

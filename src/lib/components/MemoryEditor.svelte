@@ -2,6 +2,7 @@
   import { memory as memoryApi, system, utekeServer, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
   import { X, TriangleAlert } from 'lucide-svelte';
+  import { focusTrap } from '../ui/focusTrap';
 
   interface Props {
     memory: MemoryEntry | null;
@@ -167,12 +168,18 @@
 
 <div
   class="modal-overlay"
-  role="button"
-  tabindex="0"
+  role="presentation"
   onclick={onclose}
   onkeydown={(e) => e.key === 'Escape' && onclose()}
 >
-  <div class="editor-dialog" onclick={(e) => e.stopPropagation()} role="presentation">
+  <div
+    class="editor-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-label={memory ? 'Edit Memory' : 'New Memory'}
+    use:focusTrap
+    onclick={(e) => e.stopPropagation()}
+  >
     <div class="editor-header">
       <h2>{memory ? 'Edit Memory' : 'New Memory'}</h2>
       <button class="close-btn" onclick={onclose}><X size={16} strokeWidth={2} /></button>

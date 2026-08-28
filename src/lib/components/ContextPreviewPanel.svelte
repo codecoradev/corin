@@ -134,7 +134,7 @@
     <div class="error-banner">
       <Terminal size={16} />
       <span>{error}</span>
-      <Button size="sm" variant="secondary" onclick={loadContext} disabled={loading}>
+      <Button size="sm" variant="secondary" class="banner-action" onclick={loadContext} disabled={loading}>
         Retry
       </Button>
     </div>
@@ -358,7 +358,7 @@
     font-size: 0.85rem;
   }
 
-  .error-banner :global(.btn) {
+  .error-banner :global(.banner-action) {
     margin-left: auto;
   }
 

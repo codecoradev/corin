@@ -598,9 +598,4 @@
     justify-content: center;
     gap: 8px;
   }
-  .confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
 </style>

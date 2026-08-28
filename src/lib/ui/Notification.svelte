@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
+  import { slideDown } from '../transitions';
   import { X, Check, Info } from 'lucide-svelte';
 
   type ToastType = 'success' | 'error' | 'info';
@@ -29,7 +29,7 @@
     {@const Icon = icons[toast.type]}
     <div
       class="toast toast-{toast.type}"
-      transition:fly={{ y: -16, duration: 200 }}
+      transition:slideDown
     >
       <span class="toast-icon"><Icon size={13} strokeWidth={2.5} /></span>
       <span class="toast-msg">{toast.message}</span>

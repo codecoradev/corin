@@ -9,7 +9,7 @@
   import AgentsSection from './settings/AgentsSection.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X, Settings } from 'lucide-svelte';
-  import { Spinner } from '../ui';
+  import { Spinner, focusTrap } from '../ui';
 
   interface Props {
     onclose: () => void;
@@ -87,7 +87,7 @@
 
 <div class="backdrop" onclick={onclose} role="presentation"></div>
 
-<div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
+<div class="modal" role="dialog" aria-modal="true" aria-label="Settings" use:focusTrap>
   <header class="modal-header">
     <h2><Settings size={16} strokeWidth={2} /> Settings</h2>
     <button class="close-btn" onclick={onclose} aria-label="Close settings" title="Close (Esc)"><X size={14} strokeWidth={2.5} /></button>

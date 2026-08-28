@@ -14,6 +14,8 @@
     type?: 'button' | 'submit' | 'reset';
     children: Snippet;
     icon?: Component;
+    /** Extra class(es) for parents to target without depending on `.btn` internals. */
+    class?: string;
   }
 
   let {
@@ -25,11 +27,12 @@
     type = 'button',
     children,
     icon: Icon,
+    class: className = '',
   }: Props = $props();
 </script>
 
 <button
-  class="btn btn-{variant} btn-{size}"
+  class="btn btn-{variant} btn-{size} {className}"
   {disabled}
   {onclick}
   {title}

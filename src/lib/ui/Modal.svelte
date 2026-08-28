@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { fade, scale } from 'svelte/transition';
   import type { Snippet } from 'svelte';
   import { X } from 'lucide-svelte';
+  import { backdropFade, modalScale } from '../transitions';
+  import { focusTrap } from './focusTrap';
 
   interface Props {
     open: boolean;
@@ -24,11 +25,20 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if open}
-  <div class="modal-overlay" transition:fade={{ duration: 150 }}>
+  <div class="modal-overlay" transition:backdropFade>
     <!-- backdrop -->
     <div class="modal-backdrop" role="presentation" onclick={onclose}></div>
     <!-- dialog -->
-    <div class="modal-dialog" style="--modal-width: {width}" transition:scale={{ duration: 200, start: 0.96, opacity: 0 }}>
+    <div
+      class="modal-dialog"
+      style="--modal-width: {width}"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      tabindex="-1"
+      use:focusTrap
+      transition:modalScale
+    >
       {#if title}
         <div class="modal-header">
           <h3>{title}</h3>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { consolidateMemories } from '../ts/ipc';
-  import { Spinner, toastStore, Button } from '../ui';
+  import { Spinner, toastStore, Button, ConfirmDialog } from '../ui';
   import {
     Copy,
     RefreshCw,
@@ -126,7 +126,7 @@
         pair{mergeResult.removed_ids.length === 1 ? '' : 's'} removed,
         <strong>{mergeResult.kept_ids.length}</strong> kept
       </span>
-      <Button size="sm" variant="secondary" onclick={resetScan}>
+      <Button size="sm" variant="secondary" class="banner-action" onclick={resetScan}>
         <RefreshCw size={13} />
         <span>New Scan</span>
       </Button>
@@ -239,44 +239,18 @@
   {/if}
 
   <!-- ─── Confirm Removal Modal ───────────────────────────────────── -->
-  {#if showConfirmMerge}
-    <div
-      class="modal-overlay"
-      role="presentation"
-      onclick={() => (showConfirmMerge = false)}
-      onkeydown={(e) => e.key === 'Escape' && (showConfirmMerge = false)}
-    >
-      <div
-        class="modal"
-        role="dialog"
-        tabindex={0}
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => e.key === 'Escape' && (showConfirmMerge = false)}
-      >
-        <div class="modal-icon">
-          <Trash2 size={28} strokeWidth={1.5} />
-        </div>
-        <h3>Remove {pairs?.length ?? 0} duplicate pair{(pairs?.length ?? 0) === 1 ? '' : 's'}?</h3>
-        <p class="modal-desc">
-          In every duplicate pair found at threshold {threshold.toFixed(2)} the newer memory is
-          kept as-is and the older one is removed — all-or-nothing. Removed memories are
-          deprecated and can be restored from the Lifecycle view.
-        </p>
-        <p class="modal-warn">
-          To keep some pairs, cancel, raise the threshold, and re-scan.
-        </p>
-        <div class="modal-actions">
-          <Button variant="secondary" onclick={() => (showConfirmMerge = false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" onclick={mergeAll} disabled={merging}>
-            <Trash2 size={15} />
-            Remove {pairs?.length ?? 0}
-          </Button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <ConfirmDialog
+    open={showConfirmMerge}
+    title="Remove {pairs?.length ?? 0} duplicate pair{(pairs?.length ?? 0) === 1 ? '' : 's'}?"
+    message="In every duplicate pair found at threshold {threshold.toFixed(2)} the newer memory is kept as-is and the older one is removed — all-or-nothing. Removed memories are deprecated and can be restored from the Lifecycle view."
+    confirmLabel={merging ? 'Removing…' : `Remove ${pairs?.length ?? 0}`}
+    confirmDisabled={merging}
+    danger
+    onconfirm={mergeAll}
+    oncancel={() => (showConfirmMerge = false)}
+  >
+    <p class="confirm-warn">To keep some pairs, cancel, raise the threshold, and re-scan.</p>
+  </ConfirmDialog>
 </div>
 
 <style>
@@ -339,7 +313,7 @@
     margin-bottom: 1rem;
   }
 
-  .dedup-result-banner :global(.btn) {
+  .dedup-result-banner :global(.banner-action) {
     margin-left: auto;
   }
 
@@ -508,69 +482,15 @@
     margin-top: 0.9rem;
   }
 
-  /* ─── Modal ───────────────────────────────────────────────────── */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-
-  .modal {
-    background: var(--bg-primary, #fff);
-    border-radius: var(--radius-xl);
-    padding: 1.75rem;
-    max-width: 420px;
-    width: calc(100% - 2rem);
-    text-align: center;
-  }
-
-  .modal-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--accent, #0d7377) 10%, transparent);
-    color: var(--accent, #0d7377);
-    margin: 0 auto 1rem auto;
-  }
-
-  .modal h3 {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
-  }
-
-  .modal-desc {
-    font-size: 0.82rem;
-    color: var(--text-secondary, #666);
-    line-height: 1.5;
-    margin: 0 0 1rem 0;
-  }
-
-  .modal-warn {
+  /* ─── Confirm dialog extras ───────────────────────────────────── */
+  .confirm-warn {
     font-size: 0.78rem;
-    color: #8a6508;
-    background: color-mix(in srgb, #b8860b 10%, transparent);
-    border-radius: var(--radius-md);
+    color: var(--yellow);
+    background: rgba(184, 134, 11, 0.1);
+    border-radius: var(--radius-sm);
     padding: 0.5rem 0.75rem;
-    margin: 0 0 1rem 0;
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: 0.6rem;
-    justify-content: center;
-  }
-
-  .modal-actions :global(.btn) {
-    min-width: 110px;
+    margin: 0;
+    text-align: left;
   }
 
   .spinning {

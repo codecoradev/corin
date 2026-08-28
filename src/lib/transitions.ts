@@ -13,10 +13,17 @@ type EasingFunc = (t: number) => number;
 // (Svelte requires a function) while finishing instantly; desktop keeps
 // the real presets untouched.
 const noOp = (): TransitionConfig => ({ duration: 0 });
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const guarded = <A extends unknown[]>(
   preset: (node: Element, ...args: A) => TransitionConfig,
 ): ((node: Element, ...args: A) => TransitionConfig) => {
-  if (!isWebMode) return preset;
+  if (!isWebMode) {
+    // Checked per-invocation so a live OS setting change is respected.
+    return (node, ...args) => (prefersReducedMotion() ? { duration: 0 } : preset(node, ...args));
+  }
   return (node, ..._args) => ({ duration: 0 });
 };
 

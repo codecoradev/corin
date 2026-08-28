@@ -560,7 +560,7 @@
 
   .neighbor-bottom { display: flex; justify-content: space-between; gap: 8px; }
   .shared-tags { display: flex; gap: 3px; }
-  .shared-tag { font-size: 0.6rem; padding: 1px 4px; background: var(--color-mauve-bg); color: var(--mauve); border-radius: var(--radius-pill); }
+  .shared-tag { font-size: 0.6rem; padding: 1px 4px; background: var(--color-mauve-bg); color: var(--mauve); border-radius: var(--radius-sm); }
 
   .no-neighbors { text-align: center; padding: 24px; color: var(--text-muted); }
   .no-neighbors .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }

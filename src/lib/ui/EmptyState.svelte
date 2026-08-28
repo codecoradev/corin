@@ -1,8 +1,12 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import type { Snippet, Component } from 'svelte';
 
   interface Props {
-    icon?: string;
+    /**
+     * Emoji glyph, or an icon component object (e.g. a lucide export —
+     * typed loosely as `object` because lucide ships legacy class types).
+     */
+    icon?: string | object;
     title: string;
     subtitle?: string;
     children?: Snippet;
@@ -12,7 +16,14 @@
 </script>
 
 <div class="empty-state">
-  <div class="empty-icon">{icon}</div>
+  <div class="empty-icon">
+    {#if typeof icon === 'string'}
+      {icon}
+    {:else}
+      {@const Icon = icon as unknown as Component}
+      <Icon size={30} strokeWidth={1.5} />
+    {/if}
+  </div>
   <p class="empty-title">{title}</p>
   {#if subtitle}
     <p class="empty-subtitle">{subtitle}</p>
