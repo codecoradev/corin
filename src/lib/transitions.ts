@@ -3,28 +3,32 @@
 
 import { fade, fly, scale, slide } from 'svelte/transition';
 import type { TransitionConfig } from 'svelte/transition';
-import { isWebMode } from './ts/transport';
 
 type EasingFunc = (t: number) => number;
 
-// Web-mode guard: in a background browser pane, Svelte's out-transition
-// completion callbacks never fire — keyed swaps and overlay closes leave
-// stale DOM stacked forever. A zero-duration no-op keeps the API contract
-// (Svelte requires a function) while finishing instantly; desktop keeps
-// the real presets untouched.
+// Motion suppression guard, checked per-invocation:
+// 1. Web mode (background panes): Svelte's out-transition completion never
+//    fires there, so real transitions stacked stale views forever (#269) —
+//    always suppress.
+// 2. Desktop: animate, unless the user asked for reduced motion.
 const noOp = (): TransitionConfig => ({ duration: 0 });
 const prefersReducedMotion = (): boolean =>
   typeof window !== 'undefined' &&
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** True when transitions should be skipped entirely. */
+export function motionSuppressed(): boolean {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    return prefersReducedMotion();
+  }
+  return true; // plain browser (incl. background panes)
+}
+
 const guarded = <A extends unknown[]>(
   preset: (node: Element, ...args: A) => TransitionConfig,
 ): ((node: Element, ...args: A) => TransitionConfig) => {
-  if (!isWebMode) {
-    // Checked per-invocation so a live OS setting change is respected.
-    return (node, ...args) => (prefersReducedMotion() ? { duration: 0 } : preset(node, ...args));
-  }
-  return (node, ..._args) => ({ duration: 0 });
+  return (node, ...args) => (motionSuppressed() ? { duration: 0 } : preset(node, ...args));
 };
 
 // Easing — cubic-bezier approximations for smooth UI motion
