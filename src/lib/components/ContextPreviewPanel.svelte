@@ -1,6 +1,6 @@
 <script lang="ts">
   import { utekeContext } from '../ts/ipc';
-  import { toastStore } from '../ui';
+  import { toastStore, Button } from '../ui';
   import {
     BrainCircuit,
     Check,
@@ -105,12 +105,13 @@
           <option value={ns}>{ns}</option>
         {/each}
       </select>
-      <button class="btn btn-secondary btn-sm" onclick={loadContext} disabled={loading}>
+      <Button size="sm" variant="secondary" onclick={loadContext} disabled={loading}>
         <span class:spinning={loading}><RefreshCw size={13} /></span>
         <span>Refresh</span>
-      </button>
-      <button
-        class="btn btn-secondary btn-sm"
+      </Button>
+      <Button
+        size="sm"
+        variant="secondary"
         onclick={copyContext}
         disabled={!contextText || loading}
         title="Copy context to clipboard"
@@ -122,7 +123,7 @@
           <Copy size={13} />
           <span>Copy</span>
         {/if}
-      </button>
+      </Button>
     </div>
   </div>
   <p class="section-desc">
@@ -133,9 +134,9 @@
     <div class="error-banner">
       <Terminal size={16} />
       <span>{error}</span>
-      <button class="btn btn-sm btn-secondary" onclick={loadContext} disabled={loading}>
+      <Button size="sm" variant="secondary" onclick={loadContext} disabled={loading}>
         Retry
-      </button>
+      </Button>
     </div>
   {:else if loading && !contextText}
     <div class="loading-state">
@@ -180,9 +181,9 @@
     <div class="empty-state">
       <FileText size={26} strokeWidth={1.5} />
       <p>No context loaded.</p>
-      <button class="btn btn-primary btn-sm" onclick={loadContext} disabled={loading}>
+      <Button size="sm" variant="primary" onclick={loadContext} disabled={loading}>
         Load Context
-      </button>
+      </Button>
     </div>
   {/if}
 </section>
@@ -222,7 +223,7 @@
     min-width: 20px;
     height: 20px;
     padding: 0 0.45rem;
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: var(--bg-hover);
     color: var(--text-muted);
     font-size: 0.72rem;
@@ -244,47 +245,6 @@
     color: var(--text-primary);
     max-width: 160px;
     cursor: pointer;
-  }
-
-  /* ─── Buttons (LifecycleView pattern) ───────────────────────────── */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.85rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    font-size: 0.82rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--bg-primary);
-    border-color: var(--accent);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    opacity: 0.88;
-  }
-
-  .btn-sm {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.75rem;
   }
 
   /* ─── Status cards (LifecycleView pattern) ──────────────────────── */
@@ -398,7 +358,7 @@
     font-size: 0.85rem;
   }
 
-  .error-banner .btn {
+  .error-banner :global(.btn) {
     margin-left: auto;
   }
 

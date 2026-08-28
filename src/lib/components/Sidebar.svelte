@@ -179,7 +179,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
@@ -275,7 +275,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background 0.1s;
   }
   .collapse-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }

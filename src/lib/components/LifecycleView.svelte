@@ -12,7 +12,7 @@
     OrphanMemory,
     DeprecatedMemoryInfo,
   } from '../ts/types';
-  import { Spinner } from '../ui';
+  import { Spinner, Button } from '../ui';
   import { toastStore } from '../ui';
   import ConsolidatePanel from './ConsolidatePanel.svelte';
   import {
@@ -137,22 +137,14 @@
       </div>
     </div>
     <div class="header-actions">
-      <button
-        class="btn btn-secondary"
-        onclick={() => loadData()}
-        disabled={loading}
-      >
+      <Button variant="secondary" onclick={() => loadData()} disabled={loading}>
         <span class:spinning={loading}><RefreshCw size={15} strokeWidth={2} /></span>
         <span>Refresh</span>
-      </button>
-      <button
-        class="btn btn-primary"
-        onclick={() => (showConfirmCycle = true)}
-        disabled={cycling || loading}
-      >
+      </Button>
+      <Button variant="primary" onclick={() => (showConfirmCycle = true)} disabled={cycling || loading}>
         <span class:spinning={cycling}><RotateCcw size={15} strokeWidth={2} /></span>
         <span>Run Cycle</span>
-      </button>
+      </Button>
     </div>
   </header>
 
@@ -261,8 +253,9 @@
                   {/each}
                 </div>
               </div>
-              <button
-                class="btn btn-sm btn-primary"
+              <Button
+                size="sm"
+                variant="primary"
                 onclick={() => promoteMemory(item.id)}
                 disabled={promotingIds.has(item.id)}
               >
@@ -273,7 +266,7 @@
                   <RotateCcw size={13} />
                   <span>Restore</span>
                 {/if}
-              </button>
+              </Button>
             </div>
           {/each}
         </div>
@@ -319,13 +312,13 @@
           </p>
         {/if}
         <div class="modal-actions">
-          <button class="btn btn-secondary" onclick={() => (showConfirmCycle = false)}>
+          <Button variant="secondary" onclick={() => (showConfirmCycle = false)}>
             Cancel
-          </button>
-          <button class="btn btn-primary" onclick={runCycle}>
+          </Button>
+          <Button variant="primary" onclick={runCycle}>
             <RotateCcw size={15} />
             Run Cycle
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -379,47 +372,6 @@
   .header-actions {
     display: flex;
     gap: 0.5rem;
-  }
-
-  /* ─── Buttons ───────────────────────────────────────────────────── */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.85rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    font-size: 0.82rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--bg-primary);
-    border-color: var(--accent);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    opacity: 0.88;
-  }
-
-  .btn-sm {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.75rem;
   }
 
   /* ─── Loading & Error ───────────────────────────────────────────── */
@@ -584,7 +536,7 @@
     min-width: 20px;
     height: 20px;
     padding: 0 0.35rem;
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: var(--bg-hover);
     color: var(--text-muted);
     font-size: 0.72rem;

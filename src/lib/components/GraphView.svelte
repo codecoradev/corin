@@ -628,7 +628,7 @@
   .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
   .hint-text { font-size: 0.72rem; color: var(--text-secondary); opacity: 0.75; }
-  .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
+  .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: var(--radius-sm); font-weight: 600; }
   .mode-tag.semantic { background: var(--color-green-bg); color: var(--green); }
   .mode-tag.local { background: var(--color-teal-bg); color: var(--teal); }
   .canvas-wrap { flex: 1; position: relative; overflow: hidden; }

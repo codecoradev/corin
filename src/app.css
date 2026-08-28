@@ -33,6 +33,8 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
 
   /* Fonts */
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -107,6 +109,21 @@ html, body, #app {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Dynamic numbers (counts, scores, timestamps) keep a fixed tabular width
+   so rows and stats don't jitter as values tick. Prose gets balanced/pretty
+   line breaking. */
+body {
+  font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3, h4 {
+  text-wrap: balance;
+}
+
+p, li, td, .hint, .section-desc {
+  text-wrap: pretty;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -118,7 +135,7 @@ html, body, #app {
 
 ::-webkit-scrollbar-thumb {
   background: var(--bg-hover);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {

@@ -396,11 +396,11 @@
   .memory-detail { height: 100vh; display: flex; flex-direction: column; }
 
   .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 16px 24px 0; flex-shrink: 0; }
-  .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; gap: 6px; }
   .back-btn:hover { background: var(--bg-hover); }
-  .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: 3px; opacity: 0.7; }
+  .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: var(--radius-sm); opacity: 0.7; }
   .header-actions { display: flex; gap: 8px; }
-  .edit-btn, .delete-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+  .edit-btn, .delete-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; }
   .edit-btn { background: var(--bg-tertiary); color: var(--text-primary); }
   .edit-btn:hover { border-color: var(--accent); }
   .delete-btn { background: transparent; color: var(--red); border-color: var(--red); }
@@ -410,7 +410,7 @@
     font-family: var(--font-sans); font-size: 0.95rem; line-height: 1.6;
     color: var(--text-primary); white-space: pre-wrap; word-wrap: break-word;
     margin-bottom: 20px; padding: 16px; background: var(--bg-tertiary);
-    border-radius: 8px; border: 1px solid var(--border);
+    border-radius: var(--radius-lg); border: 1px solid var(--border);
   }
 
   .meta-grid { display: flex; flex-direction: column; gap: 8px; }
@@ -418,7 +418,7 @@
   .meta-label { min-width: 80px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; padding-top: 2px; }
 
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
-  .tag { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
+  .tag { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-sm); }
 
   .detail-body { overflow-y: auto; flex: 1; min-height: 0; padding: 0 24px 24px; }
 
@@ -431,7 +431,7 @@
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 0.85rem; color: var(--accent); text-decoration: none;
     padding: 6px 10px; background: var(--bg-tertiary); border: 1px solid var(--border);
-    border-radius: 4px; cursor: pointer; transition: border-color 0.1s;
+    border-radius: var(--radius-sm); cursor: pointer; transition: border-color 0.1s;
     font-family: var(--font-mono);
   }
   .doc-link:hover { border-color: var(--accent); }
@@ -441,13 +441,13 @@
     display: flex; align-items: center; gap: 10px;
     margin-top: 16px; padding: 10px 14px;
     background: var(--bg-tertiary); border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .feedback-label { font-size: 0.8rem; color: var(--text-muted); }
   .feedback-buttons { display: flex; gap: 6px; }
   .feedback-btn {
     display: flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; border-radius: 4px;
+    width: 30px; height: 30px; border-radius: var(--radius-sm);
     border: 1px solid var(--border); background: transparent;
     color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
   }
@@ -463,7 +463,7 @@
   .timeline-section {
     margin-top: 20px; padding: 14px 16px;
     background: var(--bg-tertiary); border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .timeline-header { margin-bottom: 12px; }
   .timeline-header h3 { font-size: 0.95rem; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
@@ -537,7 +537,7 @@
 
   .neighbor-card {
     padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border);
-    border-radius: 6px; cursor: pointer; transition: border-color 0.1s;
+    border-radius: var(--radius-md); cursor: pointer; transition: border-color 0.1s;
   }
   .neighbor-card:hover { border-color: var(--accent); }
 
@@ -560,7 +560,7 @@
 
   .neighbor-bottom { display: flex; justify-content: space-between; gap: 8px; }
   .shared-tags { display: flex; gap: 3px; }
-  .shared-tag { font-size: 0.6rem; padding: 1px 4px; background: var(--color-mauve-bg); color: var(--mauve); border-radius: 2px; }
+  .shared-tag { font-size: 0.6rem; padding: 1px 4px; background: var(--color-mauve-bg); color: var(--mauve); border-radius: var(--radius-pill); }
 
   .no-neighbors { text-align: center; padding: 24px; color: var(--text-muted); }
   .no-neighbors .sub { font-size: 0.8rem; opacity: 0.7; margin-top: 4px; }

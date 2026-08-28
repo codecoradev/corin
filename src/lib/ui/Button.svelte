@@ -67,10 +67,11 @@
     cursor: not-allowed;
   }
 
-  /* Sizes */
-  .btn-sm { padding: 4px 10px; font-size: 0.78rem; }
-  .btn-md { padding: 7px 14px; font-size: 0.85rem; }
-  .btn-lg { padding: 10px 20px; font-size: 0.95rem; }
+  /* Sizes — min-heights keep every button a comfortable touch target
+     (WCAG 2.5.8; primary/per-item actions get the taller 40px row). */
+  .btn-sm { padding: 4px 12px; font-size: 0.78rem; min-height: 32px; }
+  .btn-md { padding: 7px 14px; font-size: 0.85rem; min-height: 36px; }
+  .btn-lg { padding: 10px 20px; font-size: 0.95rem; min-height: 40px; }
 
   /* Variants */
   .btn-primary {

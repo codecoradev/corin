@@ -142,7 +142,7 @@
   .ns-card {
     display: flex; justify-content: space-between; align-items: center;
     padding: 8px 12px; text-align: left; cursor: pointer;
-    background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-md);
     color: var(--text-secondary); font-size: 0.85rem;
   }
   .ns-card:hover { border-color: var(--accent); }
@@ -160,18 +160,18 @@
   .mem-list { display: flex; flex-direction: column; gap: 8px; }
   .mem-card {
     padding: 10px 14px; cursor: pointer;
-    background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-md);
   }
   .mem-card:hover { border-color: var(--accent); }
   .mem-content { font-size: 0.85rem; color: var(--text-primary); margin-bottom: 6px; }
   .mem-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-  .tag { font-size: 0.7rem; padding: 2px 6px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
+  .tag { font-size: 0.7rem; padding: 2px 6px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-sm); }
 
   .load-more { display: flex; justify-content: center; margin-top: 16px; }
   .load-more button {
     padding: 8px 20px; cursor: pointer; font-size: 0.85rem;
     background: var(--bg-tertiary); color: var(--text-secondary);
-    border: 1px solid var(--border); border-radius: 6px;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
   }
   .load-more button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
   .load-more button:disabled { opacity: 0.6; cursor: not-allowed; }

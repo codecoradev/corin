@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { uteke } from '../ts/ipc';
-  import { Layers } from 'lucide-svelte';
+  import { Layers, SquareCheck, Square, SquareMinus } from 'lucide-svelte';
 
   interface Props {
     /**
@@ -124,7 +124,15 @@
       </div>
 
       <button class="select-all" onclick={toggleAll}>
-        <span class="check">{allSelected ? '☑' : noneSelected ? '☐' : '⊟'}</span>
+        <span class="check">
+          {#if allSelected}
+            <SquareCheck size={14} strokeWidth={2} />
+          {:else if noneSelected}
+            <Square size={14} strokeWidth={2} />
+          {:else}
+            <SquareMinus size={14} strokeWidth={2} />
+          {/if}
+        </span>
         <span>{allSelected ? 'Deselect all' : noneSelected ? 'Select all' : 'Select all'}</span>
         <span class="count">{totalMemories}</span>
       </button>
@@ -164,7 +172,7 @@
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.78rem;
     white-space: nowrap;
@@ -198,7 +206,7 @@
     flex-direction: column;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     overflow: hidden;
   }
@@ -214,7 +222,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     outline: none;
   }

@@ -979,7 +979,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.82rem;
     font-weight: 600;
     cursor: pointer;
@@ -1098,7 +1098,7 @@
     color: var(--text-muted);
     background: var(--bg-hover);
     padding: 1px 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     margin-left: 2px;
     flex-shrink: 0;
     line-height: 1.4;
@@ -1306,7 +1306,7 @@
   .ns-badge {
     padding: 1px 6px;
     background: var(--bg-tertiary);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     color: var(--accent);
     font-size: 0.65rem;
     font-family: var(--font-mono);
@@ -1321,7 +1321,7 @@
     cursor: pointer;
     font-size: 0.7rem;
     padding: 2px 4px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
   .props-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }

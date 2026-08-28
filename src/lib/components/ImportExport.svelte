@@ -303,7 +303,7 @@
     gap: 0;
     margin-bottom: 16px;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
@@ -351,7 +351,7 @@
     padding: 10px 12px;
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     text-align: left;
     transition: border-color 0.15s;
@@ -382,7 +382,7 @@
     padding: 8px 10px;
     background: var(--bg-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-primary);
     font-size: 0.85rem;
   }
@@ -399,7 +399,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
@@ -420,7 +420,7 @@
     background: transparent;
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
     cursor: pointer;
     transition: background 0.15s;
@@ -444,7 +444,7 @@
     padding: 12px 8px;
     background: var(--bg-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .preview-val {

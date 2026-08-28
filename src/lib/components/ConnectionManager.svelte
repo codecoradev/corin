@@ -13,7 +13,7 @@
     X,
     Plus,
   } from 'lucide-svelte';
-  import { ConfirmDialog, Spinner, toastStore } from '../ui';
+  import { ConfirmDialog, Spinner, toastStore, Button } from '../ui';
 
   const store = getConnectionsStore();
 
@@ -236,13 +236,13 @@
 <div class="connection-manager">
   <div class="cm-header">
     <h3>Connections</h3>
-    <button class="btn-add" onclick={() => showAdd = !showAdd}>
+    <Button variant="primary" onclick={() => showAdd = !showAdd}>
       {#if showAdd}
         <X size={14} strokeWidth={2.5} /> Cancel
       {:else}
         <Plus size={14} strokeWidth={2.5} /> Add Connection
       {/if}
-    </button>
+    </Button>
   </div>
 
   {#if showAdd}
@@ -264,7 +264,7 @@
         <input type="password" bind:value={addToken} placeholder="Bearer token for authenticated endpoints" />
       </label>
       <div class="form-actions">
-        <button class="btn-primary" onclick={addConn}>Add Connection</button>
+        <Button variant="primary" onclick={addConn}>Add Connection</Button>
       </div>
     </div>
   {/if}
@@ -317,45 +317,49 @@
           {/if}
 
           <div class="card-actions">
-            <button
-              class="btn-sm btn-icon"
+            <Button
+              size="sm"
+              variant="secondary"
               onclick={() => startEdit(conn.id, conn.name, conn.url)}
               disabled={!!editId}
               title="Edit connection"
-            ><Pencil size={13} strokeWidth={2} /></button>
-            <button
-              class="btn-sm"
+            ><Pencil size={13} strokeWidth={2} /></Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onclick={() => testConn(conn.id)}
               disabled={testing === conn.id}
             >
               {testing === conn.id ? 'Testing…' : 'Test'}
-            </button>
-            <button
-              class="btn-sm"
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               onclick={() => reconnectConn(conn.id)}
               disabled={reconnecting === conn.id}
               title="Rebuild the live backend from this connection (no restart)"
             >
               {reconnecting === conn.id ? 'Reconnecting…' : 'Reconnect'}
-            </button>
+            </Button>
             {#if conn.is_primary && conn.status === 'connected'}
-              <button
-                class="btn-sm"
+              <Button
+                size="sm"
+                variant="secondary"
                 onclick={disconnectConn}
                 disabled={disconnecting}
                 title="Disconnect the active memory backend (recall/search will fail until reconnect)"
               >
                 {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-              </button>
+              </Button>
             {/if}
             {#if !conn.is_primary && conn.status === 'connected'}
-              <button class="btn-sm" onclick={() => setPrimary(conn.id)}>
+              <Button size="sm" variant="secondary" onclick={() => setPrimary(conn.id)}>
                 Set Primary
-              </button>
+              </Button>
             {/if}
-            <button class="btn-sm btn-danger" onclick={() => requestDelete(conn.id, conn.name)}>
+            <Button size="sm" variant="danger" onclick={() => requestDelete(conn.id, conn.name)}>
               Delete
-            </button>
+            </Button>
           </div>
 
           {#if editId === conn.id}
@@ -377,10 +381,10 @@
                 <input type="password" bind:value={editToken} placeholder={conn.has_token ? '•••••••• (set new to replace)' : 'Bearer token (optional)'} />
               </label>
               <div class="form-actions">
-                <button class="btn-sm" onclick={cancelEdit} disabled={saving}>Cancel</button>
-                <button class="btn-primary" onclick={saveEdit} disabled={saving}>
+                <Button size="sm" variant="secondary" onclick={cancelEdit} disabled={saving}>Cancel</Button>
+                <Button variant="primary" onclick={saveEdit} disabled={saving}>
                   {saving ? 'Saving…' : 'Save'}
-                </button>
+                </Button>
               </div>
             </div>
           {/if}
@@ -416,26 +420,10 @@
     margin: 0;
     font-size: 1.1rem;
   }
-  .btn-add, .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: var(--radius);
-    border: none;
-    background: var(--accent);
-    color: var(--bg-primary);
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .btn-add:hover, .btn-primary:hover {
-    opacity: 0.85;
-  }
   .card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 16px;
     margin-bottom: 12px;
   }
@@ -506,13 +494,6 @@
   .edit-form input:focus {
     outline: none;
     border-color: var(--accent);
-  }
-  .btn-icon {
-    width: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 0;
   }
   .connection-list {
     display: flex;
@@ -606,25 +587,6 @@
     display: flex;
     gap: 8px;
     margin-top: 10px;
-  }
-  .btn-sm {
-    padding: 4px 10px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-primary);
-    cursor: pointer;
-    font-size: 0.8rem;
-  }
-  .btn-sm:hover {
-    background: var(--bg-hover);
-  }
-  .btn-danger {
-    color: var(--red);
-    border-color: var(--color-red-line);
-  }
-  .btn-danger:hover {
-    background: var(--color-red-bg);
   }
   .loading, .empty {
     color: var(--text-muted);
