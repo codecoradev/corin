@@ -64,7 +64,7 @@
     max-height: 88vh;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -91,7 +91,7 @@
     cursor: pointer;
     font-size: 1rem;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
   }
   .modal-close:hover {

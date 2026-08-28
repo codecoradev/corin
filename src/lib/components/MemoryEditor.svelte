@@ -285,7 +285,7 @@
   .editor-dialog {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     width: 90%;
     max-width: 640px;
     max-height: 85vh;
@@ -349,7 +349,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.9rem;
     outline: none;
     font-family: inherit;
@@ -371,7 +371,7 @@
     height: 6px;
     -webkit-appearance: none;
     background: var(--bg-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     border: none;
   }
 
@@ -416,7 +416,7 @@
     margin-bottom: 8px;
     padding: 6px 8px;
     background: var(--bg-primary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-style: italic;
   }
 
@@ -431,7 +431,7 @@
     padding: 4px 12px;
     font-size: 0.8rem;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     background: var(--bg-primary);
     color: var(--text-secondary);
@@ -461,7 +461,7 @@
   kbd {
     padding: 1px 4px;
     background: var(--bg-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.7rem;
   }
@@ -476,7 +476,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
 
@@ -485,7 +485,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-weight: 600;
   }

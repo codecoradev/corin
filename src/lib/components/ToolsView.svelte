@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Spinner, toastStore } from '../ui';
+  import { X } from 'lucide-svelte';
   import {
     memoryUpdate, roomRemember, utekeImport, utekeExport, utekeContext,
     roomDocList, roomDocAdd, roomDocRemove, docRoomList,
@@ -387,7 +388,9 @@
             {#each rdLinkedDocs as slug}
               <li>
                 <span>{slug}</span>
-                <button class="btn-icon" onclick={() => handleRemoveLink(slug)}>✕</button>
+                <button class="btn-icon" onclick={() => handleRemoveLink(slug)} title="Unlink document" aria-label="Unlink {slug}">
+                  <X size={13} strokeWidth={2.5} />
+                </button>
               </li>
             {/each}
           </ul>
@@ -411,27 +414,27 @@
   .tools-view { padding: 1.5rem; max-width: 900px; margin: 0 auto; }
   .header { margin-bottom: 1.5rem; }
   .header h2 { margin: 0; font-size: 1.5rem; }
-  .subtitle { color: var(--color-text-muted, #888); font-size: 0.875rem; margin: 0.25rem 0 0; }
+  .subtitle { color: var(--text-muted); font-size: 0.875rem; margin: 0.25rem 0 0; }
 
-  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--color-border, #333); margin-bottom: 1.5rem; overflow-x: auto; }
-  .tab { padding: 0.5rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; color: var(--color-text-muted, #888); cursor: pointer; white-space: nowrap; font-size: 0.875rem; }
-  .tab:hover { color: var(--color-text, #eee); }
-  .tab.active { color: var(--color-accent, #6aa); border-bottom-color: var(--color-accent, #6aa); }
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; overflow-x: auto; }
+  .tab { padding: 0.5rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; white-space: nowrap; font-size: 0.875rem; }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-  .card { background: var(--color-surface, #1a1a2e); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+  .card { background: var(--bg-tertiary); border-radius: var(--radius-lg); padding: 1.25rem; margin-bottom: 1rem; }
   .card h3 { margin: 0 0 0.25rem; font-size: 1.1rem; }
-  .hint { color: var(--color-text-muted, #888); font-size: 0.75rem; margin: 0 0 1rem; }
+  .hint { color: var(--text-muted); font-size: 0.75rem; margin: 0 0 1rem; }
 
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
   .field { display: flex; flex-direction: column; gap: 0.25rem; }
   .field.full { grid-column: 1 / -1; }
   .field.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; }
-  .field span { font-size: 0.75rem; color: var(--color-text-muted, #aaa); }
+  .field span { font-size: 0.75rem; color: var(--text-muted); }
   .field input, .field textarea {
-    background: var(--color-bg, #111); border: 1px solid var(--color-border, #333); border-radius: 4px;
-    padding: 0.5rem; color: var(--color-text, #eee); font-size: 0.875rem;
+    background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 0.5rem; color: var(--text-primary); font-size: 0.875rem;
   }
-  .field input:focus, .field textarea:focus { outline: none; border-color: var(--color-accent, #6aa); }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
 
   .inline-form { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
   .inline-form input { flex: 1; }
@@ -439,34 +442,34 @@
   .actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
 
   .btn-primary, .btn-secondary {
-    padding: 0.5rem 1rem; border-radius: 4px; font-size: 0.875rem; cursor: pointer;
-    border: 1px solid var(--color-border, #333); display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 1rem; border-radius: var(--radius-sm); font-size: 0.875rem; cursor: pointer;
+    border: 1px solid var(--border); display: flex; align-items: center; gap: 0.4rem;
   }
-  .btn-primary { background: var(--color-accent, #6aa); color: var(--color-bg, #111); border: none; }
+  .btn-primary { background: var(--accent); color: var(--bg-primary); border: none; }
   .btn-primary:disabled { opacity: 0.5; cursor: default; }
-  .btn-secondary { background: var(--color-surface, #1a1a2e); color: var(--color-text, #eee); }
+  .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-secondary:disabled { opacity: 0.5; cursor: default; }
 
-  .btn-icon { background: none; border: none; color: var(--color-danger, #c44); cursor: pointer; padding: 0 0.25rem; font-size: 0.875rem; }
+  .btn-icon { background: none; border: none; color: var(--red); cursor: pointer; padding: 0 0.25rem; font-size: 0.875rem; }
 
   .spinner-inline { display: inline-flex; align-items: center; }
   .center-spinner { display: flex; justify-content: center; padding: 1rem; }
 
   .result {
-    margin-top: 0.75rem; background: var(--color-bg, #0d0d1a); border: 1px solid var(--color-border, #222);
-    border-radius: 4px; padding: 0.75rem; font-size: 0.75rem; font-family: monospace;
+    margin-top: 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.75rem; font-family: monospace;
     white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;
   }
   .result.scrollable { max-height: 400px; }
 
   .result-inline { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
-  .badge-success { background: #2a4; color: #fff; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.75rem; }
-  .badge-warn { background: #a72; color: #fff; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.75rem; }
+  .badge-success { background: #2a4; color: #fff; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; }
+  .badge-warn { background: #a72; color: #fff; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; }
 
   .link-list { margin-top: 1rem; }
   .link-list h4 { font-size: 0.875rem; margin: 0 0 0.5rem; }
   .link-list ul { list-style: none; padding: 0; margin: 0; }
-  .link-list li { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--color-border, #222); font-size: 0.875rem; }
+  .link-list li { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
 
-  textarea { background: var(--color-bg, #111); border: 1px solid var(--color-border, #333); border-radius: 4px; padding: 0.5rem; color: var(--color-text, #eee); font-size: 0.875rem; font-family: monospace; width: 100%; resize: vertical; }
+  textarea { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem; color: var(--text-primary); font-size: 0.875rem; font-family: monospace; width: 100%; resize: vertical; }
 </style>

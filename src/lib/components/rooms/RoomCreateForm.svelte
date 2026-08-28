@@ -70,13 +70,13 @@
 </div>
 
 <style>
-  .create-form { padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
-  .input { font-size: 0.85rem; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; outline: none; font-family: inherit; }
+  .create-form { padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .input { font-size: 0.85rem; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none; font-family: inherit; }
   .input:focus { border-color: var(--accent); }
   .input::placeholder { color: var(--text-muted); opacity: 0.6; }
   .create-actions { display: flex; gap: 8px; }
-  .btn-create { font-size: 0.8rem; padding: 5px 14px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 4px; cursor: pointer; font-weight: 500; }
+  .btn-create { font-size: 0.8rem; padding: 5px 14px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-weight: 500; }
   .btn-create:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-cancel { font-size: 0.8rem; padding: 5px 14px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .btn-cancel { font-size: 0.8rem; padding: 5px 14px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
   .btn-cancel:hover { border-color: var(--text-muted); }
 </style>

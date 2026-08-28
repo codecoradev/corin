@@ -22,7 +22,7 @@
     font-size: 0.68rem;
     font-weight: 500;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     white-space: nowrap;
     line-height: 1.5;
   }

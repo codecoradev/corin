@@ -199,7 +199,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.95rem;
     outline: none;
   }
@@ -213,7 +213,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
   }
@@ -236,7 +236,7 @@
   .stat-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 16px;
     text-align: center;
   }
@@ -268,7 +268,7 @@
     padding: 12px 16px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: border-color 0.1s;
   }
@@ -297,7 +297,7 @@
     padding: 2px 6px;
     background: var(--bg-hover);
     color: var(--text-secondary);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .namespace {
@@ -305,7 +305,7 @@
     padding: 2px 6px;
     background: var(--color-blue-bg);
     color: var(--accent);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .empty-state {
@@ -320,7 +320,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
   }
@@ -341,7 +341,7 @@
   kbd {
     padding: 2px 6px;
     background: var(--bg-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.8rem;
   }

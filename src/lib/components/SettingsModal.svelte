@@ -8,7 +8,7 @@
   import { version as APP_VERSION } from '../../../package.json';
   import AgentsSection from './settings/AgentsSection.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
-  import { Check, X } from 'lucide-svelte';
+  import { Check, X, Settings } from 'lucide-svelte';
   import { Spinner } from '../ui';
 
   interface Props {
@@ -89,7 +89,7 @@
 
 <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
   <header class="modal-header">
-    <h2>⚙ Settings</h2>
+    <h2><Settings size={16} strokeWidth={2} /> Settings</h2>
     <button class="close-btn" onclick={onclose} aria-label="Close settings" title="Close (Esc)"><X size={14} strokeWidth={2.5} /></button>
   </header>
 
@@ -199,19 +199,19 @@
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: 720px; max-width: 92vw; height: 480px; max-height: 85vh;
     background: var(--bg-secondary); border: 1px solid var(--border);
-    border-radius: 8px; display: flex; flex-direction: column;
+    border-radius: var(--radius-lg); display: flex; flex-direction: column;
     overflow: hidden; z-index: 101; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
 
   .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .modal-header h2 { font-size: 1.1rem; font-weight: 600; margin: 0; }
-  .close-btn { background: transparent; border: none; color: var(--text-muted); font-size: 1rem; padding: 4px 8px; border-radius: 4px; line-height: 1; }
+  .close-btn { background: transparent; border: none; color: var(--text-muted); font-size: 1rem; padding: 4px 8px; border-radius: var(--radius-sm); line-height: 1; }
   .close-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 
   .modal-body { display: flex; flex: 1; overflow: hidden; }
 
   .settings-sidebar { width: 180px; flex-shrink: 0; background: var(--bg-tertiary); border-right: 1px solid var(--border); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
-  .tab-btn { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: transparent; border: none; color: var(--text-secondary); font-size: 0.85rem; border-radius: 4px; text-align: left; width: 100%; transition: background 0.1s; }
+  .tab-btn { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: transparent; border: none; color: var(--text-secondary); font-size: 0.85rem; border-radius: var(--radius-sm); text-align: left; width: 100%; transition: background 0.1s; }
   .tab-btn:hover { background: var(--bg-hover); }
   .tab-btn.active { background: var(--bg-hover); color: var(--accent); font-weight: 600; }
   .tab-icon { width: 18px; text-align: center; flex-shrink: 0; }
@@ -229,16 +229,16 @@
 
   .setting-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .setting-row label { font-size: 0.85rem; color: var(--text-secondary); }
-  .setting-row select, .setting-row input { width: 220px; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; outline: none; }
+  .setting-row select, .setting-row input { width: 220px; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none; }
   .setting-row select:focus, .setting-row input:focus { border-color: var(--accent); }
   .setting-row select:disabled { opacity: 0.5; }
 
   .action-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-  .save-btn { padding: 8px 20px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 4px; font-weight: 600; font-size: 0.85rem; }
+  .save-btn { padding: 8px 20px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: var(--radius-sm); font-weight: 600; font-size: 0.85rem; }
   .save-btn:disabled { opacity: 0.5; }
   .saved-msg { color: var(--green); font-size: 0.85rem; display: inline-flex; align-items: center; gap: 4px; }
 
-  .data-dir-info { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; }
+  .data-dir-info { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
   .data-dir-label { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 6px; }
   .data-dir-path { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); word-break: break-all; }
 
@@ -249,7 +249,7 @@
 
   .shortcuts { display: flex; flex-direction: column; gap: 8px; }
   .shortcut-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; color: var(--text-secondary); }
-  .shortcut-row kbd { font-family: var(--font-mono); font-size: 0.75rem; padding: 2px 8px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); }
+  .shortcut-row kbd { font-family: var(--font-mono); font-size: 0.75rem; padding: 2px 8px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); }
 
   .loading { text-align: center; padding: 40px; color: var(--text-muted); }
 </style>

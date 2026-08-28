@@ -1,6 +1,6 @@
 <script lang="ts">
   import { consolidateMemories } from '../ts/ipc';
-  import { Spinner, toastStore } from '../ui';
+  import { Spinner, toastStore, Button } from '../ui';
   import {
     Copy,
     RefreshCw,
@@ -126,10 +126,10 @@
         pair{mergeResult.removed_ids.length === 1 ? '' : 's'} removed,
         <strong>{mergeResult.kept_ids.length}</strong> kept
       </span>
-      <button class="btn btn-sm btn-secondary" onclick={resetScan}>
+      <Button size="sm" variant="secondary" onclick={resetScan}>
         <RefreshCw size={13} />
         <span>New Scan</span>
-      </button>
+      </Button>
     </div>
   {/if}
 
@@ -155,11 +155,7 @@
       </div>
     </div>
     {#if !pairs}
-      <button
-        class="btn btn-primary"
-        onclick={findDuplicates}
-        disabled={scanning || merging}
-      >
+      <Button variant="primary" onclick={findDuplicates} disabled={scanning || merging}>
         {#if scanning}
           <span class="spinning"><RefreshCw size={15} /></span>
           <span>Scanning…</span>
@@ -167,15 +163,15 @@
           <Search size={15} />
           <span>Find Duplicates</span>
         {/if}
-      </button>
+      </Button>
     {:else}
       <div class="scan-actions">
-        <button class="btn btn-secondary" onclick={resetScan} disabled={merging}>
+        <Button variant="secondary" onclick={resetScan} disabled={merging}>
           <RefreshCw size={15} />
           <span>Rescan</span>
-        </button>
-        <button
-          class="btn btn-primary"
+        </Button>
+        <Button
+          variant="primary"
           onclick={() => (showConfirmMerge = true)}
           disabled={merging}
         >
@@ -186,7 +182,7 @@
             <Trash2 size={15} />
             <span>Remove All ({pairs.length})</span>
           {/if}
-        </button>
+        </Button>
       </div>
     {/if}
   </div>
@@ -270,13 +266,13 @@
           To keep some pairs, cancel, raise the threshold, and re-scan.
         </p>
         <div class="modal-actions">
-          <button class="btn btn-secondary" onclick={() => (showConfirmMerge = false)}>
+          <Button variant="secondary" onclick={() => (showConfirmMerge = false)}>
             Cancel
-          </button>
-          <button class="btn btn-primary" onclick={mergeAll} disabled={merging}>
+          </Button>
+          <Button variant="primary" onclick={mergeAll} disabled={merging}>
             <Trash2 size={15} />
             Remove {pairs?.length ?? 0}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -313,7 +309,7 @@
     font-weight: 600;
     color: var(--text-muted);
     background: var(--bg-secondary, #eee);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 0.15rem 0.6rem;
   }
 
@@ -322,7 +318,7 @@
     align-items: center;
     gap: 0.6rem;
     padding: 0.75rem 1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, #d93f0b 8%, transparent);
     border: 1px solid color-mix(in srgb, #d93f0b 25%, transparent);
     color: #d93f0b;
@@ -335,7 +331,7 @@
     align-items: center;
     gap: 0.6rem;
     padding: 0.75rem 1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, #0d7a4f 8%, transparent);
     border: 1px solid color-mix(in srgb, #0d7a4f 25%, transparent);
     color: #0d7a4f;
@@ -343,7 +339,7 @@
     margin-bottom: 1rem;
   }
 
-  .dedup-result-banner .btn {
+  .dedup-result-banner :global(.btn) {
     margin-left: auto;
   }
 
@@ -355,7 +351,7 @@
     gap: 1.5rem;
     flex-wrap: wrap;
     padding: 1rem;
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: var(--bg-secondary, #f5f5f5);
     margin-bottom: 1.25rem;
   }
@@ -404,7 +400,7 @@
 
   .empty-state {
     border: 1px dashed var(--border-color, #ddd);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
   }
 
   .summary-line {
@@ -425,7 +421,7 @@
 
   .pair-card {
     border: 1px solid var(--border-color, #ddd);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 0.85rem 1rem;
   }
 
@@ -440,7 +436,7 @@
     font-size: 0.72rem;
     font-weight: 600;
     padding: 0.18rem 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .sim-high {
@@ -467,7 +463,7 @@
 
   .pair-side {
     background: var(--bg-secondary, #fafafa);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0.6rem 0.75rem;
     min-width: 0;
   }
@@ -525,7 +521,7 @@
 
   .modal {
     background: var(--bg-primary, #fff);
-    border-radius: 12px;
+    border-radius: var(--radius-xl);
     padding: 1.75rem;
     max-width: 420px;
     width: calc(100% - 2rem);
@@ -562,7 +558,7 @@
     font-size: 0.78rem;
     color: #8a6508;
     background: color-mix(in srgb, #b8860b 10%, transparent);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0.5rem 0.75rem;
     margin: 0 0 1rem 0;
   }
@@ -573,7 +569,7 @@
     justify-content: center;
   }
 
-  .modal-actions .btn {
+  .modal-actions :global(.btn) {
     min-width: 110px;
   }
 

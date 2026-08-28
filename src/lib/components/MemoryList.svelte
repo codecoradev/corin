@@ -391,7 +391,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.9rem;
     outline: none;
   }
@@ -418,7 +418,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
@@ -444,7 +444,7 @@
     padding: 12px 16px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: border-color 0.1s;
     position: relative;
@@ -497,7 +497,7 @@
     padding: 2px 6px;
     background: var(--bg-hover);
     color: var(--text-secondary);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .meta-right {
@@ -529,7 +529,7 @@
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.85rem;
   }
@@ -558,7 +558,7 @@
     display: flex;
     gap: 0;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
   .mode-btn {

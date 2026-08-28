@@ -196,7 +196,7 @@
     align-items: center;
     gap: 12px;
     padding: 10px 14px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-primary);
     border: 1px solid var(--border);
   }
@@ -241,7 +241,7 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
   }
   .data-btn:hover { border-color: var(--accent); }
