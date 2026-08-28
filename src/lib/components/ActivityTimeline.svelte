@@ -37,18 +37,16 @@
     />
   {:else}
     <div class="stats-row">
-      <div class="stat">
-        <span class="stat-num">{summary.today}</span>
-        <span class="stat-label">today</span>
-      </div>
-      <div class="stat">
-        <span class="stat-num">{summary.last7}</span>
-        <span class="stat-label">last 7 days</span>
-      </div>
-      <div class="stat">
-        <span class="stat-num">{summary.total}</span>
-        <span class="stat-label">in window</span>
-      </div>
+      <span class="stat"><b>{summary.today}</b> today</span>
+      <span class="stat"><b>{summary.last7}</b> last 7 days</span>
+      <span class="stat"><b>{summary.total}</b> in window</span>
+      <span class="stat legend-stat">
+        less
+        {#each [0, 1, 2, 3, 4] as lvl}
+          <span class="cell lvl-{lvl}"></span>
+        {/each}
+        more
+      </span>
     </div>
 
     <div class="heatmap-scroll">
@@ -70,13 +68,6 @@
           {/each}
         </div>
       </div>
-      <div class="legend">
-        <span>less</span>
-        {#each [0, 1, 2, 3, 4] as lvl}
-          <span class="cell lvl-{lvl}"></span>
-        {/each}
-        <span>more</span>
-      </div>
     </div>
   {/if}
 </div>
@@ -88,30 +79,25 @@
 
   .stats-row {
     display: flex;
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-
-  .stat {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    flex: 1;
-    padding: 10px 8px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-  }
-
-  .stat-num {
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--accent);
-  }
-
-  .stat-label {
-    font-size: 0.72rem;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    font-size: 0.75rem;
     color: var(--text-muted);
+  }
+
+  .stat b {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    margin-right: 2px;
+  }
+
+  .legend-stat {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
   }
 
   .heatmap-scroll {
@@ -149,14 +135,4 @@
   .cell.lvl-2 { background: color-mix(in srgb, var(--green) 55%, transparent); }
   .cell.lvl-3 { background: color-mix(in srgb, var(--green) 78%, transparent); }
   .cell.lvl-4 { background: var(--green); }
-
-  .legend {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    justify-content: flex-end;
-    margin-top: 8px;
-    font-size: 0.68rem;
-    color: var(--text-muted);
-  }
 </style>
