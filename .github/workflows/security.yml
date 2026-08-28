@@ -24,9 +24,13 @@ jobs:
         run: cargo install cargo-audit
       - name: Run cargo audit
         # Cargo.lock lives in src-tauri/ (Tauri workspace), not the repo root.
-        # Add --ignore RUSTSEC-XXXX-NNNN flags here ONLY with a written
-        # justification per advisory (see uteke's security.yml for examples).
-        run: cargo audit --file src-tauri/Cargo.lock
+        # Ignored advisories (with justification):
+        #   RUSTSEC-2026-0194/0195: quick-xml DoS — transitive via
+        #     tauri → plist, which only parses the app's own bundled
+        #     metadata (trusted local content, no network XML input).
+        #     Patched in quick-xml >= 0.41.0; remove these ignores when
+        #     tauri ships the plist/quick-xml 0.41+ stack.
+        run: cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
   npm-audit:
     name: npm Audit (prod deps)
