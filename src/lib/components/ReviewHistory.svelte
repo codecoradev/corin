@@ -7,10 +7,11 @@
   import { ShieldAlert, TrendingUp, RefreshCw } from 'lucide-svelte';
 
   const LS_REPO = 'corin_gh_repo';
-  const LS_TOKEN = 'corin_gh_token';
 
   let repo = $state(localStorage.getItem(LS_REPO) ?? 'codecoradev/corin');
-  let token = $state(localStorage.getItem(LS_TOKEN) ?? '');
+  // The PAT lives in memory only — never written to storage (an XSS- or
+  // malware-readable plaintext secret). Re-enter it once per session.
+  let token = $state('');
   let loading = $state(false);
   let errorMsg = $state<string | null>(null);
   let alerts = $state<ScanAlert[]>([]);
@@ -28,8 +29,7 @@
     errorMsg = null;
     try {
       localStorage.setItem(LS_REPO, repo);
-      if (token) localStorage.setItem(LS_TOKEN, token);
-      alerts = await fetchAlerts(repo, token, { state: 'all' });
+      alerts = await fetchAlerts(repo, token.trim(), { state: 'all' });
       loaded = true;
     } catch (e: any) {
       errorMsg = e?.message ?? String(e);
@@ -56,7 +56,7 @@
 <div class="review-history">
   <p class="hint">
     Lists GitHub Code Scanning alerts (Cora reviews upload SARIF via <code>cora upload-sarif</code>).
-    Token needs the <code>security_events</code> scope — it is stored locally on this device only.
+    The token needs the <code>security_events</code> scope and is kept in memory for this session only — it is never written to storage.
   </p>
 
   <div class="config-row">
