@@ -23,12 +23,14 @@ npm run build                   # production build
 ## Repo Structure
 
 ```
-src/                  # Svelte 5 frontend (SvelteKit)
+src/                  # Svelte 5 frontend (Vite + Svelte 5, no SvelteKit)
 src-tauri/            # Rust backend (Tauri)
   src/
     commands.rs       # Tauri commands (IPC handlers)
-    uteke_client.rs   # Uteke API client
-    connection.rs     # Connection management
+    uteke_client.rs   # Uteke HTTP API client
+    config.rs         # Server URL resolution + general config
+    connections/      # Connection profiles (SQLite store, traits, adapters/)
+    lib.rs / main.rs  # App setup, command registration, server lifecycle
 ```
 
 ## Conventions
