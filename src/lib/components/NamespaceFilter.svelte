@@ -133,7 +133,7 @@
             <SquareMinus size={14} strokeWidth={2} />
           {/if}
         </span>
-        <span>{allSelected ? 'Deselect all' : noneSelected ? 'Select all' : 'Select all'}</span>
+        <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
         <span class="count">{totalMemories}</span>
       </button>
 

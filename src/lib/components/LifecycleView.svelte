@@ -12,7 +12,7 @@
     OrphanMemory,
     DeprecatedMemoryInfo,
   } from '../ts/types';
-  import { Spinner, Button } from '../ui';
+  import { Spinner, Button, ConfirmDialog } from '../ui';
   import { toastStore } from '../ui';
   import ConsolidatePanel from './ConsolidatePanel.svelte';
   import {
@@ -233,6 +233,7 @@
         <div class="empty-state">
           <CheckCircle2 size={28} strokeWidth={1.5} />
           <p>Recycle bin is empty.</p>
+          <p class="empty-hint">Memories deprecated by a cycle land here — restore them any time before their TTL expires.</p>
         </div>
       {:else}
         <div class="orphans-list">
@@ -283,46 +284,21 @@
   {/if}
 
   <!-- ─── Confirm Cycle Modal ──────────────────────────────────────── -->
-  {#if showConfirmCycle}
-    <div
-      class="modal-overlay"
-      role="presentation"
-      onclick={() => (showConfirmCycle = false)}
-      onkeydown={(e) => e.key === 'Escape' && (showConfirmCycle = false)}
-    >
-      <div
-        class="modal"
-        role="dialog"
-        tabindex={0}
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => e.key === 'Escape' && (showConfirmCycle = false)}
-      >
-        <div class="modal-icon">
-          <RotateCcw size={28} strokeWidth={1.5} />
-        </div>
-        <h3>Run Lifecycle Cycle?</h3>
-        <p class="modal-desc">
-          This will deprecate memories that haven't been accessed in a while, and
-          permanently prune memories that have been deprecated past their TTL.
-        </p>
-        {#if status && status.deprecated > 0}
-          <p class="modal-warn">
-            <strong>{status.deprecated}</strong> memories are currently deprecated.
-            Some may be pruned if their TTL has expired.
-          </p>
-        {/if}
-        <div class="modal-actions">
-          <Button variant="secondary" onclick={() => (showConfirmCycle = false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" onclick={runCycle}>
-            <RotateCcw size={15} />
-            Run Cycle
-          </Button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <ConfirmDialog
+    open={showConfirmCycle}
+    title="Run Lifecycle Cycle?"
+    message="This will deprecate memories that haven't been accessed in a while, and permanently prune memories that have been deprecated past their TTL."
+    confirmLabel="Run Cycle"
+    onconfirm={runCycle}
+    oncancel={() => (showConfirmCycle = false)}
+  >
+    {#if status && status.deprecated > 0}
+      <p class="confirm-warn">
+        <strong>{status.deprecated}</strong> memories are currently deprecated.
+        Some may be pruned if their TTL has expired.
+      </p>
+    {/if}
+  </ConfirmDialog>
 </div>
 
 <style>
@@ -559,6 +535,13 @@
     font-size: 0.85rem;
   }
 
+  .empty-state .empty-hint {
+    font-size: 0.78rem;
+    opacity: 0.7;
+    max-width: 420px;
+    margin: 0;
+  }
+
   .orphans-list {
     display: flex;
     flex-direction: column;
@@ -619,73 +602,17 @@
     color: var(--color-teal);
   }
 
-  .orphan-importance {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    margin-left: auto;
-  }
 
-  /* ─── Modal ─────────────────────────────────────────────────────── */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-
-  .modal {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 1.75rem 2rem;
-    max-width: 420px;
-    width: 90%;
-    text-align: center;
-  }
-
-  .modal-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    margin: 0 auto 1rem;
-    border-radius: 50%;
-    background: rgba(137, 180, 250, 0.1);
-    color: var(--accent);
-  }
-
-  .modal h3 {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
-  }
-
-  .modal-desc {
-    font-size: 0.83rem;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    margin: 0 0 0.75rem 0;
-  }
-
-  .modal-warn {
+  /* ─── Confirm dialog extras ─────────────────────────────────────── */
+  .confirm-warn {
     font-size: 0.8rem;
-    color: var(--color-yellow);
+    color: var(--yellow);
     background: rgba(249, 226, 175, 0.06);
     border: 1px solid rgba(249, 226, 175, 0.15);
     border-radius: var(--radius-sm);
     padding: 0.5rem 0.75rem;
-    margin: 0 0 1.25rem 0;
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: 0.6rem;
-    justify-content: center;
+    margin: 0;
+    text-align: left;
   }
 
   /* ─── Animations ────────────────────────────────────────────────── */

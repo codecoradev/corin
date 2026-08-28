@@ -6,7 +6,7 @@
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
   import { FileText, Brain, X } from 'lucide-svelte';
-  import { Spinner } from '../ui';
+  import { Spinner, EmptyState, Button } from '../ui';
 
   interface Props {
     namespace: string | null;
@@ -301,10 +301,17 @@
     {:else if isLoading && list.length === 0}
     <div class="loading"><Spinner size={18} /> Loading...</div>
   {:else if list.length === 0}
-    <div class="empty-state">
-      <p>{searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}</p>
-      <button class="new-btn" onclick={onnewmemory}>Create your first memory</button>
-    </div>
+    <EmptyState
+      icon={Brain}
+      title={searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
+      subtitle={searchQuery.trim()
+        ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
+        : 'Save your first memory with Ctrl+N, or use the button below.'}
+    >
+      <Button variant="primary" size="sm" onclick={onnewmemory}>
+        {searchQuery.trim() ? 'New Memory' : 'Create your first memory'}
+      </Button>
+    </EmptyState>
   {:else}
     {#if searchResults}
       <div class="search-info">Semantic search — top {searchResults.length} match{searchResults.length > 1 ? 'es' : ''}</div>
@@ -551,9 +558,6 @@
     color: var(--text-muted);
   }
 
-  .empty-state button {
-    margin-top: 12px;
-  }
   .search-mode {
     display: flex;
     gap: 0;
