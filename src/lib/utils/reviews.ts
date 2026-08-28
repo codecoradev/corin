@@ -116,7 +116,14 @@ export function filterAlerts(alerts: ScanAlert[], f: AlertFilter): ScanAlert[] {
   });
 }
 
-/** Fetch code-scanning alerts. Token optional for public repos. */
+/** Extract the next page URL from a GitHub `Link` response header. */
+function parseNextLink(link: string | null): string | null {
+  if (!link) return null;
+  const m = /<([^>]+)>;\s*rel="next"/.exec(link);
+  return m ? m[1] : null;
+}
+
+/** Fetch ALL code-scanning alerts, following pagination (cap 10 pages). */
 export async function fetchAlerts(
   repo: string,
   token: string,
@@ -124,17 +131,25 @@ export async function fetchAlerts(
 ): Promise<ScanAlert[]> {
   const [owner, name] = repo.split('/').map((p) => p.trim());
   if (!owner || !name) throw new Error('Repo harus format owner/name');
-  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/code-scanning/alerts?state=${opts?.state ?? 'all'}&per_page=${opts?.perPage ?? 100}`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (res.status === 404) throw new Error('Repo tidak ditemukan atau token tanpa akses code scanning (butuh scope security_events).');
-  if (res.status === 401) throw new Error('Token GitHub tidak valid (401).');
-  if (res.status === 403) throw new Error('Akses ditolak (403) — cek scope token atau rate limit.');
-  if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-  return normalizeAlerts(await res.json());
+  const first = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/code-scanning/alerts?state=${opts?.state ?? 'all'}&per_page=${opts?.perPage ?? 100}`;
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const raw: RawAlert[] = [];
+  let url: string | null = first;
+  let pages = 0;
+  while (url && pages < 10) {
+    const res = await fetch(url, { headers });
+    if (res.status === 404) throw new Error('Repo tidak ditemukan atau token tanpa akses code scanning (butuh scope security_events).');
+    if (res.status === 401) throw new Error('Token GitHub tidak valid (401).');
+    if (res.status === 403) throw new Error('Akses ditolak (403) — cek scope token atau rate limit.');
+    if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+    raw.push(...((await res.json()) as RawAlert[]));
+    url = parseNextLink(res.headers.get('link'));
+    pages++;
+  }
+  return normalizeAlerts(raw);
 }
