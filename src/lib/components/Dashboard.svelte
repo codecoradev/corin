@@ -2,6 +2,7 @@
   import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
   import { getStats, getNamespaces } from '../stores/cache.svelte';
   import ContextPreviewPanel from './ContextPreviewPanel.svelte';
+  import ActivityTimeline from './ActivityTimeline.svelte';
   import { isWebMode } from '../ts/transport';
   import type {
     StatsResponse,
@@ -21,6 +22,7 @@
   // ─── Uteke stats + recent memories ─────────────────────────────────
   let stats = $state<StatsResponse | null>(null);
   let recent = $state<MemoryEntry[]>([]);
+  let activity = $state<MemoryEntry[]>([]);
   let searchQuery = $state('');
   let loading = $state(true);
   let serverOnline = $state(false);
@@ -42,12 +44,19 @@
         recent = await utekeServer
           .recent({ namespace, limit: 10 })
           .catch(() => []);
+        activity = await utekeServer
+          .recent({ namespace, limit: 500 })
+          .catch(() => []);
       } else if (namespace) {
         recent = await memoryApi
           .list({ namespace, limit: 10 })
           .catch(() => []);
+        activity = await memoryApi
+          .list({ namespace, limit: 500 })
+          .catch(() => []);
       } else {
         recent = await memoryApi.list({ limit: 10 }).catch(() => []);
+        activity = await memoryApi.list({ limit: 500 }).catch(() => []);
       }
     } catch {
       // store not initialized yet
@@ -118,6 +127,13 @@
 
     <!-- Context preview (#234) -->
     <ContextPreviewPanel {namespace} namespaces={namespacesList} />
+
+    <section class="activity-section">
+      <h2 class="section-title">Activity</h2>
+      <div class="activity-card">
+        <ActivityTimeline memories={activity} />
+      </div>
+    </section>
 
     <!-- Recent memories -->
     <div class="recent-section">
@@ -225,6 +241,17 @@
   /* ─── Stats ─────────────────────────────────────────────────────── */
   .stats-section {
     margin-bottom: 28px;
+  }
+
+  .activity-section {
+    margin-bottom: 28px;
+  }
+
+  .activity-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
   }
 
   .stats-grid {
