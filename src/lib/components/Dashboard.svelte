@@ -1,7 +1,6 @@
 <script lang="ts">
   import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
   import { getStats, getNamespaces } from '../stores/cache.svelte';
-  import ContextPreviewPanel from './ContextPreviewPanel.svelte';
   import ActivityTimeline from './ActivityTimeline.svelte';
   import { isWebMode } from '../ts/transport';
   import type {
@@ -102,35 +101,28 @@
     {#if loading}
     <div class="loading"><Spinner size={18} /> Loading...</div>
   {:else}
-    <!-- Uteke stats -->
+    <!-- Overview: store stats + activity heatmap, one glanceable card -->
     <section class="stats-section">
-      <h2 class="section-title">Uteke Memory</h2>
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_memories ?? 0}</div>
-          <div class="stat-label">Memories</div>
+      <h2 class="section-title">Overview</h2>
+      <div class="overview-card">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">{stats?.total_memories ?? 0}</div>
+            <div class="stat-label">Memories</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
+            <div class="stat-label">Namespaces</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{stats?.total_tags ?? 0}</div>
+            <div class="stat-label">Tags</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
+            <div class="stat-label">DB Size</div>
+          </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
-          <div class="stat-label">Namespaces</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_tags ?? 0}</div>
-          <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
-          <div class="stat-label">DB Size</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Context preview (#234) -->
-    <ContextPreviewPanel {namespace} namespaces={namespacesList} />
-
-    <section class="activity-section">
-      <h2 class="section-title">Activity</h2>
-      <div class="activity-card">
         <ActivityTimeline memories={activity} />
       </div>
     </section>
@@ -243,15 +235,15 @@
     margin-bottom: 28px;
   }
 
-  .activity-section {
-    margin-bottom: 28px;
-  }
-
-  .activity-card {
+  .overview-card {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 16px 18px;
+  }
+
+  .overview-card .stats-grid {
+    margin-bottom: 14px;
   }
 
   .stats-grid {
