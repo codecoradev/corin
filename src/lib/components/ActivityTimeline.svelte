@@ -9,7 +9,7 @@
     weeks?: number;
   }
 
-  let { memories, weeks = 12 }: Props = $props();
+  let { memories, weeks = 26 }: Props = $props();
 
   const summary = $derived(buildActivity(memories, weeks));
   const monthLabels = $derived.by(() => {
@@ -53,13 +53,13 @@
       <div class="heatmap">
         <div
           class="months"
-          style="grid-template-columns: repeat({weeks}, 14px); min-width: {weeks * 17 - 3}px;"
+          style="grid-template-columns: repeat({weeks}, minmax(0, 1fr));"
         >
           {#each monthLabels as m}
             <span class="month" style="grid-column: {m.col + 1};">{m.name}</span>
           {/each}
         </div>
-        <div class="grid" style="grid-template-columns: repeat({weeks}, 14px);">
+        <div class="grid" style="grid-template-columns: repeat({weeks}, minmax(0, 1fr));">
           {#each summary.days as d (d.date)}
             <span
               class="cell lvl-{d.count === -1 ? 'pad' : intensityLevel(d.count, summary.maxCount)}"
@@ -106,7 +106,7 @@
 
   .months {
     display: grid;
-    gap: 3px;
+    gap: 4px;
     font-size: 0.68rem;
     color: var(--text-muted);
     margin-bottom: 4px;
@@ -114,15 +114,15 @@
 
   .grid {
     display: grid;
-    grid-template-rows: repeat(7, 13px);
+    grid-template-rows: repeat(7, auto);
     grid-auto-flow: column;
-    gap: 3px;
+    gap: 4px;
   }
 
   .cell {
-    width: 13px;
-    height: 13px;
-    border-radius: 2px;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 3px;
     background: var(--bg-hover);
     display: inline-block;
   }
