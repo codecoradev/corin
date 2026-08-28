@@ -53,12 +53,15 @@
 
     <div class="heatmap-scroll">
       <div class="heatmap">
-        <div class="months">
+        <div
+          class="months"
+          style="grid-template-columns: repeat({weeks}, 14px); min-width: {weeks * 17 - 3}px;"
+        >
           {#each monthLabels as m}
             <span class="month" style="grid-column: {m.col + 1};">{m.name}</span>
           {/each}
         </div>
-        <div class="grid">
+        <div class="grid" style="grid-template-columns: repeat({weeks}, 14px);">
           {#each summary.days as d (d.date)}
             <span
               class="cell lvl-{d.count === -1 ? 'pad' : intensityLevel(d.count, summary.maxCount)}"
@@ -117,21 +120,17 @@
 
   .months {
     display: grid;
-    grid-template-columns: repeat(12, 14px);
     gap: 3px;
     font-size: 0.68rem;
     color: var(--text-muted);
     margin-bottom: 4px;
-    min-width: 189px;
   }
 
   .grid {
     display: grid;
     grid-template-rows: repeat(7, 13px);
     grid-auto-flow: column;
-    grid-template-columns: repeat(12, 14px);
     gap: 3px;
-    min-width: 189px;
   }
 
   .cell {
