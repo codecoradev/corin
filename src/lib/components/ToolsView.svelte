@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Spinner, toastStore } from '../ui';
+  import ReviewHistory from './ReviewHistory.svelte';
   import { X } from 'lucide-svelte';
   import {
     memoryUpdate, roomRemember, utekeImport, utekeExport, utekeContext,
@@ -7,7 +8,7 @@
   } from '../ts/ipc';
 
   // Active tab
-  let activeTab = $state<'memory' | 'room-remember' | 'import-export' | 'context' | 'room-docs'>('memory');
+  let activeTab = $state<'memory' | 'room-remember' | 'import-export' | 'context' | 'room-docs' | 'reviews'>('memory');
 
   // ── Memory Update state ──
   let memId = $state('');
@@ -193,6 +194,7 @@
     { id: 'import-export' as const, label: 'Import / Export' },
     { id: 'context' as const, label: 'Context' },
     { id: 'room-docs' as const, label: 'Room ↔ Docs' },
+    { id: 'reviews' as const, label: 'Review History' },
   ];
 </script>
 
@@ -336,6 +338,10 @@
         </div>
       {/if}
     </section>
+
+  <!-- Review History (#20) -->
+  {:else if activeTab === 'reviews'}
+    <ReviewHistory />
 
   <!-- Context -->
   {:else if activeTab === 'context'}
