@@ -26,9 +26,11 @@
 
   interface Props {
     namespace: string | null;
+    /** Open the memory detail panel for an item in the recycle bin. */
+    onmemoryclick?: (id: string) => void;
   }
 
-  let { namespace }: Props = $props();
+  let { namespace, onmemoryclick }: Props = $props();
 
   // ─── State ─────────────────────────────────────────────────────────
   let status = $state<LifecycleStatus | null>(null);
@@ -239,7 +241,14 @@
         <div class="orphans-list">
           {#each deprecatedItems as item (item.id)}
             <div class="orphan-item">
-              <div class="orphan-content">
+              <div
+                class="orphan-content clickable"
+                role="button"
+                tabindex="0"
+                title="View details"
+                onclick={() => onmemoryclick?.(item.id)}
+                onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && onmemoryclick?.(item.id)}
+              >
                 <p class="orphan-text">{item.content.slice(0, 200)}</p>
                 <div class="orphan-meta">
                   <code class="orphan-id">{item.id.slice(0, 12)}…</code>
@@ -562,6 +571,21 @@
   .orphan-content {
     flex: 1;
     min-width: 0;
+  }
+
+  /* Clickable content area → opens the detail panel */
+  .orphan-content.clickable {
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: 2px 6px;
+    margin: -2px -6px;
+    transition: background-color 0.12s var(--ease-out);
+  }
+
+  .orphan-content.clickable:hover,
+  .orphan-content.clickable:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
   }
 
   .orphan-text {

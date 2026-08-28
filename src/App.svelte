@@ -238,7 +238,7 @@
           {:else if activeView === 'documents'}
             <DocumentsView />
           {:else if activeView === 'lifecycle'}
-            <LifecycleView {namespace} />
+            <LifecycleView {namespace} onmemoryclick={openDetail} />
           {:else if activeView === 'tools'}
             <ToolsView />
           {/if}

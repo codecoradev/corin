@@ -34,7 +34,7 @@ function localDateKey(d: Date): string {
  * Bucket memories into a fixed window of `weeks` calendar weeks ending today.
  * The grid is column-major friendly: index = week*7 + weekday(Mon=0..Sun=6).
  */
-export function buildActivity(memories: MemoryLike[], weeks = 12): ActivitySummary {
+export function buildActivity(memories: MemoryLike[], weeks = 26): ActivitySummary {
   const counts = new Map<string, number>();
   let today = 0;
   let last7 = 0;
