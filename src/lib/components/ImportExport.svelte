@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { system } from '../ts/ipc';
+  import { system, utekeExport, utekeImport } from '../ts/ipc';
   import { open, save } from '@tauri-apps/plugin-dialog';
   import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
   import { isWebMode } from '../ts/transport';
+  import { parseJsonl, type JsonlPreview } from '../utils/jsonl';
 
   interface Props {
     namespaces: string[];
@@ -15,7 +16,7 @@
   let mode = $state<'export' | 'import'>('export');
 
   // Export state
-  let exportFormat = $state<'json' | 'markdown' | 'csv'>('json');
+  let exportFormat = $state<'json' | 'jsonl' | 'markdown' | 'csv'>('json');
   let exportNamespace = $state<string | null>(null);
   let exporting = $state(false);
 
@@ -23,7 +24,10 @@
   let importStep = $state<'pick' | 'preview' | 'done'>('pick');
   let importFileName = $state<string | null>(null);
   let importFileData = $state<string | null>(null);
-  let importFormat = $state<'json' | 'markdown'>('json');
+  let importFormat = $state<'json' | 'markdown' | 'jsonl'>('json');
+  let jsonlPreview = $state<JsonlPreview | null>(null);
+  let jsonlTargetNs = $state<string>('');
+  let importResult = $state<{ imported: number; skipped: number } | null>(null);
   let importPreview = $state<{
     format: string;
     memories: number;
@@ -45,7 +49,9 @@
     importFileName = null;
     importFileData = null;
     importFormat = 'json';
-    importPreview = null;
+    jsonlPreview = null;
+    jsonlTargetNs = '';
+    importResult = null;
     importing = false;
     importCount = null;
     errorMsg = null;
@@ -57,7 +63,11 @@
     exporting = true;
     errorMsg = null;
     try {
-      const ext = exportFormat === 'json' ? 'json' : exportFormat === 'csv' ? 'csv' : 'md';
+      const ext =
+        exportFormat === 'json' ? 'json'
+        : exportFormat === 'csv' ? 'csv'
+        : exportFormat === 'jsonl' ? 'jsonl'
+        : 'md';
       const name = exportNamespace
         ? `corin-export-${exportNamespace}.${ext}`
         : `corin-export.${ext}`;
@@ -77,14 +87,21 @@
         }
       }
 
-      const data = await system.exportData(exportFormat, exportNamespace);
+      // JSONL is the server-native format (GET /export); the other formats
+      // are CorIn's own export engines (system.export_data).
+      const data = exportFormat === 'jsonl'
+        ? await utekeExport(exportNamespace ?? undefined)
+        : await system.exportData(exportFormat, exportNamespace);
 
       if (filePath) {
         await writeTextFile(filePath, data);
       } else {
-        const blob = new Blob([data], {
-          type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
-        });
+        const mime =
+          exportFormat === 'json' ? 'application/json'
+          : exportFormat === 'csv' ? 'text/csv'
+          : exportFormat === 'jsonl' ? 'application/x-ndjson'
+          : 'text/markdown';
+        const blob = new Blob([data], { type: mime });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -113,6 +130,7 @@
         multiple: false,
         filters: [
           { name: 'CorIn Export', extensions: ['json'] },
+          { name: 'JSONL', extensions: ['jsonl'] },
           { name: 'Markdown', extensions: ['md'] },
         ],
       });
@@ -123,10 +141,15 @@
       importFileData = await readTextFile(filePath);
 
       // Detect format from extension
-      importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
+      importFormat = importFileName.endsWith('.md') ? 'markdown'
+        : importFileName.endsWith('.jsonl') ? 'jsonl'
+        : 'json';
 
-      // Preview
-      importPreview = await system.importPreview(importFormat, importFileData);
+      if (importFormat === 'jsonl') {
+        jsonlPreview = parseJsonl(importFileData);
+      } else {
+        importPreview = await system.importPreview(importFormat, importFileData);
+      }
       importStep = 'preview';
     } catch (e: any) {
       errorMsg = e.toString();
@@ -143,8 +166,14 @@
     try {
       importFileName = file.name;
       importFileData = await file.text();
-      importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
-      importPreview = await system.importPreview(importFormat, importFileData);
+      importFormat = importFileName.endsWith('.md') ? 'markdown'
+        : importFileName.endsWith('.jsonl') ? 'jsonl'
+        : 'json';
+      if (importFormat === 'jsonl') {
+        jsonlPreview = parseJsonl(importFileData);
+      } else {
+        importPreview = await system.importPreview(importFormat, importFileData);
+      }
       importStep = 'preview';
     } catch (e: any) {
       errorMsg = e.toString();
@@ -156,9 +185,15 @@
     importing = true;
     errorMsg = null;
     try {
-      importCount = await system.importData(importFormat, importFileData);
-      importStep = 'done';
-      onimported?.();
+      if (importFormat === 'jsonl') {
+        importResult = await utekeImport(importFileData, jsonlTargetNs.trim() || undefined);
+        importStep = 'done';
+        onimported?.();
+      } else {
+        importCount = await system.importData(importFormat, importFileData);
+        importStep = 'done';
+        onimported?.();
+      }
     } catch (e: any) {
       errorMsg = e.toString();
     } finally {
@@ -168,6 +203,7 @@
 
   const formatInfo: Record<string, string> = {
     json: 'Full bundle: memories, edges, rooms. Best for backups and migration.',
+    jsonl: 'Server-native JSONL (GET /export). Round-trips through POST /import — duplicates are skipped.',
     markdown: 'Per-memory .md files with Obsidian-compatible YAML frontmatter.',
     csv: 'Flat table export. Compatible with spreadsheets and data tools.',
   };
@@ -201,6 +237,7 @@
       <div class="format-grid">
         {#each [
           { key: 'json' as const, label: 'JSON', desc: formatInfo.json },
+          { key: 'jsonl' as const, label: 'JSONL (server)', desc: formatInfo.jsonl },
           { key: 'markdown' as const, label: 'Markdown', desc: formatInfo.markdown },
           { key: 'csv' as const, label: 'CSV', desc: formatInfo.csv },
         ] as fmt}
@@ -236,10 +273,48 @@
     {#if importStep === 'pick'}
       <div class="section">
         <h3>Import from file</h3>
-        <p class="hint">Supported formats: CorIn JSON export (.json), Obsidian-compatible Markdown (.md)</p>
+        <p class="hint">Supported formats: CorIn JSON export (.json), server JSONL (.jsonl), Obsidian-compatible Markdown (.md)</p>
         <button class="primary-btn" onclick={handlePickFile}>
           Pick File...
         </button>
+      </div>
+    {:else if importStep === 'preview' && importFormat === 'jsonl' && jsonlPreview}
+      <div class="section">
+        <h3>Preview: {importFileName}</h3>
+        <div class="preview-grid">
+          <div class="preview-item">
+            <span class="preview-val">{jsonlPreview.count}</span>
+            <span class="preview-label">Entries</span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-val">{jsonlPreview.malformed}</span>
+            <span class="preview-label">Malformed</span>
+          </div>
+        </div>
+        {#if jsonlPreview.first5.length > 0}
+          <div class="jsonl-samples">
+            {#each jsonlPreview.first5 as entry}
+              <div class="jsonl-sample">{entry.content.slice(0, 90)}{entry.content.length > 90 ? '…' : ''}</div>
+            {/each}
+          </div>
+        {/if}
+        <div class="section">
+          <h3>Target namespace (optional)</h3>
+          <select bind:value={jsonlTargetNs}>
+            <option value="">Keep each entry's own namespace</option>
+            {#each namespaces as ns}
+              <option value={ns}>Override → {ns}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="preview-actions">
+          <button class="secondary-btn" onclick={() => importStep = 'pick'}>
+            Back
+          </button>
+          <button class="primary-btn" onclick={handleImport} disabled={importing || jsonlPreview.count === 0}>
+            {importing ? 'Importing...' : `Import ${jsonlPreview.count} entries`}
+          </button>
+        </div>
       </div>
     {:else if importStep === 'preview' && importPreview}
       <div class="section">
@@ -282,9 +357,17 @@
     {:else if importStep === 'done'}
       <div class="section">
         <h3>Import Complete</h3>
-        <p class="success-msg">
-          Successfully imported {importCount} memories.
-        </p>
+        {#if importResult}
+          <p class="success-msg">
+            Imported {importResult.imported} new memor{importResult.imported === 1 ? 'y' : 'ies'}
+            {#if importResult.skipped > 0}— {importResult.skipped} malformed line{importResult.skipped === 1 ? '' : 's'} skipped{/if}.
+            Exact duplicates are silently deduplicated by the server.
+          </p>
+        {:else}
+          <p class="success-msg">
+            Successfully imported {importCount} memories.
+          </p>
+        {/if}
         <button class="secondary-btn" onclick={reset}>
           Done
         </button>
@@ -471,6 +554,26 @@
 
   .meta-tags {
     color: var(--text-secondary);
+  }
+
+  .jsonl-samples {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .jsonl-sample {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .preview-actions {
