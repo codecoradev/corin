@@ -51,14 +51,15 @@
   }
 
   function navigate(view: View) {
-    activeView = view;
-    searchQuery = null;
-
-    // Settings is a modal popup, not a full view.
+    // Settings is a modal popup, not a full view — the page behind it
+    // must stay exactly as it is.
     if (view === 'settings') {
       showSettings = true;
       return;
     }
+
+    activeView = view;
+    searchQuery = null;
 
     // Deep-linkable views (web mode): keep the hash in sync so a view can
     // be opened directly via #memories, #lifecycle, etc.
