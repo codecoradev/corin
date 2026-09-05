@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
   import type { GraphData } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
@@ -71,6 +71,7 @@
   let physicsActive = true;
   let calmFrames = 0;
   let needRedraw = true;
+  let labelsVisible = $state(true);
 
   // Respect user's reduced-motion preference. When true, physics is
   // skipped entirely — nodes render at their initial positions and
@@ -401,13 +402,15 @@
       ctx.fillStyle = hi ? COL.ink : n.color;
       ctx.fill();
 
-      // Label: show on hover, or for highly-connected nodes
-      if (hi || n.conns >= 3) {
+      // Label: always visible by default (audit HIGH) — halo for readability
+      if (labelsVisible || hi) {
         ctx.font = '11px -apple-system, sans-serif';
-        ctx.fillStyle = hi ? COL.ink : COL.muted;
         ctx.textAlign = 'center';
-        // Truncate long labels
         const label = n.label.length > 30 ? n.label.slice(0, 27) + '…' : n.label;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = COL.crust;
+        ctx.strokeText(label, n.x, n.y - r - 5);
+        ctx.fillStyle = hi ? COL.ink : COL.muted;
         ctx.fillText(label, n.x, n.y - r - 5);
       }
 
@@ -419,6 +422,28 @@
         ctx.fillText('…', n.x, n.y - r - 5);
       }
     }
+  }
+
+  // ─── Fit view (audit: graph not auto-fit/centered) ─────────────────
+  function fitView() {
+    if (!nodes.length) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+    const bw = Math.max(1, maxX - minX);
+    const bh = Math.max(1, maxY - minY);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const scale = Math.min(2.5, Math.max(0.2, Math.min((W * 0.8) / bw, (H * 0.8) / bh)));
+    for (const n of nodes) {
+      n.x = W / 2 + (n.x - cx) * scale;
+      n.y = H / 2 + (n.y - cy) * scale;
+    }
+    needRedraw = true;
   }
 
   // ─── Physics ───────────────────────────────────────────────────────
@@ -476,6 +501,7 @@
         calmFrames++;
         if (calmFrames > 10) {
           physicsActive = false;
+          untrack(() => fitView());
           needRedraw = true;
         }
       } else {
@@ -604,7 +630,18 @@
       <span class="hint-text">Single-click a node to expand neighbors · double-click to open detail</span>
     {/if}
     <div class="toolbar-spacer"></div>
+    <button class="graph-btn" onclick={() => fitView()} title="Fit graph to view">⤢ Fit</button>
+    <button
+      class="graph-btn"
+      title={labelsVisible ? 'Hide labels' : 'Show labels'}
+      onclick={() => { labelsVisible = !labelsVisible; needRedraw = true; }}
+    >{labelsVisible ? 'Labels on' : 'Labels off'}</button>
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
+  </div>
+  <div class="graph-legend">
+    <span class="legend-item"><span class="legend-dot" style="background: var(--accent)"></span> memory</span>
+    <span class="legend-item"><span class="legend-dot" style="background: var(--text-muted)"></span> isolated</span>
+    <span class="legend-item"><span class="legend-line"></span> connection</span>
   </div>
   <div class="canvas-wrap">
     <canvas
@@ -627,6 +664,29 @@
 
 <style>
   .graph-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .graph-btn {
+    padding: 4px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background 0.15s var(--ease-out);
+  }
+  .graph-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+  .graph-legend {
+    display: flex;
+    gap: 16px;
+    padding: 6px 0 0;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .legend-line { width: 14px; height: 0; border-top: 2px solid var(--color-blue); display: inline-block; }
+
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); }
   .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
