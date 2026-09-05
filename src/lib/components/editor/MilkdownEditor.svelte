@@ -1,13 +1,22 @@
 <script lang="ts">
-  import '@milkdown/crepe/theme/common/style.css';
-  import '@milkdown/crepe/theme/frame.css';
   /**
    * Milkdown (Crepe) editor wrapper for Svelte 5 — issue #295.
+   *
    * Markdown-native: editor state == markdown source, so what the agent
    * reads via /doc/get is exactly what the human sees.
+   *
+   * Reactivity contract (Cora-reviewed):
+   * - The MOUNT effect reads only `mount` — value/placeholder are captured
+   *   via untrack() so prop echoes never recreate the editor.
+   * - `crepe` is $state: assigning it (post-create) re-runs the sync and
+   *   readonly effects, so values arriving during pending-create are
+   *   applied instead of silently dropped.
    */
+  import { untrack } from 'svelte';
   import { Crepe } from '@milkdown/crepe';
   import { replaceAll } from '@milkdown/kit/utils';
+  import '@milkdown/crepe/theme/common/style.css';
+  import '@milkdown/crepe/theme/frame.css';
 
   interface Props {
     value?: string;
@@ -18,17 +27,22 @@
 
   let { value = '', onchange, readonly = false, placeholder = 'Start writing… (/ for blocks)' }: Props = $props();
 
-  let mount: HTMLElement | null = $state(null);
-  let crepe: Crepe | null = null;
+  let mount = $state<HTMLElement | null>(null);
+  let crepe = $state<Crepe | null>(null);
   let applying = false; // guard: parent echo of our own change
 
+  // Mount exactly once per element. NO reactive reads of value/placeholder here.
   $effect(() => {
-    if (!mount) return;
+    const el = mount;
+    if (!el) return;
     let destroyed = false;
+    const initialValue = untrack(() => value);
+    const initialPlaceholder = untrack(() => placeholder);
+
     const c = new Crepe({
-      root: mount,
-      defaultValue: value,
-      placeholder,
+      root: el,
+      defaultValue: initialValue,
+      placeholder: initialPlaceholder,
       features: {
         [Crepe.Feature.LinkTooltip]: true,
         [Crepe.Feature.BlockEdit]: true,
@@ -40,31 +54,39 @@
         [Crepe.Feature.Codeblock]: { languagesWidget: true },
       },
     });
+
     c.on((listener: { markdownUpdated: (ctx: unknown, md: string) => void }) => {
       listener.markdownUpdated((_ctx, md) => {
         if (!applying) onchange?.(md);
       });
     });
+
     c.create().then(() => {
       if (destroyed) return;
+      // Assigning $state re-runs the sync/readonly effects below.
       crepe = c;
-      if (readonly) c.setReadonly(true);
     });
+
     return () => {
       destroyed = true;
-      crepe = null;
+      if (crepe === c) crepe = null;
       c.destroy();
     };
   });
 
-  // External value replacement (doc switch / restore)
+  // External value replacement (doc switch / restore). Re-runs when `value`
+  // changes OR when `crepe` becomes available (pending-create window).
   $effect(() => {
     const external = value;
     const c = crepe;
     if (!c) return;
     void (async () => {
       let current = '';
-      try { current = await c.getMarkdown(); } catch { return; }
+      try {
+        current = await c.getMarkdown();
+      } catch {
+        return;
+      }
       if (external !== current) {
         applying = true;
         c.editor.action(replaceAll(external));
@@ -73,8 +95,11 @@
     })();
   });
 
+  // Readonly toggling — re-runs on crepe assignment or readonly change.
   $effect(() => {
-    crepe?.setReadonly(readonly);
+    const c = crepe;
+    const ro = readonly;
+    if (c) c.setReadonly(ro);
   });
 </script>
 
