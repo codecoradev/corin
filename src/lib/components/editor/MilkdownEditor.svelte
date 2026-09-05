@@ -29,7 +29,14 @@
 
   let mount = $state<HTMLElement | null>(null);
   let crepe = $state<Crepe | null>(null);
-  let applying = false; // guard: parent echo of our own change
+  let applying = false; // suppresses markdownUpdated during programmatic replaceAll
+
+  // Echo bookkeeping (plain vars — intentionally non-reactive):
+  // lastEmitted = last markdown this component sent to the parent. When the
+  // parent echoes it back via `value`, the sync effect skips — no async work
+  // while typing, and no stale-apply races.
+  let lastEmitted: string | null = null;
+  let syncRun = 0; // generation counter: only the newest sync run may apply
 
   // Mount exactly once per element. NO reactive reads of value/placeholder here.
   $effect(() => {
@@ -57,7 +64,9 @@
 
     c.on((listener: { markdownUpdated: (ctx: unknown, md: string) => void }) => {
       listener.markdownUpdated((_ctx, md) => {
-        if (!applying) onchange?.(md);
+        if (applying) return;
+        lastEmitted = md;
+        onchange?.(md);
       });
     });
 
@@ -76,20 +85,29 @@
 
   // External value replacement (doc switch / restore). Re-runs when `value`
   // changes OR when `crepe` becomes available (pending-create window).
+  // Own echoes short-circuit BEFORE any async work, so fast typing never
+  // spawns racing reads; a generation counter discards superseded runs; and
+  // try/finally guarantees `applying` is restored even if replaceAll throws.
   $effect(() => {
     const external = value;
     const c = crepe;
     if (!c) return;
+    if (lastEmitted !== null && external === lastEmitted) return; // own echo
+    const run = ++syncRun;
     void (async () => {
-      let current = '';
+      let current: string;
       try {
         current = await c.getMarkdown();
       } catch {
         return;
       }
-      if (external !== current) {
-        applying = true;
+      if (run !== syncRun) return; // superseded by a newer sync run
+      if (external === current || external === lastEmitted) return;
+      applying = true;
+      try {
         c.editor.action(replaceAll(external));
+        lastEmitted = external;
+      } finally {
         applying = false;
       }
     })();
