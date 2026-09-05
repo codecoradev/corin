@@ -27,7 +27,19 @@
   let dataDirInitialized = $state(false);
   let dataDir = $state<string | null>(null);
   let activeView = $state<View>('dashboard');
-  let sidebarCollapsed = $state(false);
+  // Rail collapse persisted (issue #292); default = collapsed rail per redesign decision.
+  const SIDEBAR_LS = 'corin.sidebar.collapsed';
+
+  function loadSidebarCollapsed(): boolean {
+    try {
+      const v = localStorage.getItem(SIDEBAR_LS);
+      return v === null ? true : v === '1'; // default: collapsed rail (mockup A decision)
+    } catch {
+      return true;
+    }
+  }
+
+  let sidebarCollapsed = $state(loadSidebarCollapsed());
   let namespace = $state<string | null>(null);
 
   // Overlay state (views stay mounted underneath)
@@ -153,6 +165,9 @@
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
     autoCollapsed = false;
+    try {
+      localStorage.setItem(SIDEBAR_LS, sidebarCollapsed ? '1' : '0');
+    } catch { /* storage unavailable */ }
   }
 
   function handleViewportChange() {
