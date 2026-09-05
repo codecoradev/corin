@@ -7,6 +7,7 @@
   import NamespaceFilter from './NamespaceFilter.svelte';
   import { FileText, Brain, X } from 'lucide-svelte';
   import { Spinner, EmptyState, Button } from '../ui';
+  import { relativeTime } from '../utils/format';
 
   interface Props {
     namespace: string | null;
@@ -17,6 +18,64 @@
   }
 
   let { namespace, onmemoryclick, onnewmemory, ondocumentclick }: Props = $props();
+
+  // ── Memories hub grouping (#293): Agents | Rooms | Tags ────────────────
+  type HubGroup = 'agents' | 'rooms' | 'tags';
+  let hubGroup = $state<HubGroup>('agents');
+  let selectedAuthor = $state<string | null>(null);
+  let selectedRoom = $state<string | null>(null);
+  let selectedTag = $state<string | null>(null);
+
+  const AUTHOR_COLORS = ['#7CB2FF', '#C4A7FF', '#4FD8D2', '#E89B3C', '#34D399', '#F87171', '#A78BFA', '#FBBF24'];
+
+  /** Stable per-agent color: hash name -> palette index. Deterministic across sessions. */
+  function authorColor(name: string): string {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return AUTHOR_COLORS[h % AUTHOR_COLORS.length];
+  }
+
+  function authorInitial(name: string): string {
+    return (name.trim()[0] || '?').toUpperCase();
+  }
+
+  /** Provenance is stored in metadata.author (verified v0.16.0 round-trip). */
+  function memoryAuthor(m: MemoryEntry & { score?: number }): string | null {
+    const meta = (m as { metadata?: Record<string, unknown> }).metadata;
+    const a = meta?.author;
+    return typeof a === 'string' && a.trim() ? a.trim() : null;
+  }
+
+  /** Aggregate authors over everything currently loaded in the pager. */
+  let authorCounts = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const m of pager.items) {
+      const a = memoryAuthor(m);
+      if (a) counts.set(a, (counts.get(a) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((x, y) => y[1] - x[1]);
+  });
+
+  let tagCounts = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const m of pager.items) for (const t of m.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    return [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, 12);
+  });
+
+  let rooms = $state<{ id: string; title: string }[]>([]);
+  $effect(() => {
+    uteke.rooms().then((rs) => {
+      rooms = (rs as { id?: string; title?: string }[]).map((r) => ({ id: String(r.id ?? ''), title: String(r.title ?? r.id ?? '') }));
+    }).catch(() => { rooms = []; });
+  });
+
+  /** Client-side author/tag filter over loaded page items (server-side scope = #1181 follow-up). */
+  let filteredList = $derived.by(() => {
+    let items = list;
+    if (selectedAuthor) items = items.filter((m) => memoryAuthor(m) === selectedAuthor);
+    if (selectedTag) items = items.filter((m) => m.tags.includes(selectedTag!));
+    return items;
+  });
 
   // Cosine similarity can exceed 1; clamp so the badge never reads ">100%".
   function scorePct(score: number): number {
@@ -183,6 +242,62 @@
 </script>
 
 <div class="memory-list-view">
+  <aside class="hub-panel">
+    <div class="hub-seg" role="group" aria-label="Group memories by">
+      <button class:on={hubGroup === 'agents'} onclick={() => (hubGroup = 'agents')}>Agents</button>
+      <button class:on={hubGroup === 'rooms'} onclick={() => (hubGroup = 'rooms')}>Rooms</button>
+      <button class:on={hubGroup === 'tags'} onclick={() => (hubGroup = 'tags')}>Tags</button>
+    </div>
+
+    {#if hubGroup === 'agents'}
+      <div class="hub-group-label">Agents <span class="hub-n">{authorCounts.length}</span></div>
+      {#each authorCounts as [name, count] (name)}
+        <button
+          class="hub-item"
+          class:on={selectedAuthor === name}
+          onclick={() => (selectedAuthor = selectedAuthor === name ? null : name)}
+        >
+          <span class="hub-avatar" style="background: {authorColor(name)}">{authorInitial(name)}</span>
+          <span class="hub-name">{name}</span>
+          <span class="hub-cnt">{count}</span>
+        </button>
+      {:else}
+        <div class="hub-empty">No authored memories on this page.</div>
+      {/each}
+    {:else if hubGroup === 'rooms'}
+      <div class="hub-group-label">Rooms <span class="hub-n">{rooms.length}</span></div>
+      {#each rooms as room (room.id)}
+        <button
+          class="hub-item"
+          class:on={selectedRoom === room.id}
+          onclick={() => (selectedRoom = selectedRoom === room.id ? null : room.id)}
+          title="Room scoping lands with room-scoped pager (#297 follow-up)"
+        >
+          <span class="hub-ic">◫</span>
+          <span class="hub-name">{room.title || room.id}</span>
+        </button>
+      {:else}
+        <div class="hub-empty">No rooms yet.</div>
+      {/each}
+    {:else}
+      <div class="hub-group-label">Tags <span class="hub-n">{tagCounts.length}</span></div>
+      {#each tagCounts as [tag, count] (tag)}
+        <button
+          class="hub-item"
+          class:on={selectedTag === tag}
+          onclick={() => (selectedTag = selectedTag === tag ? null : tag)}
+        >
+          <span class="hub-ic">#</span>
+          <span class="hub-name">{tag}</span>
+          <span class="hub-cnt">{count}</span>
+        </button>
+      {:else}
+        <div class="hub-empty">No tags on this page.</div>
+      {/each}
+    {/if}
+  </aside>
+
+  <div class="hub-main">
   <div class="toolbar">
     <div class="search-bar">
       <input
@@ -317,7 +432,7 @@
       <div class="search-info">Semantic search — top {searchResults.length} match{searchResults.length > 1 ? 'es' : ''}</div>
     {/if}
     <div class="list">
-      {#each list as m (m.id)}
+      {#each filteredList as m (m.id)}
         <div
           class="memory-card"
           role="button"
@@ -325,6 +440,16 @@
           onclick={() => onmemoryclick(m.id)}
           onkeydown={(e) => e.key === 'Enter' && onmemoryclick(m.id)}
         >
+          <div class="card-head">
+            {#if memoryAuthor(m)}
+              <span class="card-avatar" style="background: {authorColor(memoryAuthor(m)!)}">{authorInitial(memoryAuthor(m)!)}</span>
+              <span class="card-author">{memoryAuthor(m)}</span>
+            {:else}
+              <span class="card-avatar anon">?</span>
+              <span class="card-author muted">unknown</span>
+            {/if}
+            {#if m.created_at}<span class="card-time">{relativeTime(m.created_at)}</span>{/if}
+          </div>
           <div class="card-content">{m.content.slice(0, 200)}</div>
           {#if m.score !== undefined}
             <div class="semantic-score">{scorePct(m.score)}% match</div>
@@ -359,6 +484,7 @@
     {/if}
   {/if}
   </div>
+  </div>
 </div>
 
 <style>
@@ -366,12 +492,123 @@
     position: absolute;
     inset: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    gap: 16px;
     overflow: hidden;
     padding: 16px 24px;
-    max-width: 900px;
+    max-width: 1150px;
     margin: 0 auto;
   }
+
+  /* ── Memories hub panel (#293) ─────────────────────────────────────── */
+  .hub-panel {
+    width: 216px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    padding-right: 12px;
+  }
+  .hub-seg {
+    display: flex;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+    margin-bottom: 10px;
+  }
+  .hub-seg button {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    padding: 4px 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .hub-seg button.on {
+    background: var(--color-teal-bg);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .hub-group-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 10px 6px 4px;
+  }
+  .hub-n { color: var(--text-muted); }
+  .hub-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-align: left;
+  }
+  .hub-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .hub-item.on {
+    background: var(--color-teal-bg);
+    color: var(--text-primary);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .hub-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--bg-primary);
+    flex-shrink: 0;
+  }
+  .hub-ic { width: 18px; text-align: center; opacity: 0.7; flex-shrink: 0; }
+  .hub-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hub-cnt { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); }
+  .hub-empty { color: var(--text-muted); font-size: 0.75rem; padding: 6px 8px; }
+
+  .hub-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  /* ── Card author header (agent identity) ───────────────────────────── */
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--bg-primary);
+    flex-shrink: 0;
+  }
+  .card-avatar.anon { background: var(--surface1); color: var(--text-muted); }
+  .card-author { font-size: 0.74rem; font-weight: 600; color: var(--text-primary); }
+  .card-author.muted { color: var(--text-muted); font-weight: 400; }
+  .card-time { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
 
   .scroll-area {
     flex: 1;

@@ -92,9 +92,11 @@ interface UtekeMemoryRaw {
   created_at?: string | null;
   updated_at?: string | null;
   pinned?: boolean | null;
+  metadata?: Record<string, unknown> | null;
+  deprecated?: boolean | null;
 }
 
-function toMemory(m: UtekeMemoryRaw): MemoryEntry {
+function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, unknown>; deprecated?: boolean } {
   return {
     id: m.id,
     content: m.content ?? '',
@@ -104,6 +106,9 @@ function toMemory(m: UtekeMemoryRaw): MemoryEntry {
     namespace: m.namespace ?? null,
     created_at: m.created_at ?? null,
     updated_at: m.updated_at ?? null,
+    // Provenance passthrough — agent identity reads metadata.author (#293).
+    metadata: (m.metadata ?? undefined) as Record<string, unknown> | undefined,
+    deprecated: m.deprecated ?? false,
   };
 }
 
