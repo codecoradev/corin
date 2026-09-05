@@ -1,8 +1,30 @@
 <script lang="ts">
   import { memory as memoryApi, uteke, utekeServer, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock } from 'lucide-svelte';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check } from 'lucide-svelte';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
+  import { relativeTime } from '../utils/format';
+
+  // Author identity — provenance slot is metadata.author (verified v0.16.0).
+  const AUTHOR_COLORS = ['#7CB2FF', '#C4A7FF', '#4FD8D2', '#E89B3C', '#34D399', '#F87171', '#A78BFA', '#FBBF24'];
+  function authorColor(name: string): string {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return AUTHOR_COLORS[h % AUTHOR_COLORS.length];
+  }
+  let author = $derived.by(() => {
+    const meta = (memory as { metadata?: Record<string, unknown> } | null)?.metadata;
+    const a = meta?.author;
+    return typeof a === 'string' && a.trim() ? a.trim() : null;
+  });
+  let copiedId = $state(false);
+  async function copyId() {
+    try {
+      await navigator.clipboard.writeText(memoryId);
+      copiedId = true;
+      setTimeout(() => (copiedId = false), 1500);
+    } catch { /* clipboard unavailable */ }
+  }
 
   interface Neighbor {
     id: string;
@@ -199,7 +221,26 @@
   {:else}
     <div class="detail-body">
       <div class="content-section">
+        <div class="author-head">
+          {#if author}
+            <span class="author-avatar" style="background: {authorColor(author)}">{author.trim()[0].toUpperCase()}</span>
+            <span class="author-name">{author}</span>
+          {:else}
+            <span class="author-avatar anon">?</span>
+            <span class="author-name muted">unknown author</span>
+          {/if}
+          {#if memory.created_at}
+            <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
+          {/if}
+        </div>
         <pre class="content-text">{memory.content}</pre>
+
+        <div class="copyid-row">
+          <span class="id-short">{memoryId.slice(0, 8)}</span>
+          <button class="copyid-btn" onclick={copyId} title="Copy full ID">
+            {#if copiedId}<Check size={12} strokeWidth={2.5} />{:else}<Copy size={12} strokeWidth={2} />{/if}
+          </button>
+        </div>
 
         <div class="meta-grid">
           {#if memory.tags.length > 0}
@@ -396,6 +437,53 @@
   .memory-detail { height: 100vh; display: flex; flex-direction: column; }
 
   .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 16px 24px 0; flex-shrink: 0; }
+
+  /* ── Reading-surface author header (#296) ──────────────────────────── */
+  .author-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 14px;
+  }
+  .author-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--bg-primary);
+    flex-shrink: 0;
+  }
+  .author-avatar.anon { background: var(--surface1); color: var(--text-muted); }
+  .author-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+  .author-name.muted { color: var(--text-muted); font-weight: 400; }
+  .author-time { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+  .copyid-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--bg-tertiary);
+  }
+  .id-short { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
+  .copyid-btn {
+    display: inline-flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+  }
+  .copyid-btn:hover { color: var(--accent); }
   .back-btn { padding: 6px 12px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; gap: 6px; }
   .back-btn:hover { background: var(--bg-hover); }
   .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: var(--radius-sm); opacity: 0.7; }

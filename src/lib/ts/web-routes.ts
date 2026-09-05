@@ -107,7 +107,7 @@ function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, 
     created_at: m.created_at ?? null,
     updated_at: m.updated_at ?? null,
     // Provenance passthrough — agent identity reads metadata.author (#293).
-    metadata: (m.metadata ?? null) as Record<string, unknown> | null,
+    metadata: (m.metadata ?? undefined) as Record<string, unknown> | undefined,
     deprecated: m.deprecated ?? false,
   };
 }
