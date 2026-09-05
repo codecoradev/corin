@@ -4,7 +4,7 @@
    * Requires uteke >= 0.16.1 (#1183). On older servers the actions render
    * disabled with an honest upgrade tooltip (compat gate).
    */
-  import { docs, memory as memoryApi } from '../../ts/ipc';
+  import { docs } from '../../ts/ipc';
   import { has, minVersion } from '../../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../../ui';
   import { ArrowRightLeft, Trash2, Merge, ShieldAlert } from 'lucide-svelte';
@@ -41,18 +41,9 @@
     loading = true;
     try {
       nsSupported = (await has('namespaceManage')) ?? false;
-      const raw = await docs.listNamespaces();
-      // enrich with counts; breakdown fields only exist on 0.16.1+
-      const enriched: NamespaceRow[] = [];
-      for (const name of raw) {
-        try {
-          const s = await memoryApi.stats(name);
-          enriched.push({ name, count: s.total ?? s.count ?? undefined });
-        } catch {
-          enriched.push({ name });
-        }
-      }
-      rows = enriched;
+      // One bulk call. On 0.16.1+ this carries active/deprecated breakdown;
+      // on older servers the extra fields are absent and we fall back to totals.
+      rows = await docs.namespacesBreakdown();
     } catch {
       rows = [];
     } finally {

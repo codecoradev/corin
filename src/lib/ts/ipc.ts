@@ -103,6 +103,9 @@ export const uteke = {
     }),
   namespaces: () => call<string[]>('uteke_namespaces'),
   namespacesWithCounts: () => call<Array<{ name: string; count: number }>>('uteke_namespaces_with_counts'),
+  /** Full breakdown incl. active/deprecated (uteke >= 0.16.1, #1183). */
+  namespacesBreakdown: () =>
+    call<Array<{ name: string; count?: number; active?: number; deprecated?: number }>>('uteke_namespaces_breakdown'),
   rooms: (namespace?: string) =>
     call<{ id: string; title: string | null; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }[]>('uteke_rooms', {
       namespace: namespace ?? null,

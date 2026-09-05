@@ -548,6 +548,10 @@ export const webHandlers: Record<string, Handler> = {
   uteke_stats: aggregateStats,
   list_namespaces: namespaces,
   uteke_namespaces: namespaces,
+  uteke_namespaces_breakdown: async () => {
+    const rows = await req<Array<{ name: string; count?: number; active?: number; deprecated?: number }>>('GET', '/namespaces', { query: { with_counts: true } });
+    return rows;
+  },
   uteke_namespaces_with_counts: namespacesWithCounts,
   // commands.rs:list_tags mengaproksimasi dengan namespaces_with_counts
   list_tags: async () => {
