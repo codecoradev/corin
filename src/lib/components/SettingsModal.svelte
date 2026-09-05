@@ -5,6 +5,7 @@
   import { system } from '../ts/ipc';
   import { isWebMode } from '../ts/transport';
   import ImportExport from './ImportExport.svelte';
+  import { theme } from '../stores/theme.svelte';
   import { version as APP_VERSION } from '../../../package.json';
   import AgentsSection from './settings/AgentsSection.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
@@ -25,7 +26,8 @@
   let loading = $state(true);
   let saving = $state(false);
   let savedMsg = $state(false);
-  let theme = $state('catppuccin-mocha');
+  // Theme now lives in the palette-only theme store (issue #291); legacy
+  // `theme` settings key kept out of save payload below.
   let defaultNamespace = $state('');
   let maxResults = $state('50');
 
@@ -38,7 +40,6 @@
     loading = true;
     try {
       settings = await system.getSettings();
-      theme = settings['theme'] ?? 'catppuccin-mocha';
       defaultNamespace = settings['default_namespace'] ?? '';
       maxResults = settings['max_results'] ?? '50';
     } catch { /* not initialized */ }
@@ -63,7 +64,7 @@
   async function handleSave() {
     saving = true;
     try {
-      await system.setSettings({ theme, default_namespace: defaultNamespace, max_results: maxResults });
+      await system.setSettings({ default_namespace: defaultNamespace, max_results: maxResults });
       savedMsg = true;
       setTimeout(() => (savedMsg = false), 2000);
     } catch { /* ignore */ }
@@ -125,8 +126,13 @@
           <h3>Preferences</h3>
           <div class="setting-row">
             <label for="theme">Theme</label>
-            <select id="theme" bind:value={theme} disabled>
-              <option value="catppuccin-mocha">Catppuccin Mocha (Dark)</option>
+            <select
+              id="theme"
+              value={theme.current}
+              onchange={(e) => theme.set((e.currentTarget as HTMLSelectElement).value as 'dark' | 'light')}
+            >
+              <option value="dark">Dark — Editor (default)</option>
+              <option value="light">Light — Warm Paper</option>
             </select>
           </div>
           <div class="setting-row">

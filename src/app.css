@@ -6,34 +6,34 @@
    bg-base, bg-mantle, bg-crust, text-text, text-subtext, etc.
    ═══════════════════════════════════════════════════════════════════ */
 @theme {
-  /* Backgrounds */
-  --color-base: #0e0e12;
-  --color-mantle: #181825;
-  --color-crust: #1e1e2e;
-  --color-surface0: #313244;
-  --color-surface1: #45475a;
-  --color-surface2: #585b70;
-  --color-rosewater: #f5e0dc;
+  /* Backgrounds — dark (default), palette A; see DESIGN.md */
+  --color-base: #0E1015;
+  --color-mantle: #12151D;
+  --color-crust: #171B26;
+  --color-surface0: #222836;
+  --color-surface1: #2A3242;
+  --color-surface2: #3A4254;
+  --color-rosewater: #F0E6D8;
 
   /* Text */
-  --color-text: #cdd6f4;
-  --color-subtext: #a6adc8;
-  --color-overlay: #6c7086;
+  --color-text: #E6E9EF;
+  --color-subtext: #8B93A7;
+  --color-overlay: #5A6478;
 
-  /* Accents (Catppuccin palette) */
-  --color-blue: #89b4fa;
-  --color-red: #f38ba8;
-  --color-green: #a6e3a1;
-  --color-yellow: #f9e2af;
-  --color-peach: #fab387;
-  --color-mauve: #cba6f7;
-  --color-teal: #94e2d5;
+  /* Accents — color lock: teal = brand, yellow = semantic score/warning */
+  --color-blue: #7CB2FF;
+  --color-red: #F87171;
+  --color-green: #34D399;
+  --color-yellow: #E89B3C;
+  --color-peach: #E0AF68;
+  --color-mauve: #C4A7FF;
+  --color-teal: #4FD8D2;
 
   /* Radius */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-sm: 5px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-pill: 999px;
 
   /* Fonts */
@@ -53,8 +53,8 @@
   --text-primary: var(--color-text);
   --text-secondary: var(--color-subtext);
   --text-muted: var(--color-overlay);
-  --accent: var(--color-blue);
-  --accent-dim: rgba(137, 180, 250, 0.35);
+  --accent: var(--color-teal);
+  --accent-dim: color-mix(in srgb, var(--color-teal) 35%, transparent);
   --red: var(--color-red);
   --green: var(--color-green);
   --yellow: var(--color-yellow);
@@ -193,4 +193,29 @@ button:active:not(:disabled) {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Light theme — palette B (warm paper). PALETTE-ONLY switch (DESIGN.md):
+   same typography/spacing/radius; only color values change.
+   Applies when <html data-theme="light"> (theme store, issue #291).
+   ═══════════════════════════════════════════════════════════════════ */
+:root[data-theme="light"] {
+  --color-base: #FBF8F1;
+  --color-mantle: #FFFDF8;
+  --color-crust: #F3EEE3;
+  --color-surface0: #E7E0D2;
+  --color-surface1: #DDD5C6;
+  --color-surface2: #CFC6B5;
+  --color-rosewater: #4A4436;
+  --color-text: #2E2A1F;
+  --color-subtext: #6E6650;
+  --color-overlay: #A39A85;
+  --color-blue: #5B7DB1;
+  --color-red: #C25B4E;
+  --color-green: #3E9B6C;
+  --color-yellow: #C07A3A;
+  --color-peach: #B8742F;
+  --color-mauve: #8B6FC7;
+  --color-teal: #0E7C74;
 }
