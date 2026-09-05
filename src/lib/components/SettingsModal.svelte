@@ -9,6 +9,7 @@
   import { version as APP_VERSION } from '../../../package.json';
   import AgentsSection from './settings/AgentsSection.svelte';
   import LifecycleView from './LifecycleView.svelte';
+  import NamespaceManager from './settings/NamespaceManager.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X, Settings } from 'lucide-svelte';
   import { Spinner, focusTrap } from '../ui';
@@ -139,10 +140,6 @@
             </select>
           </div>
           <div class="setting-row">
-            <label for="default-ns">Default Namespace</label>
-            <input id="default-ns" type="text" bind:value={defaultNamespace} placeholder="default" />
-          </div>
-          <div class="setting-row">
             <label for="max-results">Max Results per Page</label>
             <input id="max-results" type="number" min="10" max="200" bind:value={maxResults} />
           </div>
@@ -152,6 +149,15 @@
             </button>
             {#if savedMsg}<span class="saved-msg"><Check size={12} strokeWidth={2.5} /> Saved</span>{/if}
           </div>
+        </section>
+
+        <section class="content-section">
+          <h3>Workspace</h3>
+          <div class="setting-row">
+            <label for="default-ns">Default Namespace</label>
+            <input id="default-ns" type="text" bind:value={defaultNamespace} placeholder="default" />
+          </div>
+          <NamespaceManager protectedNamespace={defaultNamespace || 'default'} />
         </section>
 
         {#if !isWebMode}<UpdatesSection />{/if}

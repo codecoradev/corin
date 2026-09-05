@@ -548,6 +548,10 @@ export const webHandlers: Record<string, Handler> = {
   uteke_stats: aggregateStats,
   list_namespaces: namespaces,
   uteke_namespaces: namespaces,
+  uteke_namespaces_breakdown: async () => {
+    const rows = await req<Array<{ name: string; count?: number; active?: number; deprecated?: number }>>('GET', '/namespaces', { query: { with_counts: true } });
+    return rows;
+  },
   uteke_namespaces_with_counts: namespacesWithCounts,
   // commands.rs:list_tags mengaproksimasi dengan namespaces_with_counts
   list_tags: async () => {
@@ -723,6 +727,14 @@ export const webHandlers: Record<string, Handler> = {
   disconnect_connection: async () => {},
 
   // Documents
+  uteke_namespace_rename: async (p) =>
+    req<{ from: string; to: string; moved: number; target_existed: boolean }>('POST', '/namespaces/rename', {
+      body: body({ from: p.from, to: p.to }) as Payload,
+    }),
+  uteke_namespace_delete: async (p) =>
+    req<{ name: string; strategy: string; affected: number }>('POST', '/namespaces/delete', {
+      body: body({ name: p.name, strategy: p.strategy, target: p.target ?? undefined }) as Payload,
+    }),
   uteke_version_status: async () => {
     const h = await health();
     return { current: h.version, required: '0.7.0', supported: h.ok ? versionMeets(h.version, '0.7.0') : false };

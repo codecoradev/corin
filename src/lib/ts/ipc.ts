@@ -103,6 +103,9 @@ export const uteke = {
     }),
   namespaces: () => call<string[]>('uteke_namespaces'),
   namespacesWithCounts: () => call<Array<{ name: string; count: number }>>('uteke_namespaces_with_counts'),
+  /** Full breakdown incl. active/deprecated (uteke >= 0.16.1, #1183). */
+  namespacesBreakdown: () =>
+    call<Array<{ name: string; count?: number; active?: number; deprecated?: number }>>('uteke_namespaces_breakdown'),
   rooms: (namespace?: string) =>
     call<{ id: string; title: string | null; namespace: string; memory_count: number; participant_count: number; created_at: string; updated_at: string }[]>('uteke_rooms', {
       namespace: namespace ?? null,
@@ -268,6 +271,14 @@ export const connection = {
 export const docs = {
   /** Installed uteke version + whether it meets the Documents requirement. */
   versionStatus: () => call<VersionStatus>('uteke_version_status'),
+
+  /** Rename/merge a namespace (uteke >= 0.16.1, #1183). */
+  namespaceRename: (from: string, to: string) =>
+    call<{ from: string; to: string; moved: number; target_existed: boolean }>('uteke_namespace_rename', { from, to }),
+
+  /** Delete with explicit strategy: refuse | merge(+target) | deprecate (uteke >= 0.16.1). */
+  namespaceDelete: (name: string, strategy: 'refuse' | 'merge' | 'deprecate', target?: string) =>
+    call<{ name: string; strategy: string; affected: number }>('uteke_namespace_delete', { name, strategy, target: target ?? null }),
 
   /** Run `uteke upgrade`, then re-detect. Resolves with the new status. */
   selfUpdate: () => call<VersionStatus>('uteke_self_update'),
