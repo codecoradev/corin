@@ -71,11 +71,11 @@ export async function has(feature: Feature): Promise<boolean | null> {
   return gte(cur, MIN_VERSIONS[feature]);
 }
 
-/** Features NOT supported by the connected server (empty when all good). */
-export async function gatedFeatures(): Promise<Feature[]> {
+/** Features NOT supported. null = server unknown (callers must not claim support). */
+export async function gatedFeatures(): Promise<Feature[] | null> {
   const v = await serverVersion();
-  if (!v) return [];
+  if (!v) return null;
   const cur = parseSemver(v);
-  if (!cur) return [];
+  if (!cur) return null;
   return (Object.keys(MIN_VERSIONS) as Feature[]).filter((f) => !gte(cur, MIN_VERSIONS[f]));
 }

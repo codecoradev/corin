@@ -54,5 +54,6 @@ describe('compat gate (#289)', () => {
     mockVersion.mockImplementation(async () => { throw new Error('down'); });
     vi.advanceTimersByTime(61_000);
     expect(await has('graphEdgeWrite')).toBe(null);
+    expect(await gatedFeatures()).toBe(null);
   });
 });

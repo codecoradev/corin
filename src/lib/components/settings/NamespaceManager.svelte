@@ -84,12 +84,7 @@
   }
 
   async function rename(from: string, to: string) {
-    const res = await fetch('/api/namespaces/rename', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to }),
-    });
-    if (!res.ok) throw new Error(`server returned ${res.status}`);
+    await docs.namespaceRename(from, to);
   }
 
   async function performRename() {
@@ -113,18 +108,12 @@
     if (deleteStrategy === 'merge' && !deleteMergeTarget.trim()) return;
     busy = true;
     try {
-      const res = await fetch('/api/namespaces/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: deleteTarget,
-          strategy: deleteStrategy,
-          target: deleteStrategy === 'merge' ? deleteMergeTarget.trim() : undefined,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? `server returned ${res.status}`);
-      toastStore.success(`${deleteTarget}: ${body?.affected ?? 0} memories processed`);
+      const res = await docs.namespaceDelete(
+        deleteTarget,
+        deleteStrategy,
+        deleteStrategy === 'merge' ? deleteMergeTarget.trim() : undefined,
+      );
+      toastStore.success(`${deleteTarget}: ${res.affected} memories processed`);
       deleteTarget = null;
       await load();
     } catch (e) {
@@ -163,7 +152,8 @@
               {#if nsSupported}
                 <button
                   class="ns-btn"
-                  title="Rename / merge"
+                  title={row.name === protectedNamespace ? 'Default workspace is protected' : 'Rename / merge'}
+                  disabled={row.name === protectedNamespace}
                   onclick={() => { renameTarget = row.name; renameTo = ''; }}
                 ><ArrowRightLeft size={12} strokeWidth={2} /></button>
                 <button
