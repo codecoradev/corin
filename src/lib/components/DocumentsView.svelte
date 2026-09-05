@@ -31,6 +31,7 @@
   import { expandSlide } from '../transitions';
   import { pendingDocSlug } from '../stores/nav';
   import { renderMarkdown as renderMd } from '../utils/markdown';
+  import MilkdownEditor from './editor/MilkdownEditor.svelte';
   import { formatDate, getWordCount, getReadingTime } from '../utils/format';
 
   // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
@@ -824,7 +825,12 @@
         <div class="content-area" class:split-mode={viewMode === 'split'}>
           {#if viewMode === 'edit' || viewMode === 'split'}
             <div class="editor-pane">
-              <div class="editor-container" bind:this={editorContainer} use:editorMount></div>
+              <div class="editor-container">
+                <MilkdownEditor
+                  value={editorContent}
+                  onchange={(md) => (editorContent = md)}
+                />
+              </div>
             </div>
           {/if}
           {#if viewMode === 'preview' || viewMode === 'split'}
