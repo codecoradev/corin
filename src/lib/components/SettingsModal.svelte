@@ -214,13 +214,20 @@
 <style>
   .backdrop { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); z-index: 100; }
 
+  /* Large, viewport-adaptive settings surface (owner feedback: dialog lama
+     720x480 terlalu kecil untuk konten Maintenance). Width mengikuti layout:
+     ~min(1080px, 92vw), height ~min(720px, 90dvh) dengan fallback vh. */
   .modal {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 720px; max-width: 92vw; height: 480px; max-height: 85vh;
+    width: min(1080px, 92vw);
+    height: min(720px, 90vh);
+    max-height: 90dvh;
     background: var(--bg-secondary); border: 1px solid var(--border);
     border-radius: var(--radius-lg); display: flex; flex-direction: column;
     overflow: hidden; z-index: 101; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
+
+  /* Narrow screens: full-bleed sheet + nav jadi horizontal chips */
 
   .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .modal-header h2 { font-size: 1.1rem; font-weight: 600; margin: 0; }
@@ -284,4 +291,20 @@
   .shortcut-row kbd { font-family: var(--font-mono); font-size: 0.75rem; padding: 2px 8px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); }
 
   .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+  @media (max-width: 760px) {
+    .modal {
+      width: 100vw; height: 100dvh; max-height: none;
+      top: 0; left: 0; transform: none;
+      border-radius: 0; border: none;
+    }
+    .modal-body { flex-direction: column; }
+    .settings-sidebar {
+      width: 100%; flex-direction: row; overflow-x: auto;
+      border-right: none; border-bottom: 1px solid var(--border);
+      padding: 8px; gap: 4px;
+    }
+    .sidebar-separator { display: none; }
+    .sidebar-info { display: none; }
+    .tab-btn { width: auto; white-space: nowrap; padding: 6px 10px; }
+  }
 </style>
