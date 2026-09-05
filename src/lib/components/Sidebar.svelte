@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { View } from '../ts/types';
   import { utekeServer } from '../ts/ipc';
+  import { theme } from '../stores/theme.svelte';
   import {
     LayoutDashboard,
     Brain,
@@ -13,6 +14,8 @@
     PanelLeftOpen,
     Plus,
     HeartPulse,
+    Sun,
+    Moon,
   } from 'lucide-svelte';
 
   interface Props {
@@ -25,7 +28,7 @@
 
   let { activeView, collapsed, onnavigate, onnewmemory, oncollapse }: Props = $props();
 
-  // Uteke server status — always visible in sidebar
+  // Uteke server status — always visible in the rail
   let serverOnline = $state(false);
   let serverChecking = $state(true);
 
@@ -59,37 +62,39 @@
     // { view: 'tools', label: 'Tools', icon: Wrench },
   ];
 
-  const bottomItems: { view: View; label: string; icon: IconComp }[] = [
-    { view: 'settings', label: 'Settings', icon: Settings },
-  ];
-
   type IconComp = typeof LayoutDashboard;
   const iconSize = 18;
 </script>
 
 <aside class="sidebar" class:collapsed>
-  {#if !collapsed}
-    <div class="sidebar-header">
+  <div class="sidebar-header" class:hidden={collapsed}>
+    {#if !collapsed}
       <div class="logo">
         <img src="/corin-logo.png" alt="CorIn" class="logo-img" />
         <span class="logo-text">CorIn</span>
       </div>
-    </div>
+    {/if}
+    {#if collapsed}
+      <button class="rail-btn new-memory-rail" onclick={onnewmemory} title="New Memory (Ctrl+N)" aria-label="New Memory">
+        <Plus size={18} strokeWidth={2.25} />
+      </button>
+    {:else}
+      <button class="new-memory-btn" onclick={onnewmemory}>
+        <Plus size={16} strokeWidth={2.5} />
+        <span>New Memory</span>
+        <kbd>Ctrl+N</kbd>
+      </button>
+    {/if}
+  </div>
 
-    <button class="new-memory-btn" onclick={onnewmemory}>
-      <Plus size={16} strokeWidth={2.5} />
-      <span>New Memory</span>
-      <kbd>Ctrl+N</kbd>
-    </button>
-  {/if}
-
-  <nav class="nav">
+  <nav class="nav" aria-label="Primary">
     {#each navItems as item (item.view)}
       <button
         class="nav-item"
         class:active={activeView === item.view}
         onclick={() => onnavigate(item.view)}
         title={collapsed ? item.label : ''}
+        aria-label={item.label}
       >
         <span class="nav-icon">
           <item.icon size={iconSize} strokeWidth={1.75} />
@@ -114,34 +119,54 @@
         {/if}
       </div>
     {:else}
-      <div class="server-status-collapsed" class:online={serverOnline} title={serverOnline ? 'Semantic search active' : 'uteke-serve offline'}>
+      <div
+        class="server-status-collapsed"
+        class:online={serverOnline}
+        title={serverOnline ? 'Semantic search active' : 'uteke-serve offline'}
+      >
         <span class="status-dot"></span>
       </div>
     {/if}
 
-    {#each bottomItems as item (item.view)}
-      <button
-        class="nav-item"
-        class:active={activeView === item.view}
-        onclick={() => onnavigate(item.view)}
-        title={collapsed ? item.label : ''}
-      >
-        <span class="nav-icon">
-          <item.icon size={iconSize} strokeWidth={1.75} />
-        </span>
-        {#if !collapsed}
-          <span class="nav-label">{item.label}</span>
-        {/if}
-      </button>
-    {/each}
-  </div>
+    <button
+      class="rail-btn"
+      onclick={() => theme.toggle()}
+      title={theme.current === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      aria-label="Toggle theme"
+    >
+      {#if theme.current === 'dark'}
+        <Sun size={16} strokeWidth={1.75} />
+      {:else}
+        <Moon size={16} strokeWidth={1.75} />
+      {/if}
+      {#if !collapsed}
+        <span class="rail-btn-label">{theme.current === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+      {/if}
+    </button>
 
-  <div class="sidebar-footer">
-    <button class="collapse-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'}>
+    <button
+      class="nav-item"
+      class:active={activeView === 'settings'}
+      onclick={() => onnavigate('settings')}
+      title={collapsed ? 'Settings' : ''}
+      aria-label="Settings"
+    >
+      <span class="nav-icon">
+        <Settings size={iconSize} strokeWidth={1.75} />
+      </span>
+      {#if !collapsed}
+        <span class="nav-label">Settings</span>
+      {/if}
+    </button>
+
+    <button class="rail-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'} aria-label="Toggle sidebar">
       {#if collapsed}
         <PanelLeftOpen size={16} strokeWidth={1.75} />
       {:else}
         <PanelLeftClose size={16} strokeWidth={1.75} />
+      {/if}
+      {#if !collapsed}
+        <span class="rail-btn-label">Collapse</span>
       {/if}
     </button>
   </div>
@@ -154,7 +179,7 @@
     flex-direction: column;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
-    transition: width 0.15s ease;
+    transition: width 0.15s var(--ease-out);
     overflow: hidden;
     flex-shrink: 0;
   }
@@ -162,16 +187,38 @@
   .sidebar.collapsed { width: 56px; }
 
   .sidebar-header {
-    padding: 16px 16px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 4px;
+  }
+  .sidebar-header.hidden {
+    padding: 12px 0 4px;
+    display: flex;
+    justify-content: center;
   }
 
   .logo { display: flex; align-items: center; gap: 8px; }
   .logo-img { width: 24px; height: 24px; }
   .logo-text { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
 
+  /* Compact rail CTA — mirrors mockup A (teal tile, 2+ changes on hover) */
+  .new-memory-rail {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+  }
+  .new-memory-rail:hover { opacity: 0.85; }
+  .new-memory-rail:active { transform: scale(0.98); }
+
   .new-memory-btn {
-    margin: 12px 16px;
+    margin-top: 10px;
+    width: 100%;
     padding: 8px 12px;
     display: flex;
     align-items: center;
@@ -179,11 +226,11 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s var(--ease-out);
   }
   .new-memory-btn:hover { opacity: 0.85; }
   kbd {
@@ -196,28 +243,29 @@
     opacity: 0.75;
   }
 
-  .nav { flex: 1; padding: 8px 0; display: flex; flex-direction: column; }
+  .nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
 
   .nav-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 16px;
+    padding: 8px 12px;
     background: transparent;
     border: none;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: 0.9rem;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
     text-align: left;
     width: 100%;
   }
   .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  /* Active = 2+ visual changes (ui-standards): tint bg + accent color + icon fill accent + left indicator */
   .nav-item.active {
-    background: var(--bg-hover);
+    background: var(--color-teal-bg);
     color: var(--accent);
-    border-left: 2px solid var(--accent);
-    padding-left: 14px;
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   .nav-item.active :global(svg) { stroke: var(--accent); }
   .nav-icon {
@@ -230,15 +278,19 @@
   }
   .nav-label { white-space: nowrap; flex: 1; }
 
-  .sidebar-footer { padding: 8px 16px; border-top: 1px solid var(--border); }
-
-  .nav-bottom { padding: 8px 0; border-top: 1px solid var(--border); }
+  .nav-bottom {
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
 
   .server-status {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 16px;
+    padding: 6px 8px;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
@@ -247,7 +299,7 @@
   .server-status-collapsed {
     display: flex;
     justify-content: center;
-    padding: 6px;
+    padding: 6px 0;
   }
   .status-dot {
     width: 8px;
@@ -265,24 +317,25 @@
     50% { opacity: 0.4; }
   }
 
-  .collapse-btn {
-    width: 100%;
-    padding: 6px 8px;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
+  /* Rail utility buttons (theme toggle, collapse) */
+  .rail-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--radius-sm);
-    transition: background 0.1s;
+    gap: 8px;
+    width: 100%;
+    padding: 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
   }
-  .collapse-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .rail-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .rail-btn-label { font-size: 0.8rem; white-space: nowrap; }
 
-  .sidebar.collapsed .sidebar-header,
-  .sidebar.collapsed .new-memory-btn { display: none; }
-  .sidebar.collapsed .nav-item { justify-content: center; padding: 10px; }
-  .sidebar.collapsed .nav-bottom .nav-item { justify-content: center; padding: 10px; }
-  .sidebar.collapsed .nav-item.active { padding-left: 10px; }
+  .sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; width: auto; }
+  .sidebar.collapsed .nav { padding: 10px 8px; align-items: center; }
+  .sidebar.collapsed .nav-bottom { padding: 8px 8px; align-items: center; }
 </style>

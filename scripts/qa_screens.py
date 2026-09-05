@@ -36,11 +36,16 @@ def run(base, out):
             page.on("console", lambda m: errors.append(m.text[:200]) if m.type == "error" else None)
             page.on("pageerror", lambda e: errors.append(str(e)[:200]))
             page.goto(base, wait_until="load", timeout=30000)
-            page.wait_for_timeout(4000)
+            page.wait_for_timeout(2500)
+            # Welcome screen may appear when boot health-check races server startup
+            if page.get_by_text("Initialize Workspace").count():
+                page.get_by_text("Initialize Workspace").first.click()
+                page.wait_for_timeout(2500)
+            # Rail may be collapsed (no text labels) -> navigate by aria-label
             for i, v in enumerate(VIEWS):
                 try:
                     if v != "Dashboard":
-                        page.locator("aside button", has_text=v).first.click(timeout=5000)
+                        page.locator(f"aside button[aria-label='{v}']").first.click(timeout=5000)
                         page.wait_for_timeout(2000)
                     fn = f"{out}/{theme}-{i:02d}-{v.lower()}.png"
                     page.screenshot(path=fn)
