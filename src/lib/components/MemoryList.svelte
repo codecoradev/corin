@@ -496,8 +496,6 @@
     gap: 16px;
     overflow: hidden;
     padding: 16px 24px;
-    max-width: 1150px;
-    margin: 0 auto;
   }
 
   /* ── Memories hub panel (#293) ─────────────────────────────────────── */

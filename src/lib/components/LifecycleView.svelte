@@ -316,8 +316,6 @@
     inset: 0;
     overflow-y: auto;
     padding: 1.5rem 2rem;
-    max-width: 900px;
-    margin: 0 auto;
   }
 
   /* ─── Header ────────────────────────────────────────────────────── */
