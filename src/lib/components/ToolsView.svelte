@@ -411,7 +411,7 @@
 </div>
 
 <style>
-  .tools-view { padding: 1.5rem; max-width: 900px; margin: 0 auto; }
+  .tools-view { padding: 1.5rem 2rem; }
   .header { margin-bottom: 1.5rem; }
   .header h2 { margin: 0; font-size: 1.5rem; }
   .subtitle { color: var(--text-muted); font-size: 0.875rem; margin: 0.25rem 0 0; }

@@ -175,9 +175,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 24px;
-    max-width: 960px;
-    margin: 0 auto;
+    padding: 24px 28px;
   }
 
   .scroll-area {
