@@ -4,6 +4,7 @@
   import { system } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
   import { pendingDocSlug } from './lib/stores/nav';
+	import { theme } from './lib/stores/theme.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
   import MemoryList from './lib/components/MemoryList.svelte';
@@ -179,6 +180,7 @@
   }
 
   onMount(() => {
+		theme.init();
     window.addEventListener('keydown', handleKeydown);
     window.addEventListener('hashchange', handleHashChange);
     window.addEventListener('resize', handleViewportChange);
