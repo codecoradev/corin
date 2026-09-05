@@ -4,7 +4,7 @@
    * Requires uteke >= 0.16.1 (#1183). On older servers the actions render
    * disabled with an honest upgrade tooltip (compat gate).
    */
-  import { docs } from '../../ts/ipc';
+  import { docs, uteke } from '../../ts/ipc';
   import { has, minVersion } from '../../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../../ui';
   import { ArrowRightLeft, Trash2, Merge, ShieldAlert } from 'lucide-svelte';
@@ -43,7 +43,7 @@
       nsSupported = (await has('namespaceManage')) ?? false;
       // One bulk call. On 0.16.1+ this carries active/deprecated breakdown;
       // on older servers the extra fields are absent and we fall back to totals.
-      rows = await docs.namespacesBreakdown();
+      rows = await uteke.namespacesBreakdown();
     } catch {
       rows = [];
     } finally {
