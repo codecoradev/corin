@@ -283,7 +283,7 @@
 
 {#if showSettings}
   <div transition:overlayFade>
-    <SettingsModal onclose={closeSettings} />
+    <SettingsModal onclose={closeSettings} onopenmemory={openDetail} />
   </div>
 {/if}
 

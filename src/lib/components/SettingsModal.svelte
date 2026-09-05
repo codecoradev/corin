@@ -8,18 +8,20 @@
   import { theme } from '../stores/theme.svelte';
   import { version as APP_VERSION } from '../../../package.json';
   import AgentsSection from './settings/AgentsSection.svelte';
+  import LifecycleView from './LifecycleView.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X, Settings } from 'lucide-svelte';
   import { Spinner, focusTrap } from '../ui';
 
   interface Props {
     onclose: () => void;
+    onopenmemory?: (id: string) => void;
   }
 
-  let { onclose }: Props = $props();
+  let { onclose, onopenmemory }: Props = $props();
 
-  type Tab = 'corin' | 'general' | 'data' | 'connections' | 'agents';
-  let activeTab = $state<Tab>('corin');
+  type Tab = 'general' | 'data' | 'maintenance' | 'connections' | 'agents' | 'about';
+  let activeTab = $state<Tab>('general');
 
   // Settings state
   let settings = $state<Record<string, string>>({});
@@ -76,11 +78,12 @@
   }
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'corin', label: 'CorIn', icon: '◧' },
     { id: 'general', label: 'General', icon: '⚙' },
     { id: 'data', label: 'Data', icon: '▤' },
+    { id: 'maintenance', label: 'Maintenance', icon: '♻' },
     { id: 'connections', label: 'Connections', icon: '☍' },
     { id: 'agents', label: 'AI Agents', icon: '◈' },
+    { id: 'about', label: 'About', icon: '◧' },
   ];
 </script>
 
@@ -121,7 +124,7 @@
     <div class="settings-content">
       {#if loading}
         <div class="loading"><Spinner size={18} /> Loading...</div>
-      {:else if activeTab === 'corin'}
+      {:else if activeTab === 'general'}
         <section class="content-section">
           <h3>Preferences</h3>
           <div class="setting-row">
@@ -153,7 +156,11 @@
 
         {#if !isWebMode}<UpdatesSection />{/if}
 
-      {:else if activeTab === 'general'}
+      {:else if activeTab === 'maintenance'}
+        <div class="lifecycle-embed">
+          <LifecycleView namespace={defaultNamespace || null} onmemoryclick={(id) => onopenmemory?.(id)} />
+        </div>
+      {:else if activeTab === 'about'}
         <section class="content-section">
           <h3>About</h3>
           <div class="about-info">
@@ -230,6 +237,19 @@
 
   .settings-content { flex: 1; overflow-y: auto; padding: 20px 24px; }
   .content-section { margin-bottom: 24px; }
+
+  /* Lifecycle embed (#290): LifecycleView is absolutely positioned for its
+     native route; contain it inside the settings content column instead. */
+  .lifecycle-embed {
+    position: relative;
+    min-height: 420px;
+  }
+  .lifecycle-embed :global(.lifecycle-view) {
+    position: static;
+    inset: auto;
+    padding: 0;
+    max-width: none;
+  }
   .content-section:last-child { margin-bottom: 0; }
   .content-section h3 { font-size: 0.9rem; color: var(--text-secondary); margin: 0 0 14px; font-weight: 600; }
 
