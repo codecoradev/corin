@@ -80,7 +80,36 @@
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const INITIAL_SEED = 30;
+  const INITIAL_SEED = 300; // owner: load banyak sekaligus (#298)
+  const MAX_RENDER = 800;   // physics/canvas safety ceiling
+  let visibleCount = $state(INITIAL_SEED);
+  let fullPool: { id: string; content: string; tags: string[] }[] = [];
+  let poolEdges: { source: string; target: string; weight: number }[] = [];
+  let hasMoreNodes = $state(false);
+
+  function loadMoreNodes() {
+    visibleCount = Math.min(MAX_RENDER, visibleCount + 300);
+    // Rebuild in-place from the already-fetched pool: no extra server hit.
+    nodes = [];
+    edges = [];
+    nodeId.clear();
+    edgeSet.clear();
+    knownSet.clear();
+    for (const m of fullPool.slice(0, visibleCount)) {
+      addNode(m.id, m.content, m.tags);
+    }
+    for (const e of poolEdges) {
+      if (nodeId.has(e.source) && nodeId.has(e.target)) {
+        addEdge(e.source, e.target, e.weight ?? 0.5);
+      }
+    }
+    hasMoreNodes = visibleCount < fullPool.length;
+    totalNodesShown = nodes.length;
+    totalEdgesShown = edges.length;
+    physicsActive = true;
+    calmFrames = 0;
+    needRedraw = true;
+  }
   const EXPAND_LIMIT = 5;
   // ─── Initial seed: fetch recent memories ───────────────────────────
   async function loadSeed() {
@@ -92,6 +121,9 @@
     knownSet.clear();
     edgeSet.clear();
     expandedSet.clear();
+    visibleCount = INITIAL_SEED;
+    fullPool = [];
+    poolEdges = [];
     try {
       // Check server status
       try {
@@ -133,6 +165,10 @@
             target: e.target,
             weight: e.weight ?? 0.5,
           }));
+          // Pool > visibleCount? offer Load more (#298 owner request)
+          fullPool = seedMemories;
+          poolEdges = seedEdges;
+          hasMoreNodes = seedMemories.length > visibleCount;
 
           // Enrich: the /graph endpoint only exposes entity_type (first tag).
           // Fetch full tags via /list so colors and labels are accurate.
@@ -239,10 +275,12 @@
       const seedPool = [...seedMemories].sort((a, b) =>
         (edgeDegree.get(b.id) ?? 0) - (edgeDegree.get(a.id) ?? 0),
       );
+      fullPool = seedPool; // persisted for loadMore
+      poolEdges = [...seedEdges];
 
       // Add seed nodes (only INITIAL_SEED become visible)
       const seededIds = new Set<string>();
-      for (const m of seedPool.slice(0, INITIAL_SEED)) {
+      for (const m of seedPool.slice(0, visibleCount)) {
         if (addNode(m.id, m.content, m.tags)) seededIds.add(m.id);
       }
 
@@ -630,6 +668,9 @@
       <span class="hint-text">Single-click a node to expand neighbors · double-click to open detail</span>
     {/if}
     <div class="toolbar-spacer"></div>
+    {#if hasMoreNodes}
+      <button class="graph-btn" onclick={loadMoreNodes} title="Load 300 more nodes">+ Load more</button>
+    {/if}
     <button class="graph-btn" onclick={() => fitView()} title="Fit graph to view">⤢ Fit</button>
     <button
       class="graph-btn"
