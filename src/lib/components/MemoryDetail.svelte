@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke, utekeServer, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles } from 'lucide-svelte';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link } from 'lucide-svelte';
+  import { has as compatHas } from '../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
 
@@ -68,6 +69,11 @@
   type RelatedHit = { id: string; content: string; score: number; tags: string[] };
   let related = $state<RelatedHit[]>([]);
   let relatedLoading = $state(false);
+  // Suggested connections (#233): semantically related but not yet linked.
+  let suggestions = $state<RelatedHit[]>([]);
+  let linkingId = $state<string | null>(null);
+  let linkedThisSession = $state<Set<string>>(new Set());
+  let edgeWriteAvailable = $state<boolean | null>(null);
 
   async function load() {
     loading = true;
@@ -92,11 +98,32 @@
       relatedLoading = true;
       utekeServer
         .recall(memory!.content.slice(0, 240), { limit: 6 })
-        .then((hits) => {
+        .then(async (hits) => {
           related = (hits ?? []).filter((h) => h.id !== memoryId).slice(0, 5);
+          // Suggested connections (#233): semantically close (score >= 0.3)
+          // but NOT explicitly linked in the graph — candidates for a new
+          // explicit edge. (Semantic "neighbors" are computed, not edges.)
+          const explicit = new Set<string>();
+          try {
+            const g = await graphApi.getData({ namespace: null });
+            for (const e of g.edges) {
+              if (e.source === memoryId) explicit.add(e.target);
+              if (e.target === memoryId) explicit.add(e.source);
+            }
+          } catch {
+            // graph endpoint unavailable — treat everything as unlinked
+          }
+          // Local embedding scores are low in absolute terms; keep the top
+          // few (any score) that are not explicitly linked yet.
+          suggestions = related.filter(
+            (r) => r.score > 0 && !explicit.has(r.id) && !linkedThisSession.has(r.id),
+          ).slice(0, 3);
         })
         .catch(() => (related = []))
         .finally(() => (relatedLoading = false));
+
+      // Edge write needs uteke >= 0.16.1 (#1182); hide suggestions otherwise.
+      compatHas('graphEdgeWrite').then((v) => (edgeWriteAvailable = v === true)).catch(() => (edgeWriteAvailable = false));
 
       // Timeline events (created, updated, recalled, etc.)
       // Non-fatal — older uteke-serve builds lack the endpoint.
@@ -214,6 +241,22 @@
       toastStore.error(`Feedback failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       submittingFeedback = false;
+    }
+  }
+  // Create the explicit edge for a suggestion (#233)
+  async function linkSuggestion(targetId: string) {
+    linkingId = targetId;
+    try {
+      await graphApi.addEdge(memoryId, targetId, { edgeType: 'related', weight: 0.8 });
+      linkedThisSession.add(targetId);
+      suggestions = suggestions.filter((sg) => sg.id !== targetId);
+      toastStore.success('Edge created');
+      // Refresh neighbors so the new connection shows up
+      neighbors = await uteke.neighbors(memoryId, 20).catch(() => neighbors);
+    } catch (e) {
+      toastStore.error(`Link failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      linkingId = null;
     }
   }
 </script>
@@ -433,6 +476,34 @@
           </div>
         {/if}
       </div>
+
+      {#if edgeWriteAvailable !== false && suggestions.length > 0}
+        <div class="neighbors-section suggested-section">
+          <div class="neighbors-header">
+            <h3><Link size={14} strokeWidth={2} class="conn-icon" /> Suggested connections ({suggestions.length})</h3>
+          </div>
+          <div class="neighbor-list">
+            {#each suggestions as sg (sg.id)}
+              <div class="neighbor-card suggested-card">
+                <div class="neighbor-top">
+                  <span class="rel-badge related">unlinked</span>
+                  {#if sg.score > 0}
+                    <span class="rel-score">{(sg.score * 100).toFixed(0)}% match</span>
+                  {/if}
+                </div>
+                <div class="neighbor-content">{sg.content.slice(0, 120)}</div>
+                <button
+                  class="link-btn"
+                  disabled={linkingId === sg.id}
+                  onclick={() => linkSuggestion(sg.id)}
+                >
+                  {linkingId === sg.id ? 'Linking…' : 'Create edge'}
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <div class="neighbors-section">
         <div class="neighbors-header">
@@ -702,6 +773,20 @@
   .rel-badge.related { background: var(--bg-hover); color: var(--text-muted); }
 
   .rel-score { font-size: 0.65rem; color: var(--text-muted); }
+  .suggested-card { position: relative; }
+  .link-btn {
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 0.7rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent, #5eead4);
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .link-btn:hover:not(:disabled) { background: var(--bg-hover); }
+  .link-btn:disabled { opacity: 0.5; cursor: wait; }
   .match-bar {
     height: 3px;
     border-radius: 2px;
