@@ -71,7 +71,7 @@
   let physicsActive = true;
   let calmFrames = 0;
   let needRedraw = true;
-  let labelsVisible = $state(true);
+  let labelsVisible = $state(false); // default hidden (owner: avoid clutter); toggle or hover to reveal
 
   // Respect user's reduced-motion preference. When true, physics is
   // skipped entirely — nodes render at their initial positions and
@@ -111,6 +111,8 @@
     needRedraw = true;
   }
   const EXPAND_LIMIT = 5;
+  // Matches uteke memory/node IDs (UUID v7) used as fallback labels
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   // ─── Initial seed: fetch recent memories ───────────────────────────
   async function loadSeed() {
     loading = true;
@@ -151,12 +153,18 @@
           // Build the node pool from the server graph nodes. We only
           // seed INITIAL_SEED of them, but keep ALL edges that connect
           // the seeded nodes so lines appear on first paint.
-          const serverNodeMap = new Map<string, { id: string; content: string; tags: string[] }>();
+          const serverNodeMap = new Map<
+            string,
+            { id: string; content: string; tags: string[]; memoryId?: string | null }
+          >();
           for (const n of sg.nodes) {
             serverNodeMap.set(n.id, {
               id: n.id,
+              // Memory nodes are labeled with the memory UUID server-side;
+              // resolved to readable content below via memory_id.
               content: n.label ?? n.id,
               tags: n.entity_type ? [n.entity_type] : [],
+              memoryId: (n as { memory_id?: string | null }).memory_id ?? null,
             });
           }
           seedMemories = [...serverNodeMap.values()];
@@ -176,17 +184,33 @@
           try {
             const namespaces = await uteke.namespaces();
             const tagMap = new Map<string, string[]>();
-            const nsResults = await Promise.all(
-              namespaces.slice(0, 12).map(ns =>
-                uteke.list({ namespace: ns, limit: 50 }).catch(() => [])
-              )
-            );
-            for (const list of nsResults) {
-              for (const m of list) tagMap.set(m.id, m.tags ?? []);
+            const contentMap = new Map<string, string>();
+            // Server caps /list at 100/page — paginate so every memory node in
+            // the pool gets resolved (labels come from memory content, #298).
+            const unresolved = new Set(seedMemories.map(m => m.id));
+            for (const ns of namespaces.slice(0, 12)) {
+              for (let page = 0; page < 10 && unresolved.size > 0; page++) {
+                const batch = await uteke
+                  .list({ namespace: ns, limit: 100, offset: page * 100 })
+                  .catch(() => []);
+                if (!batch.length) break;
+                for (const m of batch) {
+                  tagMap.set(m.id, m.tags ?? []);
+                  // Memory-linked graph nodes carry the memory ID as their label
+                  // (server ensure_node_for_memory labels = memory_id). Resolve a
+                  // readable preview from the memory content itself (#298).
+                  if (m.content && !contentMap.has(m.id)) contentMap.set(m.id, m.content);
+                  unresolved.delete(m.id);
+                }
+                if (batch.length < 100) break;
+              }
             }
             for (const m of seedMemories) {
               const full = tagMap.get(m.id);
               if (full && full.length) m.tags = full;
+              const mem = m as { memoryId?: string | null };
+              const c = contentMap.get(mem.memoryId ?? m.id);
+              if (c && UUID_RE.test(m.content)) m.content = c;
             }
           } catch {
             // Tags enrichment is best-effort; entity_type is enough to draw.
