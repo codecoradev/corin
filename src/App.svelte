@@ -21,6 +21,7 @@
   import { toastStore } from './lib/ui';
   import { fadeQuick, overlayFade, overlayFlyUp } from './lib/transitions';
   import DetailPanel from './lib/components/DetailPanel.svelte';
+  import CommandPalette from './lib/components/CommandPalette.svelte';
   import { isWebMode } from './lib/ts/transport';
 
   // App state
@@ -45,6 +46,7 @@
   // Overlay state (views stay mounted underneath)
   let showEditor = $state(false);
   let showSettings = $state(false);
+  let showPalette = $state(false);
   let detailId = $state<string | null>(null);
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
@@ -147,6 +149,11 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      showPalette = !showPalette;
+      return;
+    }
     if (e.ctrlKey && e.key === 'b') {
       e.preventDefault();
       toggleSidebar();
@@ -285,6 +292,17 @@
   <div transition:overlayFade>
     <SettingsModal onclose={closeSettings} onopenmemory={openDetail} />
   </div>
+{/if}
+
+{#if showPalette}
+  <CommandPalette
+    onnavigate={navigate}
+    onnewmemory={newMemory}
+    onopenmemory={openDetail}
+    onopendocument={openDocument}
+    onopensettings={() => (showSettings = true)}
+    onclose={() => (showPalette = false)}
+  />
 {/if}
 
 {#if showEditor}
