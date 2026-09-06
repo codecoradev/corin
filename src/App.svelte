@@ -22,6 +22,7 @@
   import { fadeQuick, overlayFade, overlayFlyUp } from './lib/transitions';
   import DetailPanel from './lib/components/DetailPanel.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
+  import UpgradePrompt from './lib/components/UpgradePrompt.svelte';
   import { isWebMode } from './lib/ts/transport';
 
   // App state
@@ -244,6 +245,7 @@
       refreshKey forces re-fetch after editor save.
     -->
     <main class="main-content">
+      <UpgradePrompt />
       {#key activeView}
         <div class="view-container" transition:fadeQuick>
           {#if activeView === 'dashboard'}
