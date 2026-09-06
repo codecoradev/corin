@@ -1,7 +1,7 @@
 <script lang="ts">
   import { memory as memoryApi, uteke, utekeServer, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check } from 'lucide-svelte';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles } from 'lucide-svelte';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
 
@@ -64,6 +64,10 @@
   let timeline = $state<TimelineEvent[]>([]);
   let timelineLoading = $state(false);
   let timelineExpanded = $state(false);
+  // Related memories (semantic recall, #296)
+  type RelatedHit = { id: string; content: string; score: number; tags: string[] };
+  let related = $state<RelatedHit[]>([]);
+  let relatedLoading = $state(false);
 
   async function load() {
     loading = true;
@@ -83,6 +87,17 @@
       } catch {
         docSlugs = [];
       }
+      // Related memories (#296): semantic recall seeded from this memory's
+      // content — the reading-surface hero pattern from uteke-mobile.
+      relatedLoading = true;
+      utekeServer
+        .recall(memory!.content.slice(0, 240), { limit: 6 })
+        .then((hits) => {
+          related = (hits ?? []).filter((h) => h.id !== memoryId).slice(0, 5);
+        })
+        .catch(() => (related = []))
+        .finally(() => (relatedLoading = false));
+
       // Timeline events (created, updated, recalled, etc.)
       // Non-fatal — older uteke-serve builds lack the endpoint.
       try {
@@ -375,6 +390,50 @@
         {/if}
       </div>
 
+      <div class="related-section">
+        <div class="neighbors-header">
+          <h3><Sparkles size={14} strokeWidth={2} class="conn-icon" /> Related</h3>
+        </div>
+        {#if relatedLoading}
+          <div class="no-neighbors"><p>Searching…</p></div>
+        {:else if related.length === 0}
+          <div class="no-neighbors">
+            <p>No related memories yet.</p>
+            <p class="sub">Semantic matches appear as the library grows.</p>
+          </div>
+        {:else}
+          <div class="neighbor-list">
+            {#each related as r (r.id)}
+              <div
+                class="neighbor-card"
+                role="button"
+                tabindex="0"
+                onclick={() => onneighborclick(r.id)}
+                onkeydown={(e) => e.key === 'Enter' && onneighborclick(r.id)}
+              >
+                <div class="neighbor-top">
+                  <span class="rel-badge related">semantic</span>
+                  {#if r.score > 0}
+                    <span class="rel-score">{(r.score * 100).toFixed(0)}% match</span>
+                  {/if}
+                </div>
+                {#if r.score > 0}
+                  <div class="match-bar" aria-hidden="true">
+                    <div class="match-bar-fill" style="width: {Math.min(100, Math.round(r.score * 100))}%"></div>
+                  </div>
+                {/if}
+                <div class="neighbor-content">{r.content.slice(0, 120)}</div>
+                <div class="neighbor-bottom">
+                  <div class="tags">
+                    {#each r.tags.slice(0, 4) as t}<span class="tag">{t}</span>{/each}
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
       <div class="neighbors-section">
         <div class="neighbors-header">
           <h3><Link2 size={14} strokeWidth={2} class="conn-icon" /> Connected ({neighbors.length})</h3>
@@ -643,6 +702,19 @@
   .rel-badge.related { background: var(--bg-hover); color: var(--text-muted); }
 
   .rel-score { font-size: 0.65rem; color: var(--text-muted); }
+  .match-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--bg-hover, #1a2130);
+    margin: 4px 0 2px;
+    overflow: hidden;
+  }
+  .match-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent, #5eead4);
+    opacity: 0.75;
+  }
 
   .neighbor-content { font-size: 0.85rem; color: var(--text-primary); margin-bottom: 6px; line-height: 1.4; }
 
