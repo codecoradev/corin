@@ -348,6 +348,7 @@
       >
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
+    <button class="graph-link" title="Open graph exploration" onclick={() => { location.hash = '#graph'; }}>⌗ Graph</button>
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
 
@@ -655,7 +656,18 @@
     padding: 2px 6px;
   }
 
-  .new-btn {
+    .graph-link {
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .graph-link:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.new-btn {
     padding: 8px 16px;
     background: var(--accent);
     color: var(--bg-primary);

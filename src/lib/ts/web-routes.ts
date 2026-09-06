@@ -254,8 +254,10 @@ async function serverGraph(p: Payload): Promise<unknown> {
   }
 
   const q: Record<string, string> = nsList && nsList.length === 1 ? { namespace: nsList[0] } : {};
-  const gd = await req<{ nodes: Array<{ id: string; label: string; entity_type: string | null }>; edges: Array<{ source: string; target: string; relation: string; weight: number }> }>('GET', '/graph', { query: q });
-  if (gd.edges.length === 0) {
+  const gd = await req<{ nodes: Array<{ id: string; label: string; entity_type: string | null }>; edges: Array<{ source?: string; target?: string; source_id?: string; target_id?: string; relation: string; weight?: number }> }>('GET', '/graph', { query: q });
+  // Normalize edge field names: server sends source_id/target_id (graph_edges FK domain)
+  const normEdges = gd.edges.map((e) => ({ ...e, source: e.source ?? e.source_id ?? '', target: e.target ?? e.target_id ?? '' }));
+  if (normEdges.length === 0) {
     const mems = await listNs(nsList?.[0] ?? null, null, 100, 0).catch(() => []);
     if (!mems.length) return { ...empty, hint: 'No memories yet' };
     const g = buildTagGraph(mems);
@@ -263,8 +265,8 @@ async function serverGraph(p: Payload): Promise<unknown> {
   }
   return {
     nodes: gd.nodes,
-    edges: gd.edges,
-    stats: { node_count: gd.nodes.length, edge_count: gd.edges.length, relation_types: [...new Set(gd.edges.map((e) => e.relation))] },
+    edges: normEdges,
+    stats: { node_count: gd.nodes.length, edge_count: normEdges.length, relation_types: [...new Set(normEdges.map((e) => e.relation))] },
   };
 }
 
