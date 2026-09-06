@@ -5,15 +5,11 @@
   import {
     LayoutDashboard,
     Brain,
-    Boxes,
-    Share2,
-    MessagesSquare,
     FileText,
     Settings,
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
-    HeartPulse,
     Sun,
     Moon,
   } from 'lucide-svelte';
@@ -50,16 +46,16 @@
     return () => clearInterval(interval);
   });
 
+  // IA decision (owner, 2026-09-06): 3 primary destinations only.
+  // - Namespaces -> workspace/filter chip (read-only) — #297
+  // - Graph      -> exploration mode inside Memories — #298
+  // - Rooms      -> grouping dimension in the Memories hub panel — #293
+  // - Lifecycle  -> Settings > Maintenance — #290
+  // Routes remain reachable via hash for deep links.
   const navItems: { view: View; label: string; icon: IconComp }[] = [
-    { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { view: 'dashboard', label: 'Home', icon: LayoutDashboard },
     { view: 'memories', label: 'Memories', icon: Brain },
-    { view: 'namespaces', label: 'Namespaces', icon: Boxes },
-    { view: 'graph', label: 'Graph', icon: Share2 },
-    { view: 'rooms', label: 'Rooms', icon: MessagesSquare },
     { view: 'documents', label: 'Documents', icon: FileText },
-    { view: 'lifecycle', label: 'Lifecycle', icon: HeartPulse },
-    // Tools hidden from nav — features being reworked (#244). Route still reachable.
-    // { view: 'tools', label: 'Tools', icon: Wrench },
   ];
 
   type IconComp = typeof LayoutDashboard;

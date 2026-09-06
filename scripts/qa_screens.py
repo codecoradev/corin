@@ -19,7 +19,7 @@ def find_chromium():
     cands += glob.glob(os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux/chrome"))
     return sorted(cands)[-1] if cands else None
 
-VIEWS = ["Dashboard", "Memories", "Namespaces", "Graph", "Rooms", "Documents", "Lifecycle", "Settings"]
+VIEWS = ["Dashboard", "Memories", "Documents", "Settings"]  # 3-item IA (#293); removed views reachable via deep links
 
 def run(base, out):
     from playwright.sync_api import sync_playwright
