@@ -40,12 +40,12 @@
       <span class="stat"><b>{summary.today}</b> today</span>
       <span class="stat"><b>{summary.last7}</b> last 7 days</span>
       <span class="stat"><b>{summary.total}</b> in window</span>
-      <span class="stat legend-stat">
-        less
+      <span class="stat legend-stat" title="Activity intensity per day — darker means more memories">
+        <span class="legend-word">less</span>
         {#each [0, 1, 2, 3, 4] as lvl}
           <span class="cell lvl-{lvl}"></span>
         {/each}
-        more
+        <span class="legend-word">more</span>
       </span>
     </div>
 
@@ -98,6 +98,21 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
+  }
+
+  /* The legend words used to float like stray controls because the lvl-0
+     swatch is near-invisible on the card — outline the scale so it reads
+     as one legend unit. */
+  .legend-stat .cell {
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--border);
+  }
+  .legend-word {
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
+    opacity: 0.75;
+    text-transform: lowercase;
   }
 
   .heatmap-scroll {
