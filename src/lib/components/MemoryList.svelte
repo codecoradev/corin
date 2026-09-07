@@ -752,7 +752,8 @@
 
   .toolbar {
     display: flex;
-    gap: 8px;
+    align-items: center;
+    gap: 10px;
     margin-bottom: 16px;
     flex-wrap: wrap;
   }
@@ -765,12 +766,13 @@
 
   .search-bar input {
     width: 100%;
-    padding: 8px 32px 8px 12px;
+    height: 36px;
+    padding: 0 32px 0 12px;
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     outline: none;
   }
 
@@ -792,23 +794,32 @@
   }
 
     .graph-link {
-    padding: 6px 12px;
+    height: 36px;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     cursor: pointer;
   }
   .graph-link:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-.new-btn {
-    padding: 8px 16px;
+  .new-btn {
+    height: 36px;
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
     border-radius: var(--radius-md);
     font-weight: 600;
+    font-size: 0.85rem;
     cursor: pointer;
     white-space: nowrap;
   }
@@ -943,16 +954,17 @@
   .search-mode {
     display: flex;
     gap: 0;
+    height: 36px;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     overflow: hidden;
   }
   .mode-btn {
-    padding: 6px 10px;
+    padding: 0 14px;
     background: var(--bg-tertiary);
     color: var(--text-muted);
     border: none;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     cursor: pointer;
   }
   .mode-btn.active {

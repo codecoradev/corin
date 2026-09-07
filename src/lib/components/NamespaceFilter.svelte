@@ -167,14 +167,15 @@
   .trigger {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
+    gap: 8px;
+    height: 36px;
+    padding: 0 12px;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     white-space: nowrap;
     transition: border-color 0.1s;
   }
