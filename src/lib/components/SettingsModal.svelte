@@ -21,7 +21,7 @@
 
   let { onclose, onopenmemory }: Props = $props();
 
-  type Tab = 'general' | 'data' | 'maintenance' | 'connections' | 'agents' | 'about';
+  type Tab = 'general' | 'data' | 'maintenance' | 'connections' | 'agents' | 'shortcuts' | 'about';
   let activeTab = $state<Tab>('general');
 
   // Settings state
@@ -84,6 +84,7 @@
     { id: 'maintenance', label: 'Maintenance', icon: '♻' },
     { id: 'connections', label: 'Connections', icon: '☍' },
     { id: 'agents', label: 'AI Agents', icon: '◈' },
+    { id: 'shortcuts', label: 'Shortcuts', icon: '⌘' },
     { id: 'about', label: 'About', icon: '◧' },
   ];
 </script>
@@ -176,9 +177,11 @@
           </div>
         </section>
 
+      {:else if activeTab === 'shortcuts'}
         <section class="content-section">
           <h3>Keyboard Shortcuts</h3>
           <div class="shortcuts">
+            <div class="shortcut-row"><span>Toggle Command Palette</span><kbd>Ctrl+K</kbd></div>
             <div class="shortcut-row"><span>Toggle Sidebar</span><kbd>Ctrl+B</kbd></div>
             <div class="shortcut-row"><span>New Memory</span><kbd>Ctrl+N</kbd></div>
             <div class="shortcut-row"><span>Close Settings</span><kbd>Esc</kbd></div>
