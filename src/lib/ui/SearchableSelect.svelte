@@ -5,7 +5,8 @@
    * click-outside or Esc to close. The '' value renders `emptyLabel`.
    */
   interface Props {
-    options?: string[];
+    /** Plain strings (value = label) or explicit {value, label} pairs. */
+    options?: Array<string | { value: string; label: string }>;
     value?: string;
     /** Label shown for the '' value. */
     emptyLabel?: string;
@@ -28,7 +29,10 @@
   }
 
   let candidates = $derived.by<Opt[]>(() => {
-    const all: Opt[] = [{ value: '', label: emptyLabel }, ...options.map((o) => ({ value: o, label: o }))];
+    const all: Opt[] = [
+      { value: '', label: emptyLabel },
+      ...options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o)),
+    ];
     const q = query.trim().toLowerCase();
     return q ? all.filter((o) => o.label.toLowerCase().includes(q)) : all;
   });

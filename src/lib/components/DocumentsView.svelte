@@ -1,5 +1,6 @@
 <script lang="ts">
   import { docs } from '../ts/ipc';
+  import SearchableSelect from '../ui/SearchableSelect.svelte';
   import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
@@ -129,6 +130,24 @@
   let searching = $state(false);
   let saving = $state(false);
   let showNewDoc = $state(false);
+  // Parent for the doc being created — '' = root level. Every doc can act
+  // as a folder, so the picker lists the whole tree (indented by depth).
+  let newDocParent = $state('');
+
+  let parentOptions = $derived.by(() => {
+    const opts: { value: string; label: string }[] = [];
+    const walk = (entries: DocEntry[], depth: number) => {
+      for (const d of entries) {
+        opts.push({
+          value: d.id,
+          label: (depth ? '\u00A0'.repeat(depth * 3) + '↳ ' : '') + (d.title || d.slug),
+        });
+        walk(childrenCache.get(d.id) ?? [], depth + 1);
+      }
+    };
+    walk(rootDocs, 0);
+    return opts;
+  });
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<DocEntry | null>(null);
   let error = $state('');
@@ -370,6 +389,7 @@
     editorSlug = '';
     editorContent = '# New Document\n\n';
     editorTags = '';
+    newDocParent = '';
     showSearchResults = false;
     viewMode = 'edit';
   }
@@ -412,8 +432,9 @@
           }
         }
       } else {
-        // New document → create via /doc/create
-        const parent = selectedDoc?.id ?? undefined;
+        // New document → create via /doc/create under the chosen parent
+        // ('' = root level).
+        const parent = newDocParent || undefined;
         await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
           tags,
           parent,
@@ -422,6 +443,10 @@
         const full = await docs.get({ slug: editorSlug });
         selectedDoc = full;
         showNewDoc = false;
+        // Reveal the new doc inside its parent branch.
+        if (newDocParent) {
+          expandedIds = new Set([...expandedIds, newDocParent]);
+        }
       }
       await loadRootDocs();
       showSuccess(selectedDoc && !showNewDoc ? 'Document updated' : 'Document saved');
@@ -802,6 +827,20 @@
             <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} autofocus />
             <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
             <input type="text" class="prop-input tags-input" placeholder="tag1, tag2" bind:value={editorTags} />
+          </div>
+        {/if}
+
+        {#if showNewDoc}
+          <div class="parent-row">
+            <span class="parent-label">Parent</span>
+            <div class="parent-select">
+              <SearchableSelect
+                options={parentOptions}
+                bind:value={newDocParent}
+                emptyLabel="No parent — root level"
+                placeholder="Search documents…"
+              />
+            </div>
           </div>
         {/if}
 
@@ -1293,6 +1332,23 @@
     flex-shrink: 0;
     animation: slideDown 0.12s ease;
   }
+  .parent-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    animation: slideDown 0.12s ease;
+  }
+  .parent-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .parent-select { flex: 1; max-width: 420px; }
   .prop-input {
     padding: 4px 8px;
     background: var(--bg-tertiary);
