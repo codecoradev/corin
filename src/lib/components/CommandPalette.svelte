@@ -225,8 +225,10 @@
   .palette-overlay {
     position: fixed;
     inset: 0;
-    /* Above the detail panel (103) so Ctrl+K wins regardless of mount order. */
-    z-index: 120;
+    /* Global surface: above every modal (editor 200, detail 103) so Cmd+K
+       always takes over the screen cleanly instead of half-mixing with an
+       open modal; below ui/Modal dialogs (1000) and toasts (2000). */
+    z-index: 220;
     background: color-mix(in srgb, var(--bg-base, #0b0e14) 55%, transparent);
     backdrop-filter: blur(2px);
     display: flex;
