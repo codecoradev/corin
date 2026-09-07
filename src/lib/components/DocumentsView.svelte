@@ -1092,7 +1092,7 @@
   }
   .search-clear:hover { color: var(--text-primary); }
 
-  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 10px 4px 0; }
 
   .tree-node { user-select: none; }
   .tree-children {

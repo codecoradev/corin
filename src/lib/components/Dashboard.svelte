@@ -20,6 +20,9 @@
 
   // ─── Uteke stats + recent memories ─────────────────────────────────
   let stats = $state<StatsResponse | null>(null);
+  // Heatmap collapsed by default — the overview card stays compact; the
+  // boxes are one "Show activity heatmap" click away.
+  let showHeatmap = $state(false);
   let recent = $state<MemoryEntry[]>([]);
   let activity = $state<MemoryEntry[]>([]);
   let searchQuery = $state('');
@@ -123,7 +126,15 @@
             <div class="stat-label">DB Size</div>
           </div>
         </div>
-        <ActivityTimeline memories={activity} />
+        <button class="heatmap-toggle" onclick={() => (showHeatmap = !showHeatmap)}>
+          <span class="heatmap-chev">{showHeatmap ? '▾' : '▸'}</span>
+          {showHeatmap ? 'Hide activity heatmap' : 'Show activity heatmap'}
+        </button>
+        {#if showHeatmap}
+          <div class="heatmap-wrap">
+            <ActivityTimeline memories={activity} />
+          </div>
+        {/if}
       </div>
     </section>
 
@@ -182,6 +193,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    padding-right: 16px;
   }
 
   .section-title {
@@ -239,6 +251,21 @@
     border-radius: var(--radius-lg);
     padding: 16px 18px;
   }
+
+  .heatmap-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .heatmap-toggle:hover { color: var(--accent); }
+  .heatmap-chev { font-size: 0.6rem; }
+  .heatmap-wrap { margin-top: 10px; }
 
   .overview-card .stats-grid {
     margin-bottom: 14px;

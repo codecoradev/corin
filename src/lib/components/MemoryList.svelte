@@ -747,6 +747,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    padding-right: 12px;
   }
 
   .toolbar {

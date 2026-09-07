@@ -289,7 +289,7 @@
   .sidebar-info .powered { font-size: 0.7rem; color: var(--text-muted); margin: 2px 0 0; opacity: 0.7; text-decoration: none; cursor: pointer; display: inline-block; }
   .sidebar-info .powered:hover { opacity: 1; color: var(--accent); }
 
-  .settings-content { flex: 1; overflow-y: auto; padding: 20px 24px; }
+  .settings-content { flex: 1; overflow-y: auto; padding: 20px 36px 20px 24px; }
   .content-section { margin-bottom: 24px; }
 
   /* Lifecycle embed (#290): LifecycleView is absolutely positioned for its
