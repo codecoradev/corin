@@ -1306,8 +1306,8 @@ pub async fn list_namespaces(
 #[tauri::command]
 pub async fn list_tags(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    _namespace: Option<String>,
-) -> Result<HashMap<String, usize>, CommandError> {
+    namespace: Option<String>,
+) -> Result<Vec<crate::uteke_client::TagInfo>, CommandError> {
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -1316,16 +1316,10 @@ pub async fn list_tags(
         return Err(CommandError::NotInitialized);
     };
 
-    // No direct HTTP endpoint for tags_with_counts.
-    // Approximate with namespaces_with_counts (namespace names as "tags").
-    let ns_counts = client.namespaces_with_counts().await.unwrap_or_default();
-
-    let tag_counts: HashMap<String, usize> = ns_counts
-        .into_iter()
-        .map(|nc| (nc.name, nc.count))
-        .collect();
-
-    Ok(tag_counts)
+    client
+        .list_tags(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
 #[tauri::command]

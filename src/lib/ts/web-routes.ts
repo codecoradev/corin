@@ -555,11 +555,11 @@ export const webHandlers: Record<string, Handler> = {
     return rows;
   },
   uteke_namespaces_with_counts: namespacesWithCounts,
-  // commands.rs:list_tags mengaproksimasi dengan namespaces_with_counts
-  list_tags: async () => {
-    const counts = await namespacesWithCounts();
-    return Object.fromEntries(counts.map((nc) => [nc.name, nc.count]));
-  },
+  // GET /tags — real global usage counts (parity with desktop list_tags).
+  list_tags: async (p) =>
+    req<Array<{ name: string; count: number }>>('GET', '/tags', {
+      query: p.namespace ? { namespace: String(p.namespace) } : undefined,
+    }),
 
   // Import/export data desktop (JSON/markdown/CSV kustom — bukan /import JSONL)
   export_data: async (p) => exportData(String(p.format), (p.namespace as string | null) ?? null),

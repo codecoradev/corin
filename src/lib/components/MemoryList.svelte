@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { memory as memoryApi, uteke, utekeServer } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer, system } from '../ts/ipc';
   import { createPager } from '../stores/pagination.svelte';
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
@@ -56,10 +56,14 @@
     return [...counts.entries()].sort((x, y) => y[1] - x[1]);
   });
 
+  /** Page-derived fallback — only shown when the server tag list is unreachable. */
   let tagCounts = $derived.by(() => {
     const counts = new Map<string, number>();
     for (const m of pager.items) for (const t of m.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
-    return [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, 12);
+    return [...counts.entries()]
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, 12)
+      .map(([name, count]) => ({ name, count }));
   });
 
   let rooms = $state<{ id: string; title: string }[]>([]);
@@ -117,13 +121,50 @@
   async function loadList() {
     await checkReady();
     // `null` (all) → backend fans out every namespace. `[]`/array → explicit.
+    // `tag` scopes server-side (uteke_list) so the counts in the Tags panel
+    // and the filtered list below agree.
     pager = createPager({
       namespaces: selectedNamespaces,
       namespace,
+      tag: selectedTag,
       pageSize: 20,
       useUteke: utekeReady,
     });
     await pager.loadInitial();
+  }
+
+  // ── Tags panel: real server counts (GET /tags via list_tags) ──────────
+  // The full tag list arrives in one call (uteke ≥ 0.17 also pages it via
+  // continuation; 0.15 returns everything), so we window the RENDER instead:
+  // TAG_WINDOW rows at a time, growing via "Load more". The header count is
+  // always the true total.
+  interface TagCount { name: string; count: number }
+  const TAG_WINDOW = 30;
+  let serverTags = $state<TagCount[] | null>(null);
+  let tagsLoading = $state(false);
+  let tagWindow = $state(TAG_WINDOW);
+
+  let visibleTags = $derived(serverTags ? serverTags.slice(0, tagWindow) : tagCounts);
+  let tagsTotal = $derived(serverTags ? serverTags.length : tagCounts.length);
+  let hiddenTags = $derived(serverTags ? Math.max(0, serverTags.length - tagWindow) : 0);
+
+  async function loadTags() {
+    tagsLoading = true;
+    tagWindow = TAG_WINDOW;
+    try {
+      if (!(await uteke.available().catch(() => false))) {
+        serverTags = null;
+        return;
+      }
+      // Same single-namespace scope as search (searchNs) so the panel
+      // follows the namespace filter.
+      const rows = await system.listTags(searchNs ?? undefined);
+      serverTags = rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    } catch {
+      serverTags = null; // offline / old backend → page-derived fallback
+    } finally {
+      tagsLoading = false;
+    }
   }
 
   async function runSearch() {
@@ -225,14 +266,21 @@
   }
   onDestroy(() => { if (debounceTimer) clearTimeout(debounceTimer); });
 
-  // Reload list when namespace changes; clear any active search.
+  // Reload list when namespace or tag scope changes; clear any active search.
   $effect(() => {
     namespace;
     selectedNamespaces;
+    selectedTag;
     searchResults = null;
     unifiedResults = null;
     searchQuery = '';
     loadList();
+  });
+
+  // Tag counts follow the same single-namespace scope as search.
+  $effect(() => {
+    searchNs;
+    loadTags();
   });
 
   const list = $derived<(MemoryEntry & { score?: number })[]>(
@@ -280,20 +328,26 @@
         <div class="hub-empty">No rooms yet.</div>
       {/each}
     {:else}
-      <div class="hub-group-label">Tags <span class="hub-n">{tagCounts.length}</span></div>
-      {#each tagCounts as [tag, count] (tag)}
+      <div class="hub-group-label">Tags <span class="hub-n">{tagsTotal}</span></div>
+      {#each visibleTags as t (t.name)}
         <button
           class="hub-item"
-          class:on={selectedTag === tag}
-          onclick={() => (selectedTag = selectedTag === tag ? null : tag)}
+          class:on={selectedTag === t.name}
+          onclick={() => (selectedTag = selectedTag === t.name ? null : t.name)}
+          title="Filter memories by #{t.name}"
         >
           <span class="hub-ic">#</span>
-          <span class="hub-name">{tag}</span>
-          <span class="hub-cnt">{count}</span>
+          <span class="hub-name">{t.name}</span>
+          <span class="hub-cnt">{t.count}</span>
         </button>
       {:else}
-        <div class="hub-empty">No tags on this page.</div>
+        <div class="hub-empty">{tagsLoading ? 'Loading tags…' : 'No tags yet.'}</div>
       {/each}
+      {#if hiddenTags > 0}
+        <button class="hub-more" onclick={() => (tagWindow += TAG_WINDOW)}>
+          Load more · {hiddenTags} more
+        </button>
+      {/if}
     {/if}
   </aside>
 
@@ -576,6 +630,20 @@
   .hub-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hub-cnt { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); }
   .hub-empty { color: var(--text-muted); font-size: 0.75rem; padding: 6px 8px; }
+  .hub-more {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 6px 8px;
+    padding: 5px 0;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    cursor: pointer;
+    text-align: center;
+  }
+  .hub-more:hover { color: var(--accent); border-color: var(--accent); }
 
   .hub-main {
     flex: 1;
