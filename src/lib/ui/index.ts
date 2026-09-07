@@ -7,6 +7,7 @@ export { default as Badge } from './Badge.svelte';
 export { default as Input } from './Input.svelte';
 export { default as Spinner } from './Spinner.svelte';
 export { default as EmptyState } from './EmptyState.svelte';
+export { default as SearchableSelect } from './SearchableSelect.svelte';
 export { default as Modal } from './Modal.svelte';
 export { default as ConfirmDialog } from './ConfirmDialog.svelte';
 export { default as Notification } from './Notification.svelte';
