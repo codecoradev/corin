@@ -144,9 +144,33 @@
   let tagsLoading = $state(false);
   let tagWindow = $state(TAG_WINDOW);
 
-  let visibleTags = $derived(serverTags ? serverTags.slice(0, tagWindow) : tagCounts);
+  // Hub panel filter — one query filters whichever group is active. For
+  // Tags it spans the FULL server list, not the rendered window, so a tag
+  // is findable without clicking Load first.
+  let hubQuery = $state('');
+
+  function hubMatches(name: string): boolean {
+    const q = hubQuery.trim().toLowerCase();
+    return !q || name.toLowerCase().includes(q);
+  }
+
+  let visibleAgents = $derived(authorCounts.filter(([n]) => hubMatches(n)));
+  let visibleRooms = $derived(rooms.filter((r) => hubMatches(r.title || r.id)));
+
+  let visibleTags = $derived.by(() => {
+    if (serverTags) {
+      return hubQuery.trim()
+        ? serverTags.filter((t) => hubMatches(t.name))
+        : serverTags.slice(0, tagWindow);
+    }
+    return tagCounts.filter((t) => hubMatches(t.name));
+  });
   let tagsTotal = $derived(serverTags ? serverTags.length : tagCounts.length);
-  let hiddenTags = $derived(serverTags ? Math.max(0, serverTags.length - tagWindow) : 0);
+  // While filtering, the header reflects the match count instead of the total.
+  let tagsHeader = $derived(hubQuery.trim() ? visibleTags.length : tagsTotal);
+  let hiddenTags = $derived(
+    serverTags && !hubQuery.trim() ? Math.max(0, serverTags.length - tagWindow) : 0,
+  );
 
   async function loadTags() {
     tagsLoading = true;
@@ -297,9 +321,23 @@
       <button class:on={hubGroup === 'tags'} onclick={() => (hubGroup = 'tags')}>Tags</button>
     </div>
 
+    <div class="hub-search">
+      <input
+        type="text"
+        placeholder="Filter {hubGroup}…"
+        bind:value={hubQuery}
+        onkeydown={(e) => e.key === 'Escape' && (hubQuery = '')}
+      />
+      {#if hubQuery}
+        <button class="hub-clear" onclick={() => (hubQuery = '')} aria-label="Clear filter">
+          <X size={11} strokeWidth={2.5} />
+        </button>
+      {/if}
+    </div>
+
     {#if hubGroup === 'agents'}
-      <div class="hub-group-label">Agents <span class="hub-n">{authorCounts.length}</span></div>
-      {#each authorCounts as [name, count] (name)}
+      <div class="hub-group-label">Agents <span class="hub-n">{visibleAgents.length}</span></div>
+      {#each visibleAgents as [name, count] (name)}
         <button
           class="hub-item"
           class:on={selectedAuthor === name}
@@ -310,11 +348,11 @@
           <span class="hub-cnt">{count}</span>
         </button>
       {:else}
-        <div class="hub-empty">No authored memories on this page.</div>
+        <div class="hub-empty">{hubQuery.trim() ? 'No matches.' : 'No authored memories on this page.'}</div>
       {/each}
     {:else if hubGroup === 'rooms'}
-      <div class="hub-group-label">Rooms <span class="hub-n">{rooms.length}</span></div>
-      {#each rooms as room (room.id)}
+      <div class="hub-group-label">Rooms <span class="hub-n">{visibleRooms.length}</span></div>
+      {#each visibleRooms as room (room.id)}
         <button
           class="hub-item"
           class:on={selectedRoom === room.id}
@@ -325,10 +363,10 @@
           <span class="hub-name">{room.title || room.id}</span>
         </button>
       {:else}
-        <div class="hub-empty">No rooms yet.</div>
+        <div class="hub-empty">{hubQuery.trim() ? 'No matches.' : 'No rooms yet.'}</div>
       {/each}
     {:else}
-      <div class="hub-group-label">Tags <span class="hub-n">{tagsTotal}</span></div>
+      <div class="hub-group-label">Tags <span class="hub-n">{tagsHeader}</span></div>
       {#each visibleTags as t (t.name)}
         <button
           class="hub-item"
@@ -341,7 +379,7 @@
           <span class="hub-cnt">{t.count}</span>
         </button>
       {:else}
-        <div class="hub-empty">{tagsLoading ? 'Loading tags…' : 'No tags yet.'}</div>
+        <div class="hub-empty">{tagsLoading ? 'Loading tags…' : 'No matches.'}</div>
       {/each}
       {#if hiddenTags > 0}
         <button class="hub-more" onclick={() => (tagWindow += TAG_WINDOW)}>
@@ -584,6 +622,30 @@
     color: var(--accent);
     font-weight: 600;
   }
+  .hub-search { position: relative; margin-bottom: 8px; }
+  .hub-search input {
+    width: 100%;
+    padding: 5px 24px 5px 10px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.78rem;
+    outline: none;
+  }
+  .hub-search input:focus { border-color: var(--accent); }
+  .hub-clear {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+  }
+  .hub-clear:hover { color: var(--text-primary); }
   .hub-group-label {
     display: flex;
     justify-content: space-between;
