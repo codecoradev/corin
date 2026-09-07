@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import type { GraphData } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
   import { pickColor, buildTagEdges, NODE_COLORS as COLORS } from './graph/graph-utils.ts';
@@ -739,7 +740,7 @@
     {:else if totalNodesShown === 0}
       <div class="overlay">
         <p>No memories to visualize yet.</p>
-        <p class="overlay-hint">Save a memory (Ctrl+N) — edges appear automatically as related memories accumulate.</p>
+        <p class="overlay-hint">Save a memory ({kbdCombo('N')}) — edges appear automatically as related memories accumulate.</p>
       </div>
     {/if}
   </div>

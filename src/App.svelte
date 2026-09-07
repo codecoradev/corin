@@ -4,6 +4,7 @@
   import { system } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
   import { pendingDocSlug } from './lib/stores/nav';
+  import { hasMod } from './lib/utils/platform';
 	import { theme } from './lib/stores/theme.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
@@ -157,16 +158,16 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    if (hasMod(e) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       showPalette = !showPalette;
       return;
     }
-    if (e.ctrlKey && e.key === 'b') {
+    if (hasMod(e) && e.key === 'b') {
       e.preventDefault();
       toggleSidebar();
     }
-    if (e.ctrlKey && e.key === 'n' && !showEditor) {
+    if (hasMod(e) && e.key === 'n' && !showEditor) {
       e.preventDefault();
       newMemory();
     }

@@ -3,6 +3,7 @@
   import { utekeServer } from '../ts/ipc';
   import type { UnifiedSearchResult, View } from '../ts/types';
   import { fadeQuick, overlayFade } from '../transitions';
+  import { kbdCombo } from '../utils/platform';
 
   interface PaletteItem {
     key: string;
@@ -74,7 +75,7 @@
   ];
 
   const actionItems: PaletteItem[] = [
-    { key: 'a-new', icon: '＋', label: 'New memory', hint: 'Ctrl+N', kind: 'action', run: () => onnewmemory() },
+    { key: 'a-new', icon: '＋', label: 'New memory', hint: kbdCombo('N'), kind: 'action', run: () => onnewmemory() },
     { key: 'a-set', icon: '⚙', label: 'Open Settings', hint: 'Preferences', kind: 'action', run: () => onopensettings() },
   ];
 

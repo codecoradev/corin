@@ -2,6 +2,7 @@
   import type { View } from '../ts/types';
   import { utekeServer } from '../ts/ipc';
   import { theme } from '../stores/theme.svelte';
+  import { kbdCombo } from '../utils/platform';
   import {
     LayoutDashboard,
     Brain,
@@ -71,14 +72,14 @@
       </div>
     {/if}
     {#if collapsed}
-      <button class="rail-btn new-memory-rail" onclick={onnewmemory} title="New Memory (Ctrl+N)" aria-label="New Memory">
+      <button class="rail-btn new-memory-rail" onclick={onnewmemory} title={`New Memory (${kbdCombo('N')})`} aria-label="New Memory">
         <Plus size={18} strokeWidth={2.25} />
       </button>
     {:else}
       <button class="new-memory-btn" onclick={onnewmemory}>
         <Plus size={16} strokeWidth={2.5} />
         <span>New Memory</span>
-        <kbd>Ctrl+N</kbd>
+        <kbd>{kbdCombo('N')}</kbd>
       </button>
     {/if}
   </div>
@@ -155,7 +156,7 @@
       {/if}
     </button>
 
-    <button class="rail-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'} aria-label="Toggle sidebar">
+    <button class="rail-btn" onclick={oncollapse} title={collapsed ? `Expand (${kbdCombo('B')})` : `Collapse (${kbdCombo('B')})`} aria-label="Toggle sidebar">
       {#if collapsed}
         <span class="nav-icon"><PanelLeftOpen size={iconSize} strokeWidth={1.75} /></span>
       {:else}

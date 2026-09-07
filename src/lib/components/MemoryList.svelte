@@ -8,6 +8,7 @@
   import { FileText, Brain, X, Pin } from 'lucide-svelte';
   import { Spinner, EmptyState, Button } from '../ui';
   import { relativeTime } from '../utils/format';
+  import { kbdCombo } from '../utils/platform';
 
   interface Props {
     namespace: string | null;
@@ -545,7 +546,7 @@
       title={searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
       subtitle={searchQuery.trim()
         ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
-        : 'Save your first memory with Ctrl+N, or use the button below.'}
+        : `Save your first memory with ${kbdCombo('N')}, or use the button below.`}
     >
       <Button variant="primary" size="sm" onclick={onnewmemory}>
         {searchQuery.trim() ? 'New Memory' : 'Create your first memory'}

@@ -3,6 +3,7 @@
   import { getVersion } from '@tauri-apps/api/app';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { connection, system } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import type { ConnectionInfo } from '../ts/types';
   import { isWebMode } from '../ts/transport';
   import ImportExport from './ImportExport.svelte';
@@ -200,9 +201,9 @@
         <section class="content-section">
           <h3>Keyboard Shortcuts</h3>
           <div class="shortcuts">
-            <div class="shortcut-row"><span>Toggle Command Palette</span><kbd>Ctrl+K</kbd></div>
-            <div class="shortcut-row"><span>Toggle Sidebar</span><kbd>Ctrl+B</kbd></div>
-            <div class="shortcut-row"><span>New Memory</span><kbd>Ctrl+N</kbd></div>
+            <div class="shortcut-row"><span>Toggle Command Palette</span><kbd>{kbdCombo('K')}</kbd></div>
+            <div class="shortcut-row"><span>Toggle Sidebar</span><kbd>{kbdCombo('B')}</kbd></div>
+            <div class="shortcut-row"><span>New Memory</span><kbd>{kbdCombo('N')}</kbd></div>
             <div class="shortcut-row"><span>Close Settings</span><kbd>Esc</kbd></div>
           </div>
         </section>

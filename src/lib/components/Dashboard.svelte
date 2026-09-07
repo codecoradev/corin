@@ -8,6 +8,7 @@
     MemoryEntry,
   } from '../ts/types';
   import { Spinner } from '../ui';
+  import { kbdCombo } from '../utils/platform';
 
   interface Props {
     namespace: string | null;
@@ -146,7 +147,7 @@
           <p>No memories yet.</p>
           <button class="empty-cta" onclick={onnewmemory}>Create your first memory</button>
           {#if !isWebMode}
-            <p class="empty-hint">or press <kbd>Ctrl+N</kbd></p>
+            <p class="empty-hint">or press <kbd>{kbdCombo('N')}</kbd></p>
           {/if}
         </div>
       {:else}

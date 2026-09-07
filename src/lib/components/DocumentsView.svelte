@@ -1,5 +1,6 @@
 <script lang="ts">
   import { docs } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import SearchableSelect from '../ui/SearchableSelect.svelte';
   import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
@@ -889,7 +890,7 @@
             <span class="meta-item meta-dim">{getWordCount(editorContent)} words{getReadingTime(getWordCount(editorContent)) ? ` · ${getReadingTime(getWordCount(editorContent))}` : ''}</span>
           </div>
           <div class="meta-actions">
-            <button class="icon-btn" onclick={saveDoc} disabled={saving} title="Save (Ctrl+S)">
+            <button class="icon-btn" onclick={saveDoc} disabled={saving} title={`Save (${kbdCombo('S')})`}>
               {#if saving}
                 <span class="spinner small"></span>
               {:else}
