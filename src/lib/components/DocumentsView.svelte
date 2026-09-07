@@ -130,6 +130,9 @@
   let searching = $state(false);
   let saving = $state(false);
   let showNewDoc = $state(false);
+  // Content-pane fetch in flight (doc switch) — dims only the editor panel;
+  // the tree never unmounts on selection.
+  let docLoading = $state(false);
   // Parent for the doc being created — '' = root level. Every doc can act
   // as a folder, so the picker lists the whole tree (indented by depth).
   let newDocParent = $state('');
@@ -149,6 +152,8 @@
     return opts;
   });
   let showDeleteConfirm = $state(false);
+  /** False after the first tree load — reloads then preserve expansion state. */
+  let treeInitialized = false;
   let deleteTarget = $state<DocEntry | null>(null);
   let error = $state('');
   let errorTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -243,8 +248,15 @@
       childrenCache = byParent;
       rootDocs = roots;
       docById = byId;
-      // Expand every folder by default so the full tree is visible.
-      expandedIds = new Set(byParent.keys());
+      if (!treeInitialized) {
+        // First paint: open the whole tree so it's discoverable.
+        expandedIds = new Set(byParent.keys());
+        treeInitialized = true;
+      } else {
+        // Reloads (save/create/delete) keep the user's manual collapses
+        // instead of re-opening every branch.
+        expandedIds = new Set([...expandedIds].filter((id) => byParent.has(id)));
+      }
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -279,8 +291,14 @@
         if (entry.id === docId) return true;
         if (hasKids(entry)) {
           const kids = childrenCache.get(entry.id) ?? [];
-          next.add(entry.id);
-          if (searchLevel(kids)) return true;
+          // Post-order: mark an id as expanded only AFTER its subtree is
+          // confirmed to contain the target. Adding before the recursion
+          // expanded every branch the search merely passed through,
+          // blowing away the user's manual collapses.
+          if (searchLevel(kids)) {
+            next.add(entry.id);
+            return true;
+          }
         }
       }
       return false;
@@ -309,9 +327,14 @@
   }
 
   // ─── Select doc ──────────────────────────────────────────────────
+  let docTreeEl = $state<HTMLElement | null>(null);
+
   async function selectDoc(doc: DocEntry) {
     selectedDoc = doc;
-    loading = true;
+    // Content-pane-only refresh: the tree stays mounted — the old global
+    // `loading` flag unmounted it into a spinner on every click, which
+    // lost scroll position and blinked the whole view.
+    docLoading = true;
     try {
       const full = await docs.get({ id: doc.id });
       selectedDoc = full;
@@ -329,18 +352,22 @@
       }
       // Auto-expand tree path to this document
       await expandPathToDoc(full.id);
-      // Reset scroll positions to top for the new document
+      // Reset scroll positions to top for the new document, then bring the
+      // selected tree row into view (it may sit below the fold).
       requestAnimationFrame(() => {
         if (previewContainer) previewContainer.scrollTop = 0;
         if (editorContainer) {
           const scroller = editorContainer.querySelector('.cm-scroller');
           if (scroller) scroller.scrollTop = 0;
         }
+        docTreeEl
+          ?.querySelector(`[data-doc-id="${CSS.escape(full.id)}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
       });
     } catch (e: any) {
       showError(e.toString());
     } finally {
-      loading = false;
+      docLoading = false;
     }
   }
 
@@ -762,7 +789,7 @@
           <button class="action-btn new-btn small" onclick={newDoc}><Plus size={12} strokeWidth={2.5} /> Create first doc</button>
         </div>
       {:else}
-        <div class="doc-tree">
+        <div class="doc-tree" bind:this={docTreeEl}>
           {#each rootDocs as doc (doc.id)}
             {@render treeNode(doc)}
           {/each}
@@ -771,7 +798,7 @@
     </div>
 
     <!-- ─── Right Panel: Editor/Preview ─────────────────────────── -->
-    <div class="editor-panel">
+    <div class="editor-panel" class:busy={docLoading}>
       {#if selectedDoc || showNewDoc}
         <!-- Top bar: breadcrumb + mode toggle -->
         <div class="top-bar">
@@ -936,7 +963,7 @@
   {@const isFolder = kids.length > 0}
   {@const expanded = expandedIds.has(doc.id)}
   <div class="tree-node">
-    <div class="tree-row" class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
+    <div class="tree-row" data-doc-id={doc.id} class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
       <button
         class="tree-toggle"
         class:has-children={isFolder}
@@ -1266,6 +1293,13 @@
     flex-direction: column;
     overflow: hidden;
     min-width: 0;
+    transition: opacity 0.12s var(--ease-out);
+  }
+  /* Doc-switch fetch in flight: dim the pane and block interaction so the
+     stale content can't be edited mid-swap. The tree stays untouched. */
+  .editor-panel.busy {
+    opacity: 0.55;
+    pointer-events: none;
   }
 
   /* ── Top bar: breadcrumb + mode toggle ── */
