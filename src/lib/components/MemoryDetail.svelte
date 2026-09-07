@@ -1,7 +1,7 @@
 <script lang="ts">
   import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link } from 'lucide-svelte';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link, Pin } from 'lucide-svelte';
   import { has as compatHas, minVersion } from '../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
@@ -81,6 +81,20 @@
       toastStore.error(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       nsMoving = false;
+    }
+  }
+
+  // Pin/unpin — PUT /memory `pinned` (supported since uteke 0.15; no gate).
+  async function togglePin() {
+    const m = memory;
+    if (!m) return;
+    const next = !m.pinned;
+    try {
+      await memoryUpdate({ id: memoryId, pinned: next });
+      memory = { ...m, pinned: next };
+      toastStore.success(next ? 'Memory pinned' : 'Memory unpinned');
+    } catch (e) {
+      toastStore.error(`Pin failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -292,6 +306,15 @@
     <button class="back-btn" onclick={onback}><X size={13} strokeWidth={2} /> Close <kbd>Esc</kbd></button>
     {#if memory}
       <div class="header-actions">
+        <button
+          class="pin-btn"
+          class:pinned={memory.pinned}
+          onclick={togglePin}
+          title={memory.pinned ? 'Unpin memory' : 'Pin memory'}
+        >
+          <Pin size={12} strokeWidth={2.25} />
+          {memory.pinned ? 'Pinned' : 'Pin'}
+        </button>
         <button class="edit-btn" onclick={() => onedit(memory!)}>Edit</button>
         <button class="delete-btn" onclick={() => (showDeleteConfirm = true)}>Delete</button>
       </div>
@@ -663,7 +686,10 @@
   .back-btn:hover { background: var(--bg-hover); }
   .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: var(--radius-sm); opacity: 0.7; }
   .header-actions { display: flex; gap: 8px; }
-  .edit-btn, .delete-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; }
+  .edit-btn, .delete-btn, .pin-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; }
+  .pin-btn { background: var(--bg-tertiary); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
+  .pin-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .pin-btn.pinned { background: var(--color-teal-bg); color: var(--accent); border-color: var(--accent); }
   .edit-btn { background: var(--bg-tertiary); color: var(--text-primary); }
   .edit-btn:hover { border-color: var(--accent); }
   .delete-btn { background: transparent; color: var(--red); border-color: var(--red); }

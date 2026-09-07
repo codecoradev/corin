@@ -109,6 +109,7 @@ function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, 
     // Provenance passthrough — agent identity reads metadata.author (#293).
     metadata: (m.metadata ?? undefined) as Record<string, unknown> | undefined,
     deprecated: m.deprecated ?? false,
+    pinned: m.pinned ?? null,
   };
 }
 

@@ -5,7 +5,7 @@
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
-  import { FileText, Brain, X } from 'lucide-svelte';
+  import { FileText, Brain, X, Pin } from 'lucide-svelte';
   import { Spinner, EmptyState, Button } from '../ui';
   import { relativeTime } from '../utils/format';
 
@@ -534,6 +534,9 @@
           onkeydown={(e) => e.key === 'Enter' && onmemoryclick(m.id)}
         >
           <div class="card-head">
+            {#if m.pinned}
+              <span class="card-pin" title="Pinned"><Pin size={11} strokeWidth={2.5} /></span>
+            {/if}
             {#if memoryAuthor(m)}
               <span class="card-avatar" style="background: {authorColor(memoryAuthor(m)!)}">{authorInitial(memoryAuthor(m)!)}</span>
               <span class="card-author">{memoryAuthor(m)}</span>
@@ -737,6 +740,7 @@
   .card-avatar.anon { background: var(--surface1); color: var(--text-muted); }
   .card-author { font-size: 0.74rem; font-weight: 600; color: var(--text-primary); }
   .card-author.muted { color: var(--text-muted); font-weight: 400; }
+  .card-pin { color: var(--accent); display: inline-flex; align-items: center; flex-shrink: 0; }
   .card-time { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
 
   .scroll-area {

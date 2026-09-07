@@ -53,6 +53,8 @@ pub struct MemoryEntry {
     pub namespace: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +265,7 @@ pub async fn list(
             namespace: Some(m.namespace),
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
+            pinned: Some(m.pinned),
         })
         .collect())
 }
@@ -312,6 +315,7 @@ pub async fn get_memory(
         namespace: Some(m.namespace),
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
+        pinned: Some(m.pinned),
     })
 }
 
@@ -359,6 +363,7 @@ pub async fn get_graph_data(
             namespace: None,
             created_at: None,
             updated_at: None,
+            pinned: None,
         })
         .collect();
 
@@ -428,6 +433,7 @@ pub async fn get_neighbors(
                 namespace: Some(m.namespace),
                 created_at: Some(m.created_at),
                 updated_at: Some(m.updated_at),
+                pinned: Some(m.pinned),
             });
         }
     }
@@ -746,6 +752,7 @@ pub async fn uteke_list(
             namespace: Some(m.namespace),
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
+            pinned: Some(m.pinned),
         })
         .collect())
 }
@@ -801,6 +808,7 @@ async fn list_multi_namespace(
             namespace: Some(m.namespace),
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
+            pinned: Some(m.pinned),
         })
         .collect())
 }
@@ -844,6 +852,7 @@ pub async fn uteke_get(
         namespace: Some(m.namespace),
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
+        pinned: Some(m.pinned),
     })
 }
 
@@ -914,6 +923,7 @@ pub async fn uteke_graph(
                         namespace: None,
                         created_at: None,
                         updated_at: None,
+                        pinned: None,
                     })
                     .collect(),
                 edges: graph
@@ -1127,6 +1137,7 @@ pub async fn uteke_room_recall(
             namespace: Some(r.memory.namespace),
             created_at: Some(r.memory.created_at),
             updated_at: Some(r.memory.updated_at),
+            pinned: Some(r.memory.pinned),
         })
         .collect())
 }
@@ -1196,6 +1207,7 @@ pub async fn uteke_room_memories(
                 namespace: Some(m.namespace),
                 created_at: Some(m.created_at),
                 updated_at: Some(m.updated_at),
+                pinned: Some(m.pinned),
             })
             .collect()),
         Err(_) => {
@@ -1215,6 +1227,7 @@ pub async fn uteke_room_memories(
                     namespace: Some(r.memory.namespace),
                     created_at: Some(r.memory.created_at),
                     updated_at: Some(r.memory.updated_at),
+                    pinned: Some(r.memory.pinned),
                 })
                 .collect())
         }

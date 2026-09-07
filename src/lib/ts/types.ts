@@ -11,6 +11,8 @@ export interface MemoryEntry {
   namespace: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** Present on uteke list/get responses; undefined in hand-built results. */
+  pinned?: boolean | null;
 }
 
 // Search result with score

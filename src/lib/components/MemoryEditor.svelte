@@ -96,6 +96,7 @@
             tags,
             importance,
             memory_type: contentType,
+            namespace: ns || undefined,
           });
         } else {
           const newId = await memoryApi.remember(content, {
