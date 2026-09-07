@@ -341,8 +341,21 @@
   .rail-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
   .rail-btn-label { font-size: 0.8rem; white-space: nowrap; }
 
-  .sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; width: auto; }
-  .sidebar.collapsed .rail-btn { justify-content: center; padding: 10px 0; width: auto; }
+  /* Rail tiles (collapsed): uniform 36px rounded squares on radius-lg so
+     every control reads as the same soft tile. The active view keeps the
+     teal tint + accent icon but swaps the wide-mode left bar for a soft
+     shadow — on a 36px tile the inset bar read as a harsh border. */
+  .sidebar.collapsed .nav-item,
+  .sidebar.collapsed .rail-btn {
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-lg);
+  }
+  .sidebar.collapsed .nav-item.active {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  }
   .sidebar.collapsed .nav { padding: 10px 8px; align-items: center; }
   .sidebar.collapsed .nav-bottom { padding: 8px 8px; align-items: center; }
 </style>
