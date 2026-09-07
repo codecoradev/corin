@@ -133,10 +133,14 @@
   }
 
   // Memory deleted from the detail panel — refresh the list underneath and
-  // confirm to the user (the panel closing alone is ambiguous).
-  function handleMemoryDeleted() {
+  // confirm to the user (the panel closing alone is ambiguous). The id is
+  // forwarded (Settings → recycle bin prunes the row locally) so a stale
+  // entry can't be acted on twice.
+  let lastDeletedMemoryId = $state<string | null>(null);
+  function handleMemoryDeleted(id: string) {
     refreshKey++;
     detailId = null;
+    lastDeletedMemoryId = id;
     toastStore.success('Memory deleted');
   }
 
@@ -296,7 +300,7 @@
 
 {#if showSettings}
   <div transition:overlayFade>
-    <SettingsModal onclose={closeSettings} onopenmemory={openDetail} />
+    <SettingsModal onclose={closeSettings} onopenmemory={openDetail} deletedMemoryId={lastDeletedMemoryId} />
   </div>
 {/if}
 

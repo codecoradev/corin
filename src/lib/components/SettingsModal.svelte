@@ -18,9 +18,12 @@
   interface Props {
     onclose: () => void;
     onopenmemory?: (id: string) => void;
+    /** Last memory id deleted from the app-level detail panel — forwarded
+        to the recycle bin so it prunes the row without a refetch. */
+    deletedMemoryId?: string | null;
   }
 
-  let { onclose, onopenmemory }: Props = $props();
+  let { onclose, onopenmemory, deletedMemoryId = null }: Props = $props();
 
   type Tab = 'general' | 'namespaces' | 'data' | 'maintenance' | 'connections' | 'agents' | 'shortcuts' | 'about';
   let activeTab = $state<Tab>('general');
@@ -181,7 +184,7 @@
 
       {:else if activeTab === 'maintenance'}
         <div class="lifecycle-embed">
-          <LifecycleView namespace={defaultNamespace || null} onmemoryclick={(id) => onopenmemory?.(id)} />
+          <LifecycleView namespace={defaultNamespace || null} onmemoryclick={(id) => onopenmemory?.(id)} deletedMemoryId={deletedMemoryId} />
         </div>
       {:else if activeTab === 'about'}
         <section class="content-section">

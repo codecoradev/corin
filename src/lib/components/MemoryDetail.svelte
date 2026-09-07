@@ -45,7 +45,7 @@
     onedit: (m: MemoryEntry) => void;
     onback: () => void;
     onneighborclick: (id: string) => void;
-    ondeleted?: () => void;
+    ondeleted?: (id: string) => void;
     /** Called after the memory moved to another namespace — refresh the list behind. */
     onmoved?: () => void;
   }
@@ -194,7 +194,11 @@
     load();
   });
 
+  let deleting = $state(false);
+
   async function handleDelete() {
+    if (deleting) return; // in-flight guard — no double delete
+    deleting = true;
     // Try server delete first (Uteke memory), fallback to Hub DB
     try {
       const status = await utekeServer.status();
@@ -204,15 +208,18 @@
         await memoryApi.forget(memoryId);
       }
       // Surface success: refresh the underlying list + toast. Just closing
-      // the panel is ambiguous (looks like nothing happened).
+      // the panel is ambiguous (looks like nothing happened). The id lets
+      // listeners (e.g. the recycle bin) prune the row locally.
       if (ondeleted) {
-        ondeleted();
+        ondeleted(memoryId);
       } else {
         onback();
       }
     } catch (e) {
       toastStore.error(`Failed to delete memory: ${e instanceof Error ? e.message : String(e)}`);
       showDeleteConfirm = false;
+    } finally {
+      deleting = false;
     }
   }
 
@@ -316,7 +323,7 @@
           {memory.pinned ? 'Pinned' : 'Pin'}
         </button>
         <button class="edit-btn" onclick={() => onedit(memory!)}>Edit</button>
-        <button class="delete-btn" onclick={() => (showDeleteConfirm = true)}>Delete</button>
+        <button class="delete-btn" disabled={deleting} onclick={() => (showDeleteConfirm = true)}>Delete</button>
       </div>
     {/if}
   </div>
@@ -624,7 +631,8 @@
       open={showDeleteConfirm}
       title="Delete memory?"
       message="This action cannot be undone."
-      confirmLabel="Delete"
+      confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+      confirmDisabled={deleting}
       danger={true}
       onconfirm={handleDelete}
       oncancel={() => (showDeleteConfirm = false)}

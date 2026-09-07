@@ -28,9 +28,23 @@
     namespace: string | null;
     /** Open the memory detail panel for an item in the recycle bin. */
     onmemoryclick?: (id: string) => void;
+    /** Id of a memory just deleted in the detail panel — prune it from the
+        recycle bin locally (no refetch) so it can't be acted on twice. */
+    deletedMemoryId?: string | null;
   }
 
-  let { namespace, onmemoryclick }: Props = $props();
+  let { namespace, onmemoryclick, deletedMemoryId = null }: Props = $props();
+
+  // Prune confirmed deletions as they arrive upstream.
+  $effect(() => {
+    const id = deletedMemoryId;
+    if (!id) return;
+    deprecatedItems = deprecatedItems.filter((d) => d.id !== id);
+    orphans = orphans.filter((o) => o.id !== id);
+    if (status && status.deprecated > 0) {
+      status = { ...status, deprecated: status.deprecated - 1 };
+    }
+  });
 
   // ─── State ─────────────────────────────────────────────────────────
   let status = $state<LifecycleStatus | null>(null);
