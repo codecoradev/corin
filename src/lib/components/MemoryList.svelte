@@ -23,10 +23,11 @@
 
   let { namespace, onmemoryclick, onnewmemory, ondocumentclick, ongraph }: Props = $props();
 
-  // ── Memories hub grouping (#293): Agents | Rooms | Tags ────────────────
-  type HubGroup = 'agents' | 'rooms' | 'tags';
-  let hubGroup = $state<HubGroup>('agents');
-  let selectedAuthor = $state<string | null>(null);
+  // ── Memories hub grouping: Namespaces | Rooms | Tags ───────────────────
+  // Agents lost its hub slot: provenance authors are rare, so the group sat
+  // empty; namespaces are always populated and double as a list filter.
+  type HubGroup = 'namespaces' | 'rooms' | 'tags';
+  let hubGroup = $state<HubGroup>('namespaces');
   let selectedRoom = $state<string | null>(null);
   let selectedTag = $state<string | null>(null);
 
@@ -50,15 +51,7 @@
     return typeof a === 'string' && a.trim() ? a.trim() : null;
   }
 
-  /** Aggregate authors over everything currently loaded in the pager. */
-  let authorCounts = $derived.by(() => {
-    const counts = new Map<string, number>();
-    for (const m of pager.items) {
-      const a = memoryAuthor(m);
-      if (a) counts.set(a, (counts.get(a) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort((x, y) => y[1] - x[1]);
-  });
+  // Hub Namespaces state — derivations live with the hub filter below.
 
   /** Page-derived fallback — only shown when the server tag list is unreachable. */
   let tagCounts = $derived.by(() => {
@@ -70,6 +63,22 @@
       .map(([name, count]) => ({ name, count }));
   });
 
+  // Hub Namespaces group — server list with real counts, always populated.
+  let hubNamespaces = $state<{ name: string; count: number }[] | null>(null);
+  let hubNsLoading = $state(false);
+
+  async function loadHubNamespaces() {
+    hubNsLoading = true;
+    try {
+      const rows = await uteke.namespacesWithCounts();
+      hubNamespaces = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      hubNamespaces = [];
+    } finally {
+      hubNsLoading = false;
+    }
+  }
+
   let rooms = $state<{ id: string; title: string }[]>([]);
   $effect(() => {
     uteke.rooms().then((rs) => {
@@ -77,10 +86,10 @@
     }).catch(() => { rooms = []; });
   });
 
-  /** Client-side author/tag filter over loaded page items (server-side scope = #1181 follow-up). */
+  /** Client-side tag filter over loaded page items (namespace scope is
+      server-side via the pager + selectedNamespaces). */
   let filteredList = $derived.by(() => {
     let items = list;
-    if (selectedAuthor) items = items.filter((m) => memoryAuthor(m) === selectedAuthor);
     if (selectedTag) items = items.filter((m) => m.tags.includes(selectedTag!));
     return items;
   });
@@ -158,7 +167,19 @@
     return !q || name.toLowerCase().includes(q);
   }
 
-  let visibleAgents = $derived(authorCounts.filter(([n]) => hubMatches(n)));
+  let visibleHubNamespaces = $derived((hubNamespaces ?? []).filter((ns) => hubMatches(ns.name)));
+  let hubNsHeader = $derived(
+    hubQuery.trim() ? visibleHubNamespaces.length : (hubNamespaces?.length ?? 0),
+  );
+
+  /** Toggle a namespace as the server-side list scope. Drives the same
+      selectedNamespaces state as the toolbar filter, so the two stay in sync
+      (null = all namespaces, single-item array = one namespace). */
+  function toggleNsFilter(name: string) {
+    selectedNamespaces =
+      selectedNamespaces?.length === 1 && selectedNamespaces[0] === name ? null : [name];
+  }
+
   let visibleRooms = $derived(rooms.filter((r) => hubMatches(r.title || r.id)));
 
   let visibleTags = $derived.by(() => {
@@ -311,6 +332,11 @@
     loadTags();
   });
 
+  // Hub namespace list is global — load once per view mount.
+  $effect(() => {
+    loadHubNamespaces();
+  });
+
   const list = $derived<(MemoryEntry & { score?: number })[]>(
     (searchResults ?? pager.items) as (MemoryEntry & { score?: number })[]
   );
@@ -320,7 +346,7 @@
 <div class="memory-list-view">
   <aside class="hub-panel">
     <div class="hub-seg" role="group" aria-label="Group memories by">
-      <button class:on={hubGroup === 'agents'} onclick={() => (hubGroup = 'agents')}>Agents</button>
+      <button class:on={hubGroup === 'namespaces'} onclick={() => (hubGroup = 'namespaces')}>Namespaces</button>
       <button class:on={hubGroup === 'rooms'} onclick={() => (hubGroup = 'rooms')}>Rooms</button>
       <button class:on={hubGroup === 'tags'} onclick={() => (hubGroup = 'tags')}>Tags</button>
     </div>
@@ -339,20 +365,21 @@
       {/if}
     </div>
 
-    {#if hubGroup === 'agents'}
-      <div class="hub-group-label">Agents <span class="hub-n">{visibleAgents.length}</span></div>
-      {#each visibleAgents as [name, count] (name)}
+    {#if hubGroup === 'namespaces'}
+      <div class="hub-group-label">Namespaces <span class="hub-n">{hubNsHeader}</span></div>
+      {#each visibleHubNamespaces as ns (ns.name)}
         <button
           class="hub-item"
-          class:on={selectedAuthor === name}
-          onclick={() => (selectedAuthor = selectedAuthor === name ? null : name)}
+          class:on={selectedNamespaces?.length === 1 && selectedNamespaces[0] === ns.name}
+          onclick={() => toggleNsFilter(ns.name)}
+          title="Filter memories by namespace {ns.name}"
         >
-          <span class="hub-avatar" style="background: {authorColor(name)}">{authorInitial(name)}</span>
-          <span class="hub-name">{name}</span>
-          <span class="hub-cnt">{count}</span>
+          <span class="hub-ic">◇</span>
+          <span class="hub-name">{ns.name}</span>
+          <span class="hub-cnt">{ns.count}</span>
         </button>
       {:else}
-        <div class="hub-empty">{hubQuery.trim() ? 'No matches.' : 'No authored memories on this page.'}</div>
+        <div class="hub-empty">{hubNsLoading ? 'Loading…' : 'No namespaces yet.'}</div>
       {/each}
     {:else if hubGroup === 'rooms'}
       <div class="hub-group-label">Rooms <span class="hub-n">{visibleRooms.length}</span></div>
@@ -679,18 +706,6 @@
     background: var(--color-teal-bg);
     color: var(--text-primary);
     box-shadow: inset 2px 0 0 var(--accent);
-  }
-  .hub-avatar {
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.6rem;
-    font-weight: 700;
-    color: var(--bg-primary);
-    flex-shrink: 0;
   }
   .hub-ic { width: 18px; text-align: center; opacity: 0.7; flex-shrink: 0; }
   .hub-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
