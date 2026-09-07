@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
   import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link } from 'lucide-svelte';
-  import { has as compatHas } from '../ts/compat';
+  import { has as compatHas, minVersion } from '../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
 
@@ -46,9 +46,11 @@
     onback: () => void;
     onneighborclick: (id: string) => void;
     ondeleted?: () => void;
+    /** Called after the memory moved to another namespace — refresh the list behind. */
+    onmoved?: () => void;
   }
 
-  let { memoryId, onedit, onback, onneighborclick, ondeleted }: Props = $props();
+  let { memoryId, onedit, onback, onneighborclick, ondeleted, onmoved }: Props = $props();
 
   let memory = $state<MemoryEntry | null>(null);
   let neighbors = $state<Neighbor[]>([]);
@@ -60,6 +62,27 @@
   let feedbackGiven = $state<'helpful' | 'unhelpful' | null>(null);
   let feedbackDelta = $state<number | null>(null);
   let submittingFeedback = $state(false);
+
+  // Namespace move — plain PUT /memory namespace field (uteke #1181, no re-embed).
+  let nsList = $state<string[]>([]);
+  let nsMoving = $state(false);
+  let nsMoveAvailable = $state<boolean | null>(null);
+
+  async function moveNamespace(target: string) {
+    const m = memory;
+    if (!m || !target || target === (m.namespace ?? '')) return;
+    nsMoving = true;
+    try {
+      await memoryUpdate({ id: memoryId, namespace: target });
+      memory = { ...m, namespace: target };
+      toastStore.success(`Moved to ${target}`);
+      onmoved?.();
+    } catch (e) {
+      toastStore.error(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      nsMoving = false;
+    }
+  }
 
   // Timeline state
   let timeline = $state<TimelineEvent[]>([]);
@@ -83,6 +106,9 @@
       } catch {
         memory = await uteke.get(memoryId);
       }
+      // Namespace list for the move control — non-fatal if unavailable.
+      uteke.namespaces().then((ns) => (nsList = ns)).catch(() => (nsList = []));
+      compatHas('namespaceMove').then((v) => (nsMoveAvailable = v === true)).catch(() => (nsMoveAvailable = false));
       // Load neighbors from Uteke (shared tags + explicit edges)
       neighbors = await uteke.neighbors(memoryId, 20).catch(() => []);
       // Cross-entity linking (#207): documents that reference this memory.
@@ -309,12 +335,31 @@
               </div>
             </div>
           {/if}
-          {#if memory.namespace}
-            <div class="meta-row">
-              <span class="meta-label">Namespace</span>
-              <span>{memory.namespace}</span>
-            </div>
-          {/if}
+          <div class="meta-row">
+            <span class="meta-label">Namespace</span>
+            {#if nsMoveAvailable && nsList.length > 0}
+              <select
+                class="ns-select"
+                value={memory.namespace ?? ''}
+                disabled={nsMoving}
+                onchange={(e) => moveNamespace((e.currentTarget as HTMLSelectElement).value)}
+                title="Move to another namespace"
+              >
+                {#if !memory.namespace}
+                  <option value="">—</option>
+                {:else if !nsList.includes(memory.namespace)}
+                  <option value="">{memory.namespace}</option>
+                {/if}
+                {#each nsList as ns (ns)}
+                  <option value={ns}>{ns}</option>
+                {/each}
+              </select>
+            {:else}
+              <span title={nsMoveAvailable === false ? `Namespace move needs uteke ≥ ${minVersion('namespaceMove')}` : undefined}>
+                {memory.namespace ?? '—'}
+              </span>
+            {/if}
+          </div>
           {#if memory.content_type}
             <div class="meta-row">
               <span class="meta-label">Type</span>
@@ -634,6 +679,17 @@
   .meta-grid { display: flex; flex-direction: column; gap: 8px; }
   .meta-row { display: flex; align-items: flex-start; gap: 12px; font-size: 0.85rem; }
   .meta-label { min-width: 80px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; padding-top: 2px; }
+  .ns-select {
+    padding: 2px 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    outline: none;
+    max-width: 220px;
+  }
+  .ns-select:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
 
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
   .tag { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-sm); }

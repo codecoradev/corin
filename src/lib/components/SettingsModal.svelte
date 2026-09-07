@@ -22,7 +22,7 @@
 
   let { onclose, onopenmemory }: Props = $props();
 
-  type Tab = 'general' | 'data' | 'maintenance' | 'connections' | 'agents' | 'shortcuts' | 'about';
+  type Tab = 'general' | 'namespaces' | 'data' | 'maintenance' | 'connections' | 'agents' | 'shortcuts' | 'about';
   let activeTab = $state<Tab>('general');
 
   // Settings state
@@ -93,6 +93,7 @@
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'general', label: 'General', icon: '⚙' },
+    { id: 'namespaces', label: 'Namespaces', icon: '◇' },
     { id: 'data', label: 'Data', icon: '▤' },
     { id: 'maintenance', label: 'Maintenance', icon: '♻' },
     { id: 'connections', label: 'Connections', icon: '☍' },
@@ -171,10 +172,12 @@
             <label for="default-ns">Default Namespace</label>
             <input id="default-ns" type="text" bind:value={defaultNamespace} placeholder="default" />
           </div>
-          <NamespaceManager protectedNamespace={defaultNamespace || 'default'} />
         </section>
 
         {#if !isWebMode}<UpdatesSection />{/if}
+
+      {:else if activeTab === 'namespaces'}
+        <NamespaceManager protectedNamespace={defaultNamespace || 'default'} />
 
       {:else if activeTab === 'maintenance'}
         <div class="lifecycle-embed">

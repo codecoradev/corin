@@ -141,6 +141,9 @@
   }
 
   function closeSettings() {
+    // The memory detail panel can sit above the settings modal (recycle-bin
+    // drill-in); Esc fires for both layers — only close the topmost one.
+    if (detailId) return;
     showSettings = false;
   }
 
@@ -285,6 +288,7 @@
         onneighborclick={detailNavigate}
         onedit={editMemory}
         ondeleted={handleMemoryDeleted}
+        onmoved={() => refreshKey++}
       />
     </DetailPanel>
   </div>

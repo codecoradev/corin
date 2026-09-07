@@ -3257,6 +3257,7 @@ pub async fn memory_update(
     importance: Option<f64>,
     pinned: Option<bool>,
     memory_type: Option<String>,
+    namespace: Option<String>,
 ) -> Result<serde_json::Value, CommandError> {
     let client = {
         let s = state.lock().await;
@@ -3274,6 +3275,7 @@ pub async fn memory_update(
             importance,
             pinned,
             memory_type.as_deref(),
+            namespace.as_deref(),
         )
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;

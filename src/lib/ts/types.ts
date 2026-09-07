@@ -206,6 +206,8 @@ export interface MemoryUpdateParams {
   importance?: number;
   pinned?: boolean;
   memory_type?: string;
+  /** Plain move to another namespace (uteke #1181, PUT /memory). */
+  namespace?: string;
 }
 
 // Room remember params (POST /room/remember)

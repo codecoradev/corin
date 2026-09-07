@@ -448,6 +448,7 @@ export async function memoryUpdate(params: MemoryUpdateParams): Promise<Record<s
     importance: params.importance ?? null,
     pinned: params.pinned ?? null,
     memoryType: params.memory_type ?? null,
+    namespace: params.namespace ?? null,
   });
 }
 

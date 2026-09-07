@@ -794,6 +794,7 @@ export const webHandlers: Record<string, Handler> = {
       body: {
         id: p.id, content: p.content ?? null, tags: p.tags ?? null, metadata: p.metadata ?? null,
         importance: p.importance ?? null, pinned: p.pinned ?? null, memory_type: p.memoryType ?? null,
+        namespace: (p.namespace as string) ?? undefined,
       } as Payload,
     }),
   room_remember: async (p) =>

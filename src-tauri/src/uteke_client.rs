@@ -1470,6 +1470,7 @@ impl UtekeClient {
         importance: Option<f64>,
         pinned: Option<bool>,
         memory_type: Option<&str>,
+        namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let mut body = serde_json::json!({ "id": id });
         if let Some(c) = content {
@@ -1489,6 +1490,10 @@ impl UtekeClient {
         }
         if let Some(mt) = memory_type {
             body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(ns) = namespace {
+            // Plain namespace move (#1181) — single UPDATE, no re-embed.
+            body["namespace"] = serde_json::Value::String(ns.to_string());
         }
         let resp = self
             .authed(self.client.put(format!("{}/memory", self.base_url)))
