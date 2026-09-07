@@ -15,9 +15,13 @@
     onnewmemory: () => void;
     /** Open a document by slug (from unified-search document hits). */
     ondocumentclick: (slug: string) => void;
+    /** Open the graph view. A callback, not a location.hash hack: the hash
+        never changes back in desktop mode, so a second identical #graph
+        assignment fired no hashchange and the button died. */
+    ongraph: () => void;
   }
 
-  let { namespace, onmemoryclick, onnewmemory, ondocumentclick }: Props = $props();
+  let { namespace, onmemoryclick, onnewmemory, ondocumentclick, ongraph }: Props = $props();
 
   // ── Memories hub grouping (#293): Agents | Rooms | Tags ────────────────
   type HubGroup = 'agents' | 'rooms' | 'tags';
@@ -440,7 +444,7 @@
       >
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
-    <button class="graph-link" title="Open graph exploration" onclick={() => { location.hash = '#graph'; }}>⌗ Graph</button>
+    <button class="graph-link" title="Open graph exploration" onclick={() => ongraph()}>⌗ Graph</button>
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
   </div>
 

@@ -257,7 +257,7 @@
             {/key}
           {:else if activeView === 'memories'}
             {#key refreshKey}
-              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} />
+              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} ongraph={() => navigate('graph')} />
             {/key}
           {:else if activeView === 'namespaces'}
             <NamespacesView onmemoryclick={openDetail} />
