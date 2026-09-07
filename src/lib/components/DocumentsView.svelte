@@ -183,6 +183,23 @@
   // Fetches the full flat doc list once and assembles parent→children so the
   // entire hierarchy is visible upfront (Obsidian/Outline-like), rather than
   // only roots with lazy-expanded children.
+  /** Leading number of a title ("7. Part III" → 7) — natural-order key. */
+  function leadingNumber(title: string): number | null {
+    const m = /^\s*(\d+)/.exec(title);
+    return m ? Number(m[1]) : null;
+  }
+
+  /** Numbered docs read in ascending order first; unnumbered follow,
+      newest-first. Chapters authored out of sequence still read 1,2,3… */
+  function naturalDocCompare(a: DocEntry, b: DocEntry): number {
+    const na = leadingNumber(a.title);
+    const nb = leadingNumber(b.title);
+    if (na !== null && nb !== null && na !== nb) return na - nb;
+    if (na !== null) return -1;
+    if (nb !== null) return 1;
+    return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+  }
+
   async function loadRootDocs() {
     loading = true;
     try {
@@ -202,6 +219,8 @@
           roots.push(d);
         }
       }
+      for (const arr of byParent.values()) arr.sort(naturalDocCompare);
+      roots.sort(naturalDocCompare);
       childrenCache = byParent;
       rootDocs = roots;
       docById = byId;
@@ -219,6 +238,7 @@
     if (childrenCache.has(docId)) return;
     try {
       const children = await docs.list({ parent: docId });
+      children.sort(naturalDocCompare);
       // Immutable update — Svelte 5 does not re-render {@const} reads when a
       // $state Map is mutated in place + reassigned to the same ref.
       const next = new Map(childrenCache);
