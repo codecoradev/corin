@@ -12,6 +12,18 @@
   let { memories, weeks = 26 }: Props = $props();
 
   const summary = $derived(buildActivity(memories, weeks));
+
+  // Human-readable window span ("Mar 9 – Sep 7 · 26 weeks") — laypeople
+  // need the date range stated, not inferred from month labels.
+  const rangeLabel = $derived.by(() => {
+    const first = summary.days[0]?.date;
+    const last = summary.days[summary.days.length - 1]?.date;
+    if (!first || !last) return '';
+    const fmt = (d: string) =>
+      new Date(d + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' });
+    return `${fmt(first)} – ${fmt(last)} · ${weeks} weeks`;
+  });
+
   const monthLabels = $derived.by(() => {
     // Label the month whenever a column starts a new month.
     const labels: { col: number; name: string }[] = [];
@@ -40,6 +52,9 @@
       <span class="stat"><b>{summary.today}</b> today</span>
       <span class="stat"><b>{summary.last7}</b> last 7 days</span>
       <span class="stat"><b>{summary.total}</b> in window</span>
+      {#if rangeLabel}
+        <span class="stat range-stat" title="Date range covered by the grid">{rangeLabel}</span>
+      {/if}
       <span class="stat legend-stat" title="Activity intensity per day — darker means more memories">
         <span class="legend-word">less</span>
         {#each [0, 1, 2, 3, 4] as lvl}
@@ -51,12 +66,18 @@
 
     <div class="heatmap-scroll">
       <div class="heatmap">
+        <span class="corner"></span>
         <div
           class="months"
           style="grid-template-columns: repeat({weeks}, minmax(0, 1fr));"
         >
           {#each monthLabels as m}
             <span class="month" style="grid-column: {m.col + 1};">{m.name}</span>
+          {/each}
+        </div>
+        <div class="weekdays" aria-hidden="true">
+          {#each ['Mon', '', 'Wed', '', 'Fri', '', ''] as wd, i (i)}
+            <span class="weekday">{wd}</span>
           {/each}
         </div>
         <div class="grid" style="grid-template-columns: repeat({weeks}, minmax(0, 1fr));">
@@ -119,15 +140,43 @@
     overflow-x: auto;
   }
 
+  .range-stat {
+    color: var(--text-muted);
+    padding-left: 10px;
+    border-left: 1px solid var(--border);
+  }
+
+  /* Weekday gutter + heatmap share one outer grid so the Mon/Wed/Fri
+     labels track the real cell rows via subgrid. */
+  .heatmap {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto repeat(7, auto);
+    column-gap: 6px;
+    row-gap: 4px;
+  }
+  .corner { grid-column: 1; grid-row: 1; }
   .months {
+    grid-column: 2; grid-row: 1;
     display: grid;
     gap: 4px;
     font-size: 0.68rem;
     color: var(--text-muted);
-    margin-bottom: 4px;
   }
-
+  .weekdays {
+    grid-column: 1; grid-row: 2 / span 7;
+    display: grid;
+    grid-template-rows: subgrid;
+  }
+  .weekday {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    align-self: center;
+    line-height: 1;
+    padding-right: 2px;
+  }
   .grid {
+    grid-column: 2; grid-row: 2 / span 7;
     display: grid;
     grid-template-rows: repeat(7, auto);
     grid-auto-flow: column;
