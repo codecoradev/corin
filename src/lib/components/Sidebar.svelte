@@ -131,9 +131,9 @@
       aria-label="Toggle theme"
     >
       {#if theme.current === 'dark'}
-        <Sun size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><Sun size={iconSize} strokeWidth={1.75} /></span>
       {:else}
-        <Moon size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><Moon size={iconSize} strokeWidth={1.75} /></span>
       {/if}
       {#if !collapsed}
         <span class="rail-btn-label">{theme.current === 'dark' ? 'Light theme' : 'Dark theme'}</span>
@@ -157,9 +157,9 @@
 
     <button class="rail-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'} aria-label="Toggle sidebar">
       {#if collapsed}
-        <PanelLeftOpen size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><PanelLeftOpen size={iconSize} strokeWidth={1.75} /></span>
       {:else}
-        <PanelLeftClose size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><PanelLeftClose size={iconSize} strokeWidth={1.75} /></span>
       {/if}
       {#if !collapsed}
         <span class="rail-btn-label">Collapse</span>
@@ -285,8 +285,8 @@
   .server-status {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: 10px;
+    padding: 6px 12px;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
@@ -297,14 +297,23 @@
     justify-content: center;
     padding: 6px 0;
   }
+  /* 20px column so the label lines up with .nav-icon labels (12+20+10). */
   .status-dot {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .status-dot::before {
+    content: '';
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    flex-shrink: 0;
     background: var(--text-muted);
   }
-  .online .status-dot {
+  .online .status-dot::before {
     background: var(--green);
     animation: pulse 2s infinite;
   }
@@ -313,25 +322,27 @@
     50% { opacity: 0.4; }
   }
 
-  /* Rail utility buttons (theme toggle, collapse) */
+  /* Rail utility buttons (theme toggle, collapse) — same row grid as
+     .nav-item so the whole footer is left-aligned on one icon column. */
   .rail-btn {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    padding: 8px;
+    padding: 8px 12px;
     background: transparent;
     border: none;
     border-radius: var(--radius-md);
     color: var(--text-muted);
     cursor: pointer;
     transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+    text-align: left;
   }
   .rail-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
   .rail-btn-label { font-size: 0.8rem; white-space: nowrap; }
 
   .sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; width: auto; }
+  .sidebar.collapsed .rail-btn { justify-content: center; padding: 10px 0; width: auto; }
   .sidebar.collapsed .nav { padding: 10px 8px; align-items: center; }
   .sidebar.collapsed .nav-bottom { padding: 8px 8px; align-items: center; }
 </style>
