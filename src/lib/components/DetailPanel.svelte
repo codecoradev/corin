@@ -40,7 +40,9 @@
     position: fixed;
     inset: 0;
     background: var(--scrim);
-    z-index: 89;
+    /* Above the settings modal (101): the recycle bin in Settings →
+       Maintenance opens this same panel, so it must cover the modal. */
+    z-index: 102;
     animation: fadeIn 0.15s ease;
   }
 
@@ -54,7 +56,7 @@
     background: var(--bg-secondary);
     border-left: 1px solid var(--border);
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-    z-index: 90;
+    z-index: 103;
     /* No overflow on the panel itself — prevents clipping the
        delete confirmation dialog. MemoryDetail scrolls internally. */
     animation: slideIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);

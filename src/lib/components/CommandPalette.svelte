@@ -224,7 +224,8 @@
   .palette-overlay {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    /* Above the detail panel (103) so Ctrl+K wins regardless of mount order. */
+    z-index: 120;
     background: color-mix(in srgb, var(--bg-base, #0b0e14) 55%, transparent);
     backdrop-filter: blur(2px);
     display: flex;
