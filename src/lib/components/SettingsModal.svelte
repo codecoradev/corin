@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
-  import { system } from '../ts/ipc';
+  import { connection, system } from '../ts/ipc';
+  import type { ConnectionInfo } from '../ts/types';
   import { isWebMode } from '../ts/transport';
   import ImportExport from './ImportExport.svelte';
   import { theme } from '../stores/theme.svelte';
@@ -54,9 +55,21 @@
     try { namespaces = await system.listNamespaces(); } catch { namespaces = []; }
   }
 
+  // The server memories actually come from — surfaced in the Data tab so it
+  // tells the truth when the primary connection is a cloud server (the local
+  // app directory then only holds settings + connection profiles).
+  let primaryConnection = $state<ConnectionInfo | null>(null);
+  async function loadPrimaryConnection() {
+    try {
+      const list = await connection.list();
+      primaryConnection = list.find((c) => c.is_primary) ?? list[0] ?? null;
+    } catch { primaryConnection = null; }
+  }
+
   onMount(async () => {
     loadSettings();
     loadDataDir();
+    loadPrimaryConnection();
     try {
       appVersion = isWebMode ? APP_VERSION : await getVersion();
     } catch {
@@ -190,9 +203,31 @@
 
       {:else if activeTab === 'data'}
         <section class="content-section">
-          <h3>Data Directory</h3>
+          <h3>Memory Server</h3>
           <div class="data-dir-info">
-            <p class="data-dir-label">CorIn stores data at:</p>
+            {#if primaryConnection}
+              <p class="data-dir-label">Your memories are stored on and served by:</p>
+              <p class="server-line">
+                <span class="server-dot" class:ok={primaryConnection.status === 'connected'}></span>
+                <strong>{primaryConnection.name}</strong>
+                <code class="server-url">{primaryConnection.url}</code>
+                <span class="server-status-label">{primaryConnection.status}</span>
+              </p>
+              <p class="hint">
+                Import/Export below and the memories you browse live on this server — manage it in
+                the Connections tab.
+              </p>
+            {:else}
+              <p class="data-dir-label">No memory server configured yet.</p>
+              <p class="hint">Add a connection in the Connections tab, or start a local uteke-serve.</p>
+            {/if}
+          </div>
+        </section>
+
+        <section class="content-section">
+          <h3>App Data Directory</h3>
+          <div class="data-dir-info">
+            <p class="data-dir-label">CorIn's own data — settings and connection profiles — lives at:</p>
             <code class="data-dir-path">{dataDir ?? '~/.codecora/corin/'}</code>
           </div>
         </section>
@@ -283,6 +318,13 @@
   .data-dir-info { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
   .data-dir-label { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 6px; }
   .data-dir-path { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); word-break: break-all; }
+  .server-line { display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap; }
+  .server-line strong { color: var(--text-primary); font-size: 0.85rem; }
+  .server-url { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); word-break: break-all; }
+  .server-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+  .server-dot.ok { background: var(--green); }
+  .server-status-label { font-size: 0.7rem; color: var(--text-muted); text-transform: capitalize; }
+  .data-dir-info .hint { margin: 8px 0 0; font-size: 0.75rem; color: var(--text-muted); opacity: 0.8; }
 
   .about-info { color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; }
   .about-info p { margin: 0 0 4px; }
