@@ -544,9 +544,6 @@
             {#if memoryAuthor(m)}
               <span class="card-avatar" style="background: {authorColor(memoryAuthor(m)!)}">{authorInitial(memoryAuthor(m)!)}</span>
               <span class="card-author">{memoryAuthor(m)}</span>
-            {:else}
-              <span class="card-avatar anon">?</span>
-              <span class="card-author muted">unknown</span>
             {/if}
             {#if m.created_at}<span class="card-time">{relativeTime(m.created_at)}</span>{/if}
           </div>
@@ -741,9 +738,7 @@
     color: var(--bg-primary);
     flex-shrink: 0;
   }
-  .card-avatar.anon { background: var(--surface1); color: var(--text-muted); }
   .card-author { font-size: 0.74rem; font-weight: 600; color: var(--text-primary); }
-  .card-author.muted { color: var(--text-muted); font-weight: 400; }
   .card-pin { color: var(--accent); display: inline-flex; align-items: center; flex-shrink: 0; }
   .card-time { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
 

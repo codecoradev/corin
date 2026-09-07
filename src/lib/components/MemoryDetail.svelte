@@ -328,18 +328,17 @@
   {:else}
     <div class="detail-body">
       <div class="content-section">
-        <div class="author-head">
-          {#if author}
-            <span class="author-avatar" style="background: {authorColor(author)}">{author.trim()[0].toUpperCase()}</span>
-            <span class="author-name">{author}</span>
-          {:else}
-            <span class="author-avatar anon">?</span>
-            <span class="author-name muted">unknown author</span>
-          {/if}
-          {#if memory.created_at}
-            <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
-          {/if}
-        </div>
+        {#if author || memory.created_at}
+          <div class="author-head">
+            {#if author}
+              <span class="author-avatar" style="background: {authorColor(author)}">{author.trim()[0].toUpperCase()}</span>
+              <span class="author-name">{author}</span>
+            {/if}
+            {#if memory.created_at}
+              <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
+            {/if}
+          </div>
+        {/if}
         <pre class="content-text">{memory.content}</pre>
 
         <div class="meta-grid">
@@ -657,9 +656,7 @@
     color: var(--bg-primary);
     flex-shrink: 0;
   }
-  .author-avatar.anon { background: var(--surface1); color: var(--text-muted); }
   .author-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
-  .author-name.muted { color: var(--text-muted); font-weight: 400; }
   .author-time { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); }
 
   .id-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
