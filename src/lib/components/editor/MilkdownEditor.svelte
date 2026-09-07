@@ -139,17 +139,22 @@
   let linkDebounce: ReturnType<typeof setTimeout> | null = null;
 
   function detectLinkTrigger(md: string): { query: string; pos: number; openerLen: number } | null {
-    // Milkdown escapes typed brackets: "[[" becomes "\[\[" in markdown.
-    // Handle both the escaped and raw forms.
-    const escaped = md.lastIndexOf('\\[');
-    const raw = md.lastIndexOf('[[');
+    // Milkdown escapes typed brackets: "[[" arrives in markdown as "\[\["
+    // (4 chars). Find the LAST occurrence of either the escaped pair or the
+    // raw pair, verifying the full opener pattern (not a lone bracket).
+    // Runtime markdown for typed "[[": backslash bracket backslash bracket (4 chars).
+    // Regex makes the escape count explicit instead of hand-counted in a literal.
+    const ESCAPED_OPEN = /\\\[\\\[/g; // matches \\[ \\[ (1 backslash + bracket, twice)
+    let lastEscaped = -1;
+    for (const mm of md.matchAll(ESCAPED_OPEN)) lastEscaped = mm.index ?? -1;
+    const rawIdx = md.lastIndexOf('[[');
     let idx = -1;
     let openerLen = 0;
-    if (escaped !== -1 && escaped > raw) {
-      idx = escaped;
-      openerLen = 4; // \]\] pair occupies 4 chars: \[ \[
-    } else if (raw !== -1) {
-      idx = raw;
+    if (lastEscaped !== -1 && lastEscaped >= rawIdx) {
+      idx = lastEscaped;
+      openerLen = 4;
+    } else if (rawIdx !== -1) {
+      idx = rawIdx;
       openerLen = 2;
     }
     if (idx === -1) return null;
