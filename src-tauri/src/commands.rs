@@ -993,6 +993,25 @@ pub async fn uteke_namespaces_with_counts(
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
+/// Namespace rows incl. active/deprecated breakdown when the server
+/// provides it (raw pass-through, uteke >= 0.16.1).
+#[tauri::command]
+pub async fn uteke_namespaces_breakdown(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .namespaces_breakdown()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
 /// List rooms via HTTP.
 ///
 /// Enriches each room with `memory_count` and `participant_count` via

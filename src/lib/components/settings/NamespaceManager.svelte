@@ -45,7 +45,13 @@
       // on older servers the extra fields are absent and we fall back to totals.
       rows = await uteke.namespacesBreakdown();
     } catch {
-      rows = [];
+      // Breakdown unavailable — still list namespaces with plain counts so
+      // the table (and, once supported, the actions) stays usable.
+      try {
+        rows = (await uteke.namespacesWithCounts()).map((r) => ({ name: r.name, count: r.count }));
+      } catch {
+        rows = [];
+      }
     } finally {
       loading = false;
     }
