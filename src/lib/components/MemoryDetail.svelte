@@ -342,14 +342,16 @@
         </div>
         <pre class="content-text">{memory.content}</pre>
 
-        <div class="copyid-row">
-          <span class="id-short">{memoryId.slice(0, 8)}</span>
-          <button class="copyid-btn" onclick={copyId} title="Copy full ID">
-            {#if copiedId}<Check size={12} strokeWidth={2.5} />{:else}<Copy size={12} strokeWidth={2} />{/if}
-          </button>
-        </div>
-
         <div class="meta-grid">
+          <div class="meta-row">
+            <span class="meta-label">ID</span>
+            <div class="id-row">
+              <code class="id-full" title="Memory ID">{memoryId}</code>
+              <button class="copyid-btn" onclick={copyId} title="Copy ID">
+                {#if copiedId}<Check size={12} strokeWidth={2.5} />{:else}<Copy size={12} strokeWidth={2} />{/if}
+              </button>
+            </div>
+          </div>
           {#if memory.tags.length > 0}
             <div class="meta-row">
               <span class="meta-label">Tags</span>
@@ -660,18 +662,16 @@
   .author-name.muted { color: var(--text-muted); font-weight: 400; }
   .author-time { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); }
 
-  .copyid-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 12px;
-    padding: 2px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--bg-tertiary);
+  .id-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+  .id-full {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+    user-select: all;
   }
-  .id-short { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
   .copyid-btn {
+    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     background: transparent;
