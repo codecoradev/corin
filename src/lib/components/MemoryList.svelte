@@ -725,7 +725,10 @@
     overflow-y: auto;
     min-height: 0;
     margin: 0 -12px;
-    padding: 0 12px;
+    /* Right inset = 12px gutter + 10px scrollbar so the content gutters
+       mirror each other despite the scrollbar living on this edge. */
+    scrollbar-gutter: stable;
+    padding: 0 22px 0 12px;
   }
   .hub-seg {
     display: flex;
