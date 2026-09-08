@@ -116,7 +116,7 @@
               saving = false;
               return;
             }
-            await utekeServer.remember(content, {
+            const result = await utekeServer.remember(content, {
               tags,
               namespace: ns || undefined,
               memory_type: memoryType,
@@ -124,6 +124,17 @@
               // UI-created memories are human-authored provenance.
               metadata: { author: 'human' },
             });
+            // The command re-runs its own ≥0.92 check before inserting — if
+            // it refuses (backend re-check vs frontend race, or a concurrent
+            // insert), surface it instead of reporting a phantom save.
+            if (result.duplicate) {
+              duplicateWarning = {
+                content: result.existing_content ?? '',
+                score: result.score ?? 0,
+              };
+              saving = false;
+              return;
+            }
             inserted = true;
           } catch {
             // Server flaked mid-create — fall through to the Hub DB path.
