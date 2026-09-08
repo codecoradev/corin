@@ -28,6 +28,7 @@
     }
   },
   "bundle": {
+    "createUpdaterArtifacts": true,
     "active": true,
     "targets": ["deb", "rpm", "app", "dmg", "nsis"],
     "icon": [
