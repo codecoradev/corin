@@ -66,31 +66,10 @@
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      // Check for duplicates via semantic search (if server available)
-      try {
-        const result = await utekeServer.remember(content, {
-          tags,
-          namespace: ns || undefined,
-          // UI-created memories are human-authored provenance.
-          metadata: memory ? undefined : { author: 'human' },
-        });
-        if (result.duplicate && !memory) {
-          // Only block new memories, not edits
-          duplicateWarning = {
-            content: result.existing_content ?? '',
-            score: result.score ?? 0,
-          };
-          saving = false;
-          return;
-        }
-      } catch {
-        // Server not available — fall through to Hub DB
-      }
-
       if (memory) {
-        // Edit existing: in-place PUT /memory (stable ID, auto re-embed).
-        // uteke requires UUID ids — anything else (shouldn't happen, HTTP-only
-        // architecture) falls back to create+delete.
+        // EDIT: update in place. No duplicate pre-check here — the old one
+        // used utekeServer.remember, which INSERTS, leaving a stray copy of
+        // the edited content behind (Cora critical #325).
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memory.id);
         if (isUuid) {
           await memoryUpdate({
@@ -115,13 +94,42 @@
           }
         }
       } else {
-        await memoryApi.remember(content, {
-          tags,
-          content_type: contentType,
-          importance,
-          namespace: ns || undefined,
-          metadata: { author: 'human' },
-        });
+        // CREATE: read-only duplicate check first (recall — remember
+        // INSERTS), then insert exactly once.
+        let inserted = false;
+        const serverUp = await utekeServer.status().then((s) => s.available).catch(() => false);
+        if (serverUp) {
+          try {
+            const hits = await utekeServer.recall(content, { namespace: ns || undefined, limit: 3 });
+            const dup = (hits ?? []).find((r) => (r.score ?? 0) >= 0.92);
+            if (dup) {
+              duplicateWarning = {
+                content: dup.content ?? '',
+                score: dup.score ?? 0,
+              };
+              saving = false;
+              return;
+            }
+            await utekeServer.remember(content, {
+              tags,
+              namespace: ns || undefined,
+              // UI-created memories are human-authored provenance.
+              metadata: { author: 'human' },
+            });
+            inserted = true;
+          } catch {
+            // Server flaked mid-create — fall through to the Hub DB path.
+          }
+        }
+        if (!inserted) {
+          await memoryApi.remember(content, {
+            tags,
+            content_type: contentType,
+            importance,
+            namespace: ns || undefined,
+            metadata: { author: 'human' },
+          });
+        }
       }
 
       onsave();
