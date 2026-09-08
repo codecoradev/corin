@@ -180,6 +180,7 @@
   <ConfirmDialog
     open
     title="Rename or merge namespace?"
+    message="Existing memories move with it in a single atomic update."
     confirmLabel={renameTo.trim() ? 'Apply' : ''}
     onconfirm={performRename}
     oncancel={() => (renameTarget = null)}
@@ -196,6 +197,7 @@
   <ConfirmDialog
     open
     title="Delete namespace — choose strategy"
+    message="A namespace is never hard-deleted — memories go somewhere safe."
     confirmLabel="Execute"
     onconfirm={performDelete}
     oncancel={() => (deleteTarget = null)}

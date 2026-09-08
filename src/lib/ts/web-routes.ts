@@ -94,6 +94,7 @@ interface UtekeMemoryRaw {
   pinned?: boolean | null;
   metadata?: Record<string, unknown> | null;
   deprecated?: boolean | null;
+  memory_type?: string | null;
 }
 
 function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, unknown>; deprecated?: boolean } {
@@ -110,6 +111,7 @@ function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, 
     metadata: (m.metadata ?? undefined) as Record<string, unknown> | undefined,
     deprecated: m.deprecated ?? false,
     pinned: m.pinned ?? null,
+    memory_type: m.memory_type ?? null,
   };
 }
 
@@ -283,7 +285,7 @@ async function rememberWithDupCheck(p: Payload): Promise<{ id?: string; duplicat
       return { duplicate: true, existing_id: dup.memory.id, existing_content: dup.memory.content, score: dup.score, hint: 'This memory appears to be a duplicate of an existing one.' };
     }
   } catch { /* recall failure must not block insertion */ }
-  const { id } = await req<{ id: string }>('POST', '/remember', { body: { content, tags, namespace: p.namespace ?? undefined, metadata: p.metadata ?? undefined } });
+  const { id } = await req<{ id: string }>('POST', '/remember', { body: { content, tags, namespace: p.namespace ?? undefined, memory_type: (p.memoryType as string) ?? undefined, importance: (p.importance as number) ?? undefined, metadata: p.metadata ?? undefined } });
   return { id, duplicate: false };
 }
 
@@ -489,7 +491,7 @@ export const webHandlers: Record<string, Handler> = {
   set_settings: async (p) => { lsSet(LS_SETTINGS, p.settings); },
 
   // Memories
-  remember: async (p) => (await req<{ id: string }>('POST', '/remember', { body: { content: p.content, tags: p.tags, namespace: p.namespace ?? undefined, metadata: p.metadata ?? undefined } })).id,
+  remember: async (p) => (await req<{ id: string }>('POST', '/remember', { body: { content: p.content, tags: p.tags, namespace: p.namespace ?? undefined, memory_type: (p.memoryType as string) ?? undefined, importance: (p.importance as number) ?? undefined, metadata: p.metadata ?? undefined } })).id,
   recall: async (p): Promise<SearchResult[]> =>
     (await recallRows(String(p.query), p.namespace as string | null, typeof p.limit === 'number' ? p.limit : 10))
       .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, tags: r.memory.tags ?? [] })),

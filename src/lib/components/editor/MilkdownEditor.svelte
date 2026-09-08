@@ -49,20 +49,24 @@
     const c = new Crepe({
       root: el,
       defaultValue: initialValue,
-      placeholder: initialPlaceholder,
       features: {
         [Crepe.Feature.LinkTooltip]: true,
         [Crepe.Feature.BlockEdit]: true,
         [Crepe.Feature.Placeholder]: true,
-        [Crepe.Feature.Codeblock]: true,
-        [Crepe.Feature.ListItemBlock]: true,
+        [Crepe.Feature.CodeMirror]: true,
+        [Crepe.Feature.ListItem]: true,
       },
       featureConfigs: {
-        [Crepe.Feature.Codeblock]: { languagesWidget: true },
+        // Top-level `placeholder` is not a CrepeConfig option — the
+        // placeholder feature takes its text here.
+        [Crepe.Feature.Placeholder]: {
+          text: initialPlaceholder,
+          mode: 'doc',
+        },
       },
     });
 
-    c.on((listener: { markdownUpdated: (ctx: unknown, md: string) => void }) => {
+    c.on((listener) => {
       listener.markdownUpdated((_ctx, md) => {
         if (applying) return;
         lastEmitted = md;

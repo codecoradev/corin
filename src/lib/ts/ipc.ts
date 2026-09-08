@@ -14,7 +14,7 @@ export const memory = {
   remember: (content: string, opts?: {
     tags?: string[];
     namespace?: string;
-    content_type?: string;
+    memory_type?: string;
     importance?: number;
     /** Provenance slot — e.g. { author: 'human' } for UI-created memories. */
     metadata?: Record<string, unknown>;
@@ -22,7 +22,7 @@ export const memory = {
     content,
     tags: opts?.tags ?? [],
     namespace: opts?.namespace ?? null,
-    content_type: opts?.content_type ?? null,
+    memory_type: opts?.memory_type ?? null,
     importance: opts?.importance ?? null,
     metadata: opts?.metadata ?? null,
   }),
@@ -174,11 +174,13 @@ export const utekeServer = {
       limit: opts?.limit ?? null,
     }),
 
-  remember: (content: string, opts?: { tags?: string[]; namespace?: string; metadata?: Record<string, unknown> }) =>
+  remember: (content: string, opts?: { tags?: string[]; namespace?: string; memory_type?: string; importance?: number; metadata?: Record<string, unknown> }) =>
     call<{ id?: string; duplicate: boolean; existing_id?: string; existing_content?: string; score?: number; hint?: string }>('uteke_remember', {
       content,
       tags: opts?.tags ?? null,
       namespace: opts?.namespace ?? null,
+      memoryType: opts?.memory_type ?? null,
+      importance: opts?.importance ?? null,
       metadata: opts?.metadata ?? null,
     }),
 

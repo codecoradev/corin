@@ -17,7 +17,10 @@
   // Derive initial values reactively from props
   let content = $state('');
   let tagsInput = $state('');
-  let contentType = $state('memory');
+  // uteke's semantic class — fact/procedure/… (memory_type). The old
+  // select mixed content_type with memory_type vocabulary and its value
+  // was dropped on create; it now consistently edits memory_type.
+  let memoryType = $state('fact');
   let importance = $state(0.5);
   let ns = $state('');
   let namespaces = $state<string[]>([]);
@@ -32,14 +35,17 @@
     if (!initialized) {
       content = memory?.content ?? '';
       tagsInput = memory?.tags.join(', ') ?? '';
-      contentType = memory?.content_type ?? 'memory';
+      memoryType = memory?.memory_type ?? 'fact';
       importance = memory?.importance ?? 0.5;
       ns = memory?.namespace ?? namespace ?? '';
       initialized = true;
     }
   });
 
-  const contentTypes = ['memory', 'task', 'procedure', 'fact', 'decision'];
+  const memoryTypes = [
+    'fact', 'note', 'insight', 'decision', 'procedure',
+    'preference', 'context', 'reference', 'event',
+  ];
 
   async function loadNamespaces() {
     try {
@@ -77,13 +83,13 @@
             content,
             tags,
             importance,
-            memory_type: contentType,
+            memory_type: memoryType,
             namespace: ns || undefined,
           });
         } else {
           const newId = await memoryApi.remember(content, {
             tags,
-            content_type: contentType,
+            memory_type: memoryType,
             importance,
             namespace: ns || undefined,
             // Re-created record keeps the original provenance.
@@ -113,6 +119,8 @@
             await utekeServer.remember(content, {
               tags,
               namespace: ns || undefined,
+              memory_type: memoryType,
+              importance,
               // UI-created memories are human-authored provenance.
               metadata: { author: 'human' },
             });
@@ -124,7 +132,7 @@
         if (!inserted) {
           await memoryApi.remember(content, {
             tags,
-            content_type: contentType,
+            memory_type: memoryType,
             importance,
             namespace: ns || undefined,
             metadata: { author: 'human' },
@@ -157,7 +165,7 @@
       if (memory) {
         const newId = await memoryApi.remember(content, {
           tags,
-          content_type: contentType,
+          memory_type: memoryType,
           importance,
           namespace: ns || undefined,
         });
@@ -165,7 +173,7 @@
       } else {
         await memoryApi.remember(content, {
           tags,
-          content_type: contentType,
+          memory_type: memoryType,
           importance,
           namespace: ns || undefined,
         });
@@ -224,9 +232,9 @@
         </div>
 
         <div class="field">
-          <label for="content-type">Content Type</label>
-          <select id="content-type" bind:value={contentType}>
-            {#each contentTypes as ct}
+          <label for="memory-type">Type</label>
+          <select id="memory-type" bind:value={memoryType}>
+            {#each memoryTypes as ct}
               <option value={ct}>{ct}</option>
             {/each}
           </select>

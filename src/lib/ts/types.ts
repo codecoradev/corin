@@ -13,6 +13,8 @@ export interface MemoryEntry {
   updated_at: string | null;
   /** Present on uteke list/get responses; undefined in hand-built results. */
   pinned?: boolean | null;
+  /** Semantic class: fact/procedure/decision/… (server defaults to fact). */
+  memory_type?: string | null;
   /** Provenance slot — { author: 'human' | <agent-name>, … }. */
   metadata?: Record<string, unknown> | null;
 }

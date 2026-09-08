@@ -674,6 +674,8 @@ impl UtekeClient {
         tags: &[String],
         namespace: Option<&str>,
         metadata: Option<&serde_json::Value>,
+        memory_type: Option<&str>,
+        importance: Option<f32>,
     ) -> Result<String, String> {
         let mut body = serde_json::json!({
             "content": content,
@@ -686,6 +688,13 @@ impl UtekeClient {
             // Provenance slot (e.g. {"author":"human"}) — accepted by the
             // server on create and round-tripped verbatim.
             body["metadata"] = md.clone();
+        }
+        // Honored by 0.17+; older servers apply their own defaults.
+        if let Some(mt) = memory_type {
+            body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(imp) = importance {
+            body["importance"] = serde_json::json!(imp);
         }
 
         #[derive(Deserialize)]

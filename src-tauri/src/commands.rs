@@ -55,6 +55,8 @@ pub struct MemoryEntry {
     pub updated_at: Option<String>,
     #[serde(default)]
     pub pinned: Option<bool>,
+    #[serde(default)]
+    pub memory_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,8 +139,8 @@ pub async fn remember(
     content: String,
     tags: Vec<String>,
     namespace: Option<String>,
-    _content_type: Option<String>,
-    _importance: Option<f32>,
+    memory_type: Option<String>,
+    importance: Option<f32>,
     metadata: Option<serde_json::Value>,
 ) -> Result<String, CommandError> {
     let client = {
@@ -150,7 +152,14 @@ pub async fn remember(
     };
     let ns = namespace.as_deref();
     client
-        .remember(&content, &tags, ns, metadata.as_ref())
+        .remember(
+            &content,
+            &tags,
+            ns,
+            metadata.as_ref(),
+            memory_type.as_deref(),
+            importance,
+        )
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
@@ -267,6 +276,7 @@ pub async fn list(
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
             pinned: Some(m.pinned),
+            memory_type: Some(m.memory_type),
         })
         .collect())
 }
@@ -317,6 +327,7 @@ pub async fn get_memory(
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
         pinned: Some(m.pinned),
+        memory_type: Some(m.memory_type),
     })
 }
 
@@ -365,6 +376,7 @@ pub async fn get_graph_data(
             created_at: None,
             updated_at: None,
             pinned: None,
+            memory_type: None,
         })
         .collect();
 
@@ -435,6 +447,7 @@ pub async fn get_neighbors(
                 created_at: Some(m.created_at),
                 updated_at: Some(m.updated_at),
                 pinned: Some(m.pinned),
+                memory_type: Some(m.memory_type),
             });
         }
     }
@@ -754,6 +767,7 @@ pub async fn uteke_list(
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
             pinned: Some(m.pinned),
+            memory_type: Some(m.memory_type),
         })
         .collect())
 }
@@ -810,6 +824,7 @@ async fn list_multi_namespace(
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
             pinned: Some(m.pinned),
+            memory_type: Some(m.memory_type),
         })
         .collect())
 }
@@ -854,6 +869,7 @@ pub async fn uteke_get(
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
         pinned: Some(m.pinned),
+        memory_type: Some(m.memory_type),
     })
 }
 
@@ -925,6 +941,7 @@ pub async fn uteke_graph(
                         created_at: None,
                         updated_at: None,
                         pinned: None,
+                        memory_type: None,
                     })
                     .collect(),
                 edges: graph
@@ -1158,6 +1175,7 @@ pub async fn uteke_room_recall(
             created_at: Some(r.memory.created_at),
             updated_at: Some(r.memory.updated_at),
             pinned: Some(r.memory.pinned),
+            memory_type: Some(r.memory.memory_type),
         })
         .collect())
 }
@@ -1228,6 +1246,7 @@ pub async fn uteke_room_memories(
                 created_at: Some(m.created_at),
                 updated_at: Some(m.updated_at),
                 pinned: Some(m.pinned),
+                memory_type: Some(m.memory_type),
             })
             .collect()),
         Err(_) => {
@@ -1248,6 +1267,7 @@ pub async fn uteke_room_memories(
                     created_at: Some(r.memory.created_at),
                     updated_at: Some(r.memory.updated_at),
                     pinned: Some(r.memory.pinned),
+                    memory_type: Some(r.memory.memory_type),
                 })
                 .collect())
         }
@@ -1668,7 +1688,7 @@ pub async fn import_data(
                     .map(|s| s.to_string());
 
                 client
-                    .remember(content, &tags, namespace.as_deref(), None)
+                    .remember(content, &tags, namespace.as_deref(), None, None, None)
                     .await
                     .map_err(|e| CommandError::Uteke(e.to_string()))?;
                 count += 1;
@@ -1757,7 +1777,7 @@ pub async fn import_data(
                     }
 
                     client
-                        .remember(body, &tags, namespace.as_deref(), None)
+                        .remember(body, &tags, namespace.as_deref(), None, None, None)
                         .await
                         .map_err(|e| CommandError::Uteke(e.to_string()))?;
                     count += 1;
@@ -1913,6 +1933,8 @@ pub async fn uteke_remember(
     tags: Option<Vec<String>>,
     namespace: Option<String>,
     metadata: Option<serde_json::Value>,
+    memory_type: Option<String>,
+    importance: Option<f64>,
 ) -> Result<serde_json::Value, CommandError> {
     let tags = tags.unwrap_or_default();
     let client = {
@@ -1949,7 +1971,14 @@ pub async fn uteke_remember(
 
     // No duplicate found — insert.
     let id = client
-        .remember(&content, &tags, namespace.as_deref(), metadata.as_ref())
+        .remember(
+            &content,
+            &tags,
+            namespace.as_deref(),
+            metadata.as_ref(),
+            memory_type.as_deref(),
+            importance.map(|v| v as f32),
+        )
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
