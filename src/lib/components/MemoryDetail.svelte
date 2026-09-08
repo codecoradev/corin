@@ -379,7 +379,7 @@
               </span>
             {/if}
           </div>
-          {#if memory.content_type}
+          {#if memory.memory_type || memory.content_type}
             <div class="meta-row">
               <span class="meta-label">Type</span>
               <span>{memory.memory_type ?? memory.content_type ?? '—'}</span>
