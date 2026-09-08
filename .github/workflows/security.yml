@@ -1,0 +1,62 @@
+name: Security
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop]
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  cargo-audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run cargo audit
+        # Cargo.lock lives in src-tauri/ (Tauri workspace), not the repo root.
+        # Ignored advisories (with justification):
+        #   RUSTSEC-2026-0194/0195: quick-xml DoS — transitive via
+        #     tauri → plist, which only parses the app's own bundled
+        #     metadata (trusted local content, no network XML input).
+        #     Patched in quick-xml >= 0.41.0; remove these ignores when
+        #     tauri ships the plist/quick-xml 0.41+ stack.
+        run: cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+
+  npm-audit:
+    name: npm Audit (prod deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Run npm audit
+        # Production dependencies only — dev-dep advisories are tracked via
+        # dependabot instead of failing every PR.
+        run: npm audit --omit=dev --audit-level=high
+
+  trivy:
+    name: Trivy FS Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true

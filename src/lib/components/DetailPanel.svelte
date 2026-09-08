@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, onDestroy, type Snippet } from 'svelte';
+  import { type Snippet } from 'svelte';
+  import { focusTrap } from '../ui/focusTrap';
 
   interface Props {
     memoryId: string;
@@ -18,14 +19,9 @@
       onclose();
     }
   }
-
-  onMount(() => {
-    window.addEventListener('keydown', handleKeydown);
-  });
-  onDestroy(() => {
-    window.removeEventListener('keydown', handleKeydown);
-  });
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <!-- Backdrop (click to close) -->
 <div
@@ -35,16 +31,18 @@
 ></div>
 
 <!-- Slide-in panel -->
-<aside class="detail-panel" role="dialog" aria-modal="true">
+<div class="detail-panel" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
   {@render children?.()}
-</aside>
+</div>
 
 <style>
   .detail-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
-    z-index: 89;
+    background: var(--scrim);
+    /* Above the settings modal (101): the recycle bin in Settings →
+       Maintenance opens this same panel, so it must cover the modal. */
+    z-index: 102;
     animation: fadeIn 0.15s ease;
   }
 
@@ -58,7 +56,7 @@
     background: var(--bg-secondary);
     border-left: 1px solid var(--border);
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-    z-index: 90;
+    z-index: 103;
     /* No overflow on the panel itself — prevents clipping the
        delete confirmation dialog. MemoryDetail scrolls internally. */
     animation: slideIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);

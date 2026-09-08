@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { system } from '../ts/ipc';
+  import { system, utekeExport, utekeImport } from '../ts/ipc';
+  import SearchableSelect from '../ui/SearchableSelect.svelte';
   import { open, save } from '@tauri-apps/plugin-dialog';
-  import { readTextFile } from '@tauri-apps/plugin-fs';
+  import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+  import { isWebMode } from '../ts/transport';
+  import { parseJsonl, type JsonlPreview } from '../utils/jsonl';
 
   interface Props {
     namespaces: string[];
@@ -13,16 +16,19 @@
   // Mode
   let mode = $state<'export' | 'import'>('export');
 
-  // Export state
-  let exportFormat = $state<'json' | 'markdown' | 'csv'>('json');
-  let exportNamespace = $state<string | null>(null);
+  // Export state — '' = all namespaces (SearchableSelect's empty value).
+  let exportFormat = $state<'json' | 'jsonl' | 'markdown' | 'csv'>('json');
+  let exportNamespace = $state('');
   let exporting = $state(false);
 
   // Import state
   let importStep = $state<'pick' | 'preview' | 'done'>('pick');
   let importFileName = $state<string | null>(null);
   let importFileData = $state<string | null>(null);
-  let importFormat = $state<'json' | 'markdown'>('json');
+  let importFormat = $state<'json' | 'markdown' | 'jsonl'>('json');
+  let jsonlPreview = $state<JsonlPreview | null>(null);
+  let jsonlTargetNs = $state<string>('');
+  let importResult = $state<{ imported: number; skipped: number } | null>(null);
   let importPreview = $state<{
     format: string;
     memories: number;
@@ -38,13 +44,15 @@
   function reset() {
     mode = 'export';
     exportFormat = 'json';
-    exportNamespace = null;
+    exportNamespace = '';
     exporting = false;
     importStep = 'pick';
     importFileName = null;
     importFileData = null;
     importFormat = 'json';
-    importPreview = null;
+    jsonlPreview = null;
+    jsonlTargetNs = '';
+    importResult = null;
     importing = false;
     importCount = null;
     errorMsg = null;
@@ -56,34 +64,52 @@
     exporting = true;
     errorMsg = null;
     try {
-      const ext = exportFormat === 'json' ? 'json' : exportFormat === 'csv' ? 'csv' : 'md';
+      const ext =
+        exportFormat === 'json' ? 'json'
+        : exportFormat === 'csv' ? 'csv'
+        : exportFormat === 'jsonl' ? 'jsonl'
+        : 'md';
       const name = exportNamespace
         ? `corin-export-${exportNamespace}.${ext}`
         : `corin-export.${ext}`;
 
-      const filePath = await save({
-        defaultPath: name,
-        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
-      });
+      // Desktop: native save dialog first — the chosen path is the write
+      // target. Web mode: no dialog, straight to a Blob download.
+      let filePath: string | null = null;
+      if (!isWebMode) {
+        filePath = await save({
+          defaultPath: name,
+          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+        });
 
-      if (!filePath) {
-        exporting = false;
-        return;
+        if (!filePath) {
+          exporting = false;
+          return;
+        }
       }
 
-      const data = await system.exportData(exportFormat, exportNamespace);
+      // JSONL is the server-native format (GET /export); the other formats
+      // are CorIn's own export engines (system.export_data).
+      const data = exportFormat === 'jsonl'
+        ? await utekeExport(exportNamespace || undefined)
+        : await system.exportData(exportFormat, exportNamespace || null);
 
-      // Write via Tauri fs (use the shell plugin to write)
-      // For simplicity we use the browser download approach as fallback
-      const blob = new Blob([data], {
-        type: exportFormat === 'json' ? 'application/json' : exportFormat === 'csv' ? 'text/csv' : 'text/markdown',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (filePath) {
+        await writeTextFile(filePath, data);
+      } else {
+        const mime =
+          exportFormat === 'json' ? 'application/json'
+          : exportFormat === 'csv' ? 'text/csv'
+          : exportFormat === 'jsonl' ? 'application/x-ndjson'
+          : 'text/markdown';
+        const blob = new Blob([data], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (e: any) {
       errorMsg = e.toString();
     } finally {
@@ -95,11 +121,17 @@
 
   async function handlePickFile() {
     errorMsg = null;
+    // Web mode: hidden <input type="file"> instead of the native dialog.
+    if (isWebMode) {
+      fileInput?.click();
+      return;
+    }
     try {
       const filePath = await open({
         multiple: false,
         filters: [
           { name: 'CorIn Export', extensions: ['json'] },
+          { name: 'JSONL', extensions: ['jsonl'] },
           { name: 'Markdown', extensions: ['md'] },
         ],
       });
@@ -110,10 +142,39 @@
       importFileData = await readTextFile(filePath);
 
       // Detect format from extension
-      importFormat = importFileName.endsWith('.md') ? 'markdown' : 'json';
+      importFormat = importFileName.endsWith('.md') ? 'markdown'
+        : importFileName.endsWith('.jsonl') ? 'jsonl'
+        : 'json';
 
-      // Preview
-      importPreview = await system.importPreview(importFormat, importFileData);
+      if (importFormat === 'jsonl') {
+        jsonlPreview = parseJsonl(importFileData);
+      } else {
+        importPreview = await system.importPreview(importFormat, importFileData);
+      }
+      importStep = 'preview';
+    } catch (e: any) {
+      errorMsg = e.toString();
+    }
+  }
+
+  /** Web-mode file input change handler. */
+  async function handleWebFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-picking the same file
+    if (!file) return;
+    errorMsg = null;
+    try {
+      importFileName = file.name;
+      importFileData = await file.text();
+      importFormat = importFileName.endsWith('.md') ? 'markdown'
+        : importFileName.endsWith('.jsonl') ? 'jsonl'
+        : 'json';
+      if (importFormat === 'jsonl') {
+        jsonlPreview = parseJsonl(importFileData);
+      } else {
+        importPreview = await system.importPreview(importFormat, importFileData);
+      }
       importStep = 'preview';
     } catch (e: any) {
       errorMsg = e.toString();
@@ -125,9 +186,15 @@
     importing = true;
     errorMsg = null;
     try {
-      importCount = await system.importData(importFormat, importFileData);
-      importStep = 'done';
-      onimported?.();
+      if (importFormat === 'jsonl') {
+        importResult = await utekeImport(importFileData, jsonlTargetNs.trim() || undefined);
+        importStep = 'done';
+        onimported?.();
+      } else {
+        importCount = await system.importData(importFormat, importFileData);
+        importStep = 'done';
+        onimported?.();
+      }
     } catch (e: any) {
       errorMsg = e.toString();
     } finally {
@@ -137,10 +204,22 @@
 
   const formatInfo: Record<string, string> = {
     json: 'Full bundle: memories, edges, rooms. Best for backups and migration.',
+    jsonl: 'Server-native JSONL (GET /export). Round-trips through POST /import — duplicates are skipped.',
     markdown: 'Per-memory .md files with Obsidian-compatible YAML frontmatter.',
     csv: 'Flat table export. Compatible with spreadsheets and data tools.',
   };
+
+  // Web-mode hidden file input
+  let fileInput = $state<HTMLInputElement | null>(null);
 </script>
+
+<input
+  type="file"
+  accept=".json,.md"
+  bind:this={fileInput}
+  onchange={handleWebFile}
+  hidden
+/>
 
 <div class="import-export">
   <div class="mode-tabs">
@@ -159,6 +238,7 @@
       <div class="format-grid">
         {#each [
           { key: 'json' as const, label: 'JSON', desc: formatInfo.json },
+          { key: 'jsonl' as const, label: 'JSONL (server)', desc: formatInfo.jsonl },
           { key: 'markdown' as const, label: 'Markdown', desc: formatInfo.markdown },
           { key: 'csv' as const, label: 'CSV', desc: formatInfo.csv },
         ] as fmt}
@@ -176,12 +256,12 @@
 
     <div class="section">
       <h3>Namespace</h3>
-      <select bind:value={exportNamespace}>
-        <option value="">All namespaces</option>
-        {#each namespaces as ns}
-          <option value={ns}>{ns}</option>
-        {/each}
-      </select>
+      <SearchableSelect
+        options={namespaces}
+        bind:value={exportNamespace}
+        emptyLabel="All namespaces"
+        placeholder="Search namespaces…"
+      />
     </div>
 
     <button class="primary-btn" onclick={handleExport} disabled={exporting}>
@@ -194,10 +274,48 @@
     {#if importStep === 'pick'}
       <div class="section">
         <h3>Import from file</h3>
-        <p class="hint">Supported formats: CorIn JSON export (.json), Obsidian-compatible Markdown (.md)</p>
+        <p class="hint">Supported formats: CorIn JSON export (.json), server JSONL (.jsonl), Obsidian-compatible Markdown (.md)</p>
         <button class="primary-btn" onclick={handlePickFile}>
           Pick File...
         </button>
+      </div>
+    {:else if importStep === 'preview' && importFormat === 'jsonl' && jsonlPreview}
+      <div class="section">
+        <h3>Preview: {importFileName}</h3>
+        <div class="preview-grid">
+          <div class="preview-item">
+            <span class="preview-val">{jsonlPreview.count}</span>
+            <span class="preview-label">Entries</span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-val">{jsonlPreview.malformed}</span>
+            <span class="preview-label">Malformed</span>
+          </div>
+        </div>
+        {#if jsonlPreview.first5.length > 0}
+          <div class="jsonl-samples">
+            {#each jsonlPreview.first5 as entry}
+              <div class="jsonl-sample">{entry.content.slice(0, 90)}{entry.content.length > 90 ? '…' : ''}</div>
+            {/each}
+          </div>
+        {/if}
+        <div class="section">
+          <h3>Target namespace (optional)</h3>
+          <SearchableSelect
+            options={namespaces}
+            bind:value={jsonlTargetNs}
+            emptyLabel="Keep each entry's own namespace"
+            placeholder="Search namespaces…"
+          />
+        </div>
+        <div class="preview-actions">
+          <button class="secondary-btn" onclick={() => importStep = 'pick'}>
+            Back
+          </button>
+          <button class="primary-btn" onclick={handleImport} disabled={importing || jsonlPreview.count === 0}>
+            {importing ? 'Importing...' : `Import ${jsonlPreview.count} entries`}
+          </button>
+        </div>
       </div>
     {:else if importStep === 'preview' && importPreview}
       <div class="section">
@@ -240,9 +358,17 @@
     {:else if importStep === 'done'}
       <div class="section">
         <h3>Import Complete</h3>
-        <p class="success-msg">
-          Successfully imported {importCount} memories.
-        </p>
+        {#if importResult}
+          <p class="success-msg">
+            Imported {importResult.imported} new memor{importResult.imported === 1 ? 'y' : 'ies'}
+            {#if importResult.skipped > 0}— {importResult.skipped} malformed line{importResult.skipped === 1 ? '' : 's'} skipped{/if}.
+            Exact duplicates are silently deduplicated by the server.
+          </p>
+        {:else}
+          <p class="success-msg">
+            Successfully imported {importCount} memories.
+          </p>
+        {/if}
         <button class="secondary-btn" onclick={reset}>
           Done
         </button>
@@ -261,7 +387,7 @@
     gap: 0;
     margin-bottom: 16px;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
@@ -309,7 +435,7 @@
     padding: 10px 12px;
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     text-align: left;
     transition: border-color 0.15s;
@@ -335,16 +461,6 @@
     color: var(--text-muted);
   }
 
-  select {
-    width: 100%;
-    padding: 8px 10px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 0.85rem;
-  }
-
   .hint {
     font-size: 0.78rem;
     color: var(--text-muted);
@@ -357,7 +473,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
@@ -378,7 +494,7 @@
     background: transparent;
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
     cursor: pointer;
     transition: background 0.15s;
@@ -402,7 +518,7 @@
     padding: 12px 8px;
     background: var(--bg-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .preview-val {
@@ -431,6 +547,26 @@
     color: var(--text-secondary);
   }
 
+  .jsonl-samples {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .jsonl-sample {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .preview-actions {
     display: flex;
     gap: 8px;
@@ -447,10 +583,10 @@
 
   .error-msg {
     padding: 8px 12px;
-    background: color-mix(in srgb, #f43f5e 10%, transparent);
-    color: #f43f5e;
-    border: 1px solid color-mix(in srgb, #f43f5e 30%, transparent);
-    border-radius: 4px;
+    background: var(--color-red-bg);
+    color: var(--red);
+    border: 1px solid var(--color-red-line);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     margin-bottom: 12px;
   }

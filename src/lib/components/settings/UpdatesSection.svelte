@@ -28,7 +28,7 @@
         pendingUpdate = update;
         updateStatus = `Update available: v${update.version} — click Install below`;
       } else if (!silent) {
-        updateStatus = 'Up to date ✅';
+        updateStatus = 'Up to date';
       }
     } catch (e: unknown) {
       if (!silent) updateStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -85,7 +85,7 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.85rem;
   }
   .data-btn:hover { border-color: var(--accent); }
@@ -97,7 +97,7 @@
     background: var(--green);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-weight: 600;
     font-size: 0.85rem;
   }

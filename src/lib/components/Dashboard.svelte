@@ -1,33 +1,45 @@
 <script lang="ts">
   import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
-  import { getStats } from '../stores/cache.svelte';
+  import { getStats, getNamespaces } from '../stores/cache.svelte';
+  import ActivityTimeline from './ActivityTimeline.svelte';
+  import { isWebMode } from '../ts/transport';
   import type {
     StatsResponse,
     MemoryEntry,
   } from '../ts/types';
+  import { Spinner } from '../ui';
+  import { kbdCombo } from '../utils/platform';
 
   interface Props {
     namespace: string | null;
     onmemoryclick: (id: string) => void;
     onquicksearch: (query: string) => void;
+    onnewmemory: () => void;
   }
 
-  let { namespace, onmemoryclick, onquicksearch }: Props = $props();
+  let { namespace, onmemoryclick, onquicksearch, onnewmemory }: Props = $props();
 
   // ─── Uteke stats + recent memories ─────────────────────────────────
   let stats = $state<StatsResponse | null>(null);
+  // Heatmap collapsed by default — the overview card stays compact; the
+  // boxes are one "Show activity heatmap" click away.
+  let showHeatmap = $state(false);
   let recent = $state<MemoryEntry[]>([]);
+  let activity = $state<MemoryEntry[]>([]);
   let searchQuery = $state('');
   let loading = $state(true);
   let serverOnline = $state(false);
+  let namespacesList = $state<string[]>([]);
 
   async function loadData() {
     loading = true;
     try {
-      const [s, status] = await Promise.all([
+      const [s, status, nss] = await Promise.all([
         getStats(),
         utekeServer.status().catch(() => ({ available: false })),
+        getNamespaces().catch(() => [] as string[]),
       ]);
+      namespacesList = nss;
       stats = s;
       serverOnline = status.available;
 
@@ -35,12 +47,19 @@
         recent = await utekeServer
           .recent({ namespace, limit: 10 })
           .catch(() => []);
+        activity = await utekeServer
+          .recent({ namespace, limit: 500 })
+          .catch(() => []);
       } else if (namespace) {
         recent = await memoryApi
           .list({ namespace, limit: 10 })
           .catch(() => []);
+        activity = await memoryApi
+          .list({ namespace, limit: 500 })
+          .catch(() => []);
       } else {
         recent = await memoryApi.list({ limit: 10 }).catch(() => []);
+        activity = await memoryApi.list({ limit: 500 }).catch(() => []);
       }
     } catch {
       // store not initialized yet
@@ -67,7 +86,7 @@
   <div class="quick-search">
     <input
       type="text"
-      placeholder={serverOnline ? 'Semantic search...' : 'Search memories...'}
+      placeholder="Search memories... (Enter)"
       value={searchQuery}
       oninput={(e) => (searchQuery = e.currentTarget.value)}
       onkeydown={(e) => {
@@ -84,28 +103,39 @@
 
   <div class="scroll-area">
     {#if loading}
-    <div class="loading">Loading...</div>
+    <div class="loading"><Spinner size={18} /> Loading...</div>
   {:else}
-    <!-- Uteke stats -->
+    <!-- Overview: store stats + activity heatmap, one glanceable card -->
     <section class="stats-section">
-      <h2 class="section-title">Uteke Memory</h2>
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_memories ?? 0}</div>
-          <div class="stat-label">Memories</div>
+      <h2 class="section-title">Overview</h2>
+      <div class="overview-card">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">{stats?.total_memories ?? 0}</div>
+            <div class="stat-label">Memories</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
+            <div class="stat-label">Namespaces</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{stats?.total_tags ?? 0}</div>
+            <div class="stat-label">Tags</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
+            <div class="stat-label">DB Size</div>
+          </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_namespaces ?? 0}</div>
-          <div class="stat-label">Namespaces</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{stats?.total_tags ?? 0}</div>
-          <div class="stat-label">Tags</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{formatBytes(stats?.db_size_bytes ?? 0)}</div>
-          <div class="stat-label">DB Size</div>
-        </div>
+        <button class="heatmap-toggle" onclick={() => (showHeatmap = !showHeatmap)}>
+          <span class="heatmap-chev">{showHeatmap ? '▾' : '▸'}</span>
+          {showHeatmap ? 'Hide activity heatmap' : 'Show activity heatmap'}
+        </button>
+        {#if showHeatmap}
+          <div class="heatmap-wrap">
+            <ActivityTimeline memories={activity} />
+          </div>
+        {/if}
       </div>
     </section>
 
@@ -114,10 +144,11 @@
       <h2 class="section-title">Recent Memories</h2>
       {#if recent.length === 0}
         <div class="empty-state">
-          <p>
-            No memories yet. Create your first memory with
-            <kbd>Ctrl+N</kbd>
-          </p>
+          <p>No memories yet.</p>
+          <button class="empty-cta" onclick={onnewmemory}>Create your first memory</button>
+          {#if !isWebMode}
+            <p class="empty-hint">or press <kbd>{kbdCombo('N')}</kbd></p>
+          {/if}
         </div>
       {:else}
         <div class="recent-list">
@@ -156,15 +187,14 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 24px;
-    max-width: 960px;
-    margin: 0 auto;
+    padding: 24px 28px;
   }
 
   .scroll-area {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    padding-right: 16px;
   }
 
   .section-title {
@@ -188,7 +218,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.95rem;
     outline: none;
   }
@@ -202,7 +232,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
   }
@@ -216,6 +246,32 @@
     margin-bottom: 28px;
   }
 
+  .overview-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+  }
+
+  .heatmap-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .heatmap-toggle:hover { color: var(--accent); }
+  .heatmap-chev { font-size: 0.6rem; }
+  .heatmap-wrap { margin-top: 10px; }
+
+  .overview-card .stats-grid {
+    margin-bottom: 14px;
+  }
+
   .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -225,7 +281,7 @@
   .stat-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 16px;
     text-align: center;
   }
@@ -257,7 +313,7 @@
     padding: 12px 16px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: border-color 0.1s;
   }
@@ -286,21 +342,39 @@
     padding: 2px 6px;
     background: var(--bg-hover);
     color: var(--text-secondary);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .namespace {
     font-size: 0.7rem;
     padding: 2px 6px;
-    background: rgba(137, 180, 250, 0.15);
+    background: var(--color-blue-bg);
     color: var(--accent);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .empty-state {
     text-align: center;
     padding: 40px;
     color: var(--text-muted);
+  }
+
+  .empty-cta {
+    margin-top: 10px;
+    padding: 8px 16px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .empty-cta:hover { opacity: 0.9; }
+
+  .empty-hint {
+    margin-top: 8px;
+    font-size: 0.8rem;
   }
 
   .loading {
@@ -312,7 +386,7 @@
   kbd {
     padding: 2px 6px;
     background: var(--bg-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.8rem;
   }

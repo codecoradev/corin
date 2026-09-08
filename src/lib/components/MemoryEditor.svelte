@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { memory as memoryApi, system, utekeServer } from '../ts/ipc';
+  import { memory as memoryApi, system, utekeServer, memoryUpdate } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import type { MemoryEntry } from '../ts/types';
+  import { X, TriangleAlert } from 'lucide-svelte';
+  import { focusTrap } from '../ui/focusTrap';
 
   interface Props {
     memory: MemoryEntry | null;
@@ -14,7 +17,10 @@
   // Derive initial values reactively from props
   let content = $state('');
   let tagsInput = $state('');
-  let contentType = $state('memory');
+  // uteke's semantic class — fact/procedure/… (memory_type). The old
+  // select mixed content_type with memory_type vocabulary and its value
+  // was dropped on create; it now consistently edits memory_type.
+  let memoryType = $state('fact');
   let importance = $state(0.5);
   let ns = $state('');
   let namespaces = $state<string[]>([]);
@@ -29,14 +35,17 @@
     if (!initialized) {
       content = memory?.content ?? '';
       tagsInput = memory?.tags.join(', ') ?? '';
-      contentType = memory?.content_type ?? 'memory';
+      memoryType = memory?.memory_type ?? 'fact';
       importance = memory?.importance ?? 0.5;
       ns = memory?.namespace ?? namespace ?? '';
       initialized = true;
     }
   });
 
-  const contentTypes = ['memory', 'task', 'procedure', 'fact', 'decision'];
+  const memoryTypes = [
+    'fact', 'note', 'insight', 'decision', 'procedure',
+    'preference', 'context', 'reference', 'event',
+  ];
 
   async function loadNamespaces() {
     try {
@@ -63,45 +72,83 @@
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      // Check for duplicates via semantic search (if server available)
-      try {
-        const result = await utekeServer.remember(content, {
-          tags,
-          namespace: ns || undefined,
-        });
-        if (result.duplicate && !memory) {
-          // Only block new memories, not edits
-          duplicateWarning = {
-            content: result.existing_content ?? '',
-            score: result.score ?? 0,
-          };
-          saving = false;
-          return;
-        }
-      } catch {
-        // Server not available — fall through to Hub DB
-      }
-
       if (memory) {
-        // Edit existing: create new first, then delete old (avoid data loss on failure)
-        const newId = await memoryApi.remember(content, {
-          tags,
-          content_type: contentType,
-          importance,
-          namespace: ns || undefined,
-        });
-
-        // Only delete old after successful creation
-        if (newId) {
-          await memoryApi.forget(memory.id);
+        // EDIT: update in place. No duplicate pre-check here — the old one
+        // used utekeServer.remember, which INSERTS, leaving a stray copy of
+        // the edited content behind (Cora critical #325).
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memory.id);
+        if (isUuid) {
+          await memoryUpdate({
+            id: memory.id,
+            content,
+            tags,
+            importance,
+            memory_type: memoryType,
+            namespace: ns || undefined,
+          });
+        } else {
+          const newId = await memoryApi.remember(content, {
+            tags,
+            memory_type: memoryType,
+            importance,
+            namespace: ns || undefined,
+            // Re-created record keeps the original provenance.
+            metadata: { author: (memory.metadata?.author as string) ?? 'human' },
+          });
+          if (newId) {
+            await memoryApi.forget(memory.id);
+          }
         }
       } else {
-        await memoryApi.remember(content, {
-          tags,
-          content_type: contentType,
-          importance,
-          namespace: ns || undefined,
-        });
+        // CREATE: read-only duplicate check first (recall — remember
+        // INSERTS), then insert exactly once.
+        let inserted = false;
+        const serverUp = await utekeServer.status().then((s) => s.available).catch(() => false);
+        if (serverUp) {
+          try {
+            const hits = await utekeServer.recall(content, { namespace: ns || undefined, limit: 3 });
+            const dup = (hits ?? []).find((r) => (r.score ?? 0) >= 0.92);
+            if (dup) {
+              duplicateWarning = {
+                content: dup.content ?? '',
+                score: dup.score ?? 0,
+              };
+              saving = false;
+              return;
+            }
+            const result = await utekeServer.remember(content, {
+              tags,
+              namespace: ns || undefined,
+              memory_type: memoryType,
+              importance,
+              // UI-created memories are human-authored provenance.
+              metadata: { author: 'human' },
+            });
+            // The command re-runs its own ≥0.92 check before inserting — if
+            // it refuses (backend re-check vs frontend race, or a concurrent
+            // insert), surface it instead of reporting a phantom save.
+            if (result.duplicate) {
+              duplicateWarning = {
+                content: result.existing_content ?? '',
+                score: result.score ?? 0,
+              };
+              saving = false;
+              return;
+            }
+            inserted = true;
+          } catch {
+            // Server flaked mid-create — fall through to the Hub DB path.
+          }
+        }
+        if (!inserted) {
+          await memoryApi.remember(content, {
+            tags,
+            memory_type: memoryType,
+            importance,
+            namespace: ns || undefined,
+            metadata: { author: 'human' },
+          });
+        }
       }
 
       onsave();
@@ -129,7 +176,7 @@
       if (memory) {
         const newId = await memoryApi.remember(content, {
           tags,
-          content_type: contentType,
+          memory_type: memoryType,
           importance,
           namespace: ns || undefined,
         });
@@ -137,7 +184,7 @@
       } else {
         await memoryApi.remember(content, {
           tags,
-          content_type: contentType,
+          memory_type: memoryType,
           importance,
           namespace: ns || undefined,
         });
@@ -155,15 +202,21 @@
 
 <div
   class="modal-overlay"
-  role="button"
-  tabindex="0"
+  role="presentation"
   onclick={onclose}
   onkeydown={(e) => e.key === 'Escape' && onclose()}
 >
-  <div class="editor-dialog" onclick={(e) => e.stopPropagation()} role="presentation">
+  <div
+    class="editor-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-label={memory ? 'Edit Memory' : 'New Memory'}
+    use:focusTrap
+    onclick={(e) => e.stopPropagation()}
+  >
     <div class="editor-header">
       <h2>{memory ? 'Edit Memory' : 'New Memory'}</h2>
-      <button class="close-btn" onclick={onclose}>✕</button>
+      <button class="close-btn" onclick={onclose}><X size={16} strokeWidth={2} /></button>
     </div>
 
     <div class="editor-body">
@@ -174,6 +227,7 @@
           bind:value={content}
           placeholder="Write your memory..."
           rows="8"
+          autofocus
         ></textarea>
       </div>
 
@@ -189,9 +243,9 @@
         </div>
 
         <div class="field">
-          <label for="content-type">Content Type</label>
-          <select id="content-type" bind:value={contentType}>
-            {#each contentTypes as ct}
+          <label for="memory-type">Type</label>
+          <select id="memory-type" bind:value={memoryType}>
+            {#each memoryTypes as ct}
               <option value={ct}>{ct}</option>
             {/each}
           </select>
@@ -207,6 +261,8 @@
             list="ns-list"
             bind:value={ns}
             placeholder="default"
+            disabled={memory !== null}
+            title={memory !== null ? 'Namespace cannot be changed on update (PUT /memory)' : ''}
           />
           <datalist id="ns-list">
             {#each namespaces as n}
@@ -234,7 +290,7 @@
 
       {#if duplicateWarning}
         <div class="dup-warning">
-          <div class="dup-header">⚠ Possible duplicate detected ({(duplicateWarning.score * 100).toFixed(0)}% match)</div>
+          <div class="dup-header"><TriangleAlert size={13} strokeWidth={2.5} /> Possible duplicate detected ({(duplicateWarning.score * 100).toFixed(0)}% match)</div>
           <div class="dup-content">{duplicateWarning.content.slice(0, 120)}</div>
           <div class="dup-actions">
             <button class="dup-cancel" onclick={async () => { duplicateWarning = null; await forceSave(); }}>Save anyway</button>
@@ -245,7 +301,7 @@
     </div>
 
     <div class="editor-footer">
-      <span class="hint"><kbd>Ctrl+Enter</kbd> to save</span>
+      <span class="hint"><kbd>{kbdCombo('Enter')}</kbd> to save</span>
       <div class="footer-actions">
         <button class="cancel-btn" onclick={onclose}>Cancel</button>
         <button class="save-btn" onclick={handleSave} disabled={saving}>
@@ -260,7 +316,7 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--scrim);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -270,7 +326,7 @@
   .editor-dialog {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     width: 90%;
     max-width: 640px;
     max-height: 85vh;
@@ -334,7 +390,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.9rem;
     outline: none;
     font-family: inherit;
@@ -351,12 +407,29 @@
     border-color: var(--accent);
   }
 
+  /* WebKit renders native <select> text smaller than the surrounding form
+     controls — drop the native chrome so the font/padding follow ours. */
+  .field select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238B93A7' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+  .field select option {
+    font-size: 0.9rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
   .field input[type='range'] {
     padding: 0;
     height: 6px;
     -webkit-appearance: none;
     background: var(--bg-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     border: none;
   }
 
@@ -373,22 +446,25 @@
     color: var(--red);
     font-size: 0.85rem;
     padding: 8px 12px;
-    background: rgba(243, 139, 168, 0.1);
-    border-radius: 4px;
+    background: var(--color-red-bg);
+    border-radius: var(--radius-sm);
   }
 
   .dup-warning {
     margin-top: 8px;
     padding: 12px;
-    background: rgba(250, 179, 135, 0.1);
-    border: 1px solid rgba(250, 179, 135, 0.3);
-    border-radius: 6px;
+    background: var(--color-peach-bg);
+    border: 1px solid var(--color-peach-line);
+    border-radius: var(--radius);
   }
 
   .dup-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.85rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--peach);
     margin-bottom: 6px;
   }
 
@@ -398,7 +474,7 @@
     margin-bottom: 8px;
     padding: 6px 8px;
     background: var(--bg-primary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-style: italic;
   }
 
@@ -413,7 +489,7 @@
     padding: 4px 12px;
     font-size: 0.8rem;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     background: var(--bg-primary);
     color: var(--text-secondary);
@@ -443,7 +519,7 @@
   kbd {
     padding: 1px 4px;
     background: var(--bg-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.7rem;
   }
@@ -458,7 +534,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
 
@@ -467,7 +543,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-weight: 600;
   }

@@ -1,3 +1,82 @@
+# Changelog
+
+All notable changes to CorIn will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.4.0] — 2026-09-08
+
+Feature release from a hands-on UX pass: real namespace management, memory
+provenance (Human/Agent), platform-aware shortcuts, documents tree improvements,
+and a large overlay/maintenance fix batch.
+
+### Added
+- **Namespace management** — Settings gets a dedicated Namespaces tab and the
+  Namespaces view gains inline rename/merge, delete with refuse/merge/deprecate
+  strategies, and explicit "New namespace" creation. Active/deprecated counts
+  and actions are compat-gated (uteke ≥ 0.16.1). Includes the missing
+  `uteke_namespaces_breakdown` Tauri command, without which the manager table
+  rendered empty (#324, #325).
+- **Memory provenance** — memories are classified **Human** or **Agent**.
+  Anything created through a Corin/uteke UI surface is stamped
+  `metadata.author: "human"`; agent-written or legacy rows read as Agent.
+  Badges on cards and the detail panel; edit keeps the original author.
+- **Type backfill** — Settings → Maintenance scans for memories without a
+  `content_type` and bulk-stamps them to `'text'` (#325).
+- **Pin memories** — pin/unpin from the detail panel; pinned cards badge and
+  float to the top of the browsed list (#325).
+- **Platform-aware shortcuts** — ⌘ on macOS, Ctrl elsewhere
+  (`hasMod`/`kbdCombo`). Fixes ⌘B / ⌘N not working on macOS; every shortcut
+  label (sidebar badge, Settings shortcuts tab, empty states, editor save hint,
+  palette hint) renders per platform (#325).
+- **Documents** — the tree sorts siblings by the leading number in their title
+  (numbered chapters read 1,2,3…); creating a doc offers a Parent picker
+  (searchable, indented); the selected row scrolls into view (#325).
+- **Type backfill infrastructure** — `memory_update` now carries
+  content_type/importance/memory_type end-to-end (web + desktop) (#325).
+
+### Fixed
+- **Memory editor double-insert** — the duplicate pre-check used
+  `uteke_remember`, which inserts: every save created a second copy and every
+  edit left a stray copy of the edited content. The pre-check is now read-only
+  recall and the insert happens exactly once (#325).
+- **Desktop MemoryEntry mappings** — `metadata`, `pinned`, and `memory_type`
+  were dropped between the uteke HTTP client and the frontend (#325).
+- **Web memory updates wiped fields** — the web `memory_update` handler
+  serialized absent fields as explicit `null`s, which `PUT /memory` treats as
+  "delete this field"; it now drops them like the desktop path (#325).
+- **Command palette layering** — the palette opened *under* the memory editor,
+  half-buried; it is now a global surface above every modal (z 220) (#325).
+- **Detail panel layering** — opening a memory from Settings → Maintenance slid
+  the panel in below the settings modal; Esc now closes one layer at a time
+  (#324).
+- **Documents view** — selecting a doc no longer re-opens collapsed branches,
+  blinks the whole view, or loses tree scroll; tree reloads preserve manual
+  collapses (#325).
+- **Milkdown editor** — follows the app theme (Crepe tokens remapped to the
+  palette); feature enum names corrected against the 7.22 typings
+  (`Codeblock`→`CodeMirror`, `ListItemBlock`→`ListItem` — they had silently
+  never been enabled) and the placeholder moved into its feature config
+  (#325).
+- **CodeMirror theming** — the documents source editor follows live dark/light
+  flips instead of freezing boot-time colors (#325).
+- **Recycle bin** — deleting from the detail panel prunes the row locally and
+  guards double-deletes (#325).
+- **UI polish** — sidebar footer alignment, uniform rail tiles, memories
+  toolbar rhythm, scrollbar breathing room, heatmap legend/date labels, full
+  memory ID with copy in the detail panel, author line hidden when absent
+  (#324, #325).
+
+### Changed
+- Memories hub: the empty Agents slot is replaced by a server-backed
+  Namespaces group (type-to-filter, click-to-scope, real counts); Tags show
+  real server counts with incremental "Load more" (#324, #325).
+- svelte-check baseline is now **0 errors**; GitHub gains a Dependency Review
+  workflow (#325).
+
+---
+
 ## [0.3.4] — 2026-07-21
 
 Hotfix release: makes auto-update functional. v0.3.3's release pipeline had
@@ -213,12 +292,7 @@ Stable patch release. Promotes v0.3.1-beta.1 (identical contents) to a full rele
 ### Changed
 - **uteke-core v0.6.4** — pinned to crates.io with `default-features = false` (ONNX gate). Resolves CI build failures on all platforms. No longer uses git branch pin.
 
-# Changelog
-
-All notable changes to CorIn will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+---
 
 ## [0.1.1] — 2026-06-22
 

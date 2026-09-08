@@ -475,6 +475,7 @@ pub fn run() {
             commands::uteke_neighbors,
             commands::uteke_namespaces,
             commands::uteke_namespaces_with_counts,
+            commands::uteke_namespaces_breakdown,
             commands::uteke_rooms,
             commands::uteke_room_recall,
             commands::uteke_room_memories,
@@ -507,6 +508,30 @@ pub fn run() {
             commands::doc_search,
             commands::doc_delete,
             commands::doc_move,
+            // Cross-entity linking (#207)
+            commands::memory_doc_refs,
+            commands::doc_mem_refs,
+            // Trust feedback (#207)
+            commands::memory_feedback,
+            // Timeline
+            commands::memory_timeline,
+            // Lifecycle (uteke ≥ 0.13.0) — #227, #228
+            commands::lifecycle_status,
+            commands::lifecycle_cycle,
+            commands::lifecycle_promote,
+            commands::lifecycle_deprecated,
+            commands::find_orphans,
+            commands::consolidate_memories,
+            // Endpoint gaps (#216 + #231)
+            commands::memory_update,
+            commands::room_remember,
+            commands::uteke_import,
+            commands::uteke_export,
+            commands::uteke_context,
+            commands::room_doc_list,
+            commands::room_doc_add,
+            commands::room_doc_remove,
+            commands::doc_room_list,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

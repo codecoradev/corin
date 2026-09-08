@@ -1,5 +1,7 @@
 <script lang="ts">
   import { docs } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
+  import SearchableSelect from '../ui/SearchableSelect.svelte';
   import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
@@ -23,58 +25,84 @@
     Download,
     Trash2,
     Plus,
+    X,
   } from 'lucide-svelte';
+  import { ConfirmDialog } from '../ui';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
-  import { slide } from 'svelte/transition';
+  import { isWebMode } from '../ts/transport';
+  import { expandSlide } from '../transitions';
   import { pendingDocSlug } from '../stores/nav';
   import { renderMarkdown as renderMd } from '../utils/markdown';
+  import MilkdownEditor from './editor/MilkdownEditor.svelte';
   import { formatDate, getWordCount, getReadingTime } from '../utils/format';
 
   // ─── Catppuccin Mocha theme for CodeMirror ───────────────────────
+  // Colors reference the app's CSS custom properties (src/app.css) so the
+  // editor stays in lockstep with the rest of the UI. Resolved once at module
+  // load; CodeMirror accepts these as opaque CSS strings.
+  // Colors as var() references, not boot-time snapshots — the CodeMirror
+  // theme follows live dark/light flips (the old getComputedStyle copy
+  // froze whatever theme the app booted in).
+  const INK = 'var(--color-text, #cdd6f4)';
+  const SURFACE = 'var(--color-crust, #1e1e2e)';
+  const MANTLE = 'var(--color-mantle, #181825)';
+  const OVERLAY = 'var(--color-overlay, #6c7086)';
+  const ROSE = 'var(--color-red, #f38ba8)';
+  const BLUE = 'var(--color-blue, #89b4fa)';
+  const GREEN = 'var(--color-green, #a6e3a1)';
+  const YELLOW = 'var(--color-yellow, #f9e2af)';
+  const PEACH = 'var(--color-peach, #fab387)';
+  const MAUVE = 'var(--color-mauve, #cba6f7)';
+  const TEAL = 'var(--color-teal, #94e2d5)';
+  const SUBTEXT = 'var(--color-subtext, #a6adc8)';
+  const SURFACE0 = 'var(--color-surface0, #313244)';
+  const SURFACE1 = 'var(--color-surface1, #45475a)';
+  const CARET = 'var(--color-rosewater, #f5e0dc)';
+
   const catppuccinDarkTheme = EditorView.theme({
-    '&': { color: '#cdd6f4', backgroundColor: '#1e1e2e', height: '100%' },
-    '.cm-content': { caretColor: '#f5e0dc' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#f5e0dc' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: '#45475a !important' },
-    '.cm-panels': { backgroundColor: '#181825', color: '#cdd6f4' },
-    '.cm-panels.cm-panels-top': { borderBottom: '2px solid #313244' },
-    '.cm-searchMatch': { backgroundColor: 'rgba(249,226,175,0.2)', outline: '1px solid rgba(249,226,175,0.4)' },
-    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': { backgroundColor: 'rgba(137,180,250,0.3)', outline: '1px solid #89b4fa' },
-    '.cm-activeLine': { backgroundColor: 'rgba(69,71,90,0.3)' },
-    '.cm-selectionMatch': { backgroundColor: 'rgba(137,180,250,0.15)' },
+    '&': { color: INK, backgroundColor: SURFACE, height: '100%' },
+    '.cm-content': { caretColor: CARET },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: CARET },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: `${SURFACE1} !important` },
+    '.cm-panels': { backgroundColor: MANTLE, color: INK },
+    '.cm-panels.cm-panels-top': { borderBottom: `2px solid ${SURFACE0}` },
+    '.cm-searchMatch': { backgroundColor: `color-mix(in srgb, ${YELLOW} 20%, transparent)`, outline: `1px solid color-mix(in srgb, ${YELLOW} 40%, transparent)` },
+    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': { backgroundColor: `color-mix(in srgb, ${BLUE} 30%, transparent)`, outline: `1px solid ${BLUE}` },
+    '.cm-activeLine': { backgroundColor: `color-mix(in srgb, ${SURFACE1} 30%, transparent)` },
+    '.cm-selectionMatch': { backgroundColor: `color-mix(in srgb, ${BLUE} 15%, transparent)` },
   }, { dark: true });
 
   const catppuccinDarkHighlighting = HighlightStyle.define([
-    { tag: tags.heading1, color: '#cba6f7', fontWeight: 'bold', fontSize: '1.2em' },
-    { tag: tags.heading2, color: '#cba6f7', fontWeight: 'bold', fontSize: '1.1em' },
-    { tag: tags.heading3, color: '#cba6f7', fontWeight: 'bold' },
-    { tag: tags.heading4, color: '#cba6f7' },
-    { tag: tags.heading5, color: '#cba6f7' },
-    { tag: tags.heading6, color: '#cba6f7' },
-    { tag: tags.emphasis, color: '#f9e2af', fontStyle: 'italic' },
-    { tag: tags.strong, color: '#fab387', fontWeight: 'bold' },
+    { tag: tags.heading1, color: MAUVE, fontWeight: 'bold', fontSize: '1.2em' },
+    { tag: tags.heading2, color: MAUVE, fontWeight: 'bold', fontSize: '1.1em' },
+    { tag: tags.heading3, color: MAUVE, fontWeight: 'bold' },
+    { tag: tags.heading4, color: MAUVE },
+    { tag: tags.heading5, color: MAUVE },
+    { tag: tags.heading6, color: MAUVE },
+    { tag: tags.emphasis, color: YELLOW, fontStyle: 'italic' },
+    { tag: tags.strong, color: PEACH, fontWeight: 'bold' },
     { tag: tags.strikethrough, textDecoration: 'line-through' },
-    { tag: tags.link, color: '#89b4fa' },
-    { tag: tags.url, color: '#89b4fa', textDecoration: 'underline' },
-    { tag: tags.monospace, color: '#a6e3a1', fontFamily: 'var(--font-mono)' },
-    { tag: tags.quote, color: '#a6adc8', fontStyle: 'italic' },
-    { tag: tags.meta, color: '#9399b2' },
-    { tag: tags.processingInstruction, color: '#f38ba8' },
-    { tag: tags.comment, color: '#6c7086', fontStyle: 'italic' },
-    { tag: tags.keyword, color: '#cba6f7' },
-    { tag: tags.string, color: '#a6e3a1' },
-    { tag: tags.number, color: '#fab387' },
-    { tag: tags.bool, color: '#fab387' },
-    { tag: tags.null, color: '#9399b2' },
-    { tag: tags.propertyName, color: '#89b4fa' },
-    { tag: tags.variableName, color: '#cdd6f4' },
-    { tag: tags.operator, color: '#89dceb' },
-    { tag: tags.punctuation, color: '#9399b2' },
-    { tag: tags.bracket, color: '#9399b2' },
-    { tag: tags.atom, color: '#fab387' },
-    { tag: tags.content, color: '#cdd6f4' },
-    { tag: tags.contentSeparator, color: '#585b70' },
-    { tag: tags.list, color: '#89b4fa' },
+    { tag: tags.link, color: BLUE },
+    { tag: tags.url, color: BLUE, textDecoration: 'underline' },
+    { tag: tags.monospace, color: GREEN, fontFamily: 'var(--font-mono)' },
+    { tag: tags.quote, color: SUBTEXT, fontStyle: 'italic' },
+    { tag: tags.meta, color: OVERLAY },
+    { tag: tags.processingInstruction, color: ROSE },
+    { tag: tags.comment, color: OVERLAY, fontStyle: 'italic' },
+    { tag: tags.keyword, color: MAUVE },
+    { tag: tags.string, color: GREEN },
+    { tag: tags.number, color: PEACH },
+    { tag: tags.bool, color: PEACH },
+    { tag: tags.null, color: OVERLAY },
+    { tag: tags.propertyName, color: BLUE },
+    { tag: tags.variableName, color: INK },
+    { tag: tags.operator, color: TEAL },
+    { tag: tags.punctuation, color: OVERLAY },
+    { tag: tags.bracket, color: OVERLAY },
+    { tag: tags.atom, color: PEACH },
+    { tag: tags.content, color: INK },
+    { tag: tags.contentSeparator, color: OVERLAY },
+    { tag: tags.list, color: BLUE },
   ]);
 
   // ─── Props ─────────────────────────────────────────────────────────
@@ -102,7 +130,30 @@
   let searching = $state(false);
   let saving = $state(false);
   let showNewDoc = $state(false);
+  // Content-pane fetch in flight (doc switch) — dims only the editor panel;
+  // the tree never unmounts on selection.
+  let docLoading = $state(false);
+  // Parent for the doc being created — '' = root level. Every doc can act
+  // as a folder, so the picker lists the whole tree (indented by depth).
+  let newDocParent = $state('');
+
+  let parentOptions = $derived.by(() => {
+    const opts: { value: string; label: string }[] = [];
+    const walk = (entries: DocEntry[], depth: number) => {
+      for (const d of entries) {
+        opts.push({
+          value: d.id,
+          label: (depth ? '\u00A0'.repeat(depth * 3) + '↳ ' : '') + (d.title || d.slug),
+        });
+        walk(childrenCache.get(d.id) ?? [], depth + 1);
+      }
+    };
+    walk(rootDocs, 0);
+    return opts;
+  });
   let showDeleteConfirm = $state(false);
+  /** False after the first tree load — reloads then preserve expansion state. */
+  let treeInitialized = false;
   let deleteTarget = $state<DocEntry | null>(null);
   let error = $state('');
   let errorTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -156,6 +207,23 @@
   // Fetches the full flat doc list once and assembles parent→children so the
   // entire hierarchy is visible upfront (Obsidian/Outline-like), rather than
   // only roots with lazy-expanded children.
+  /** Leading number of a title ("7. Part III" → 7) — natural-order key. */
+  function leadingNumber(title: string): number | null {
+    const m = /^\s*(\d+)/.exec(title);
+    return m ? Number(m[1]) : null;
+  }
+
+  /** Numbered docs read in ascending order first; unnumbered follow,
+      newest-first. Chapters authored out of sequence still read 1,2,3… */
+  function naturalDocCompare(a: DocEntry, b: DocEntry): number {
+    const na = leadingNumber(a.title);
+    const nb = leadingNumber(b.title);
+    if (na !== null && nb !== null && na !== nb) return na - nb;
+    if (na !== null) return -1;
+    if (nb !== null) return 1;
+    return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+  }
+
   async function loadRootDocs() {
     loading = true;
     try {
@@ -175,11 +243,20 @@
           roots.push(d);
         }
       }
+      for (const arr of byParent.values()) arr.sort(naturalDocCompare);
+      roots.sort(naturalDocCompare);
       childrenCache = byParent;
       rootDocs = roots;
       docById = byId;
-      // Expand every folder by default so the full tree is visible.
-      expandedIds = new Set(byParent.keys());
+      if (!treeInitialized) {
+        // First paint: open the whole tree so it's discoverable.
+        expandedIds = new Set(byParent.keys());
+        treeInitialized = true;
+      } else {
+        // Reloads (save/create/delete) keep the user's manual collapses
+        // instead of re-opening every branch.
+        expandedIds = new Set([...expandedIds].filter((id) => byParent.has(id)));
+      }
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -192,6 +269,7 @@
     if (childrenCache.has(docId)) return;
     try {
       const children = await docs.list({ parent: docId });
+      children.sort(naturalDocCompare);
       // Immutable update — Svelte 5 does not re-render {@const} reads when a
       // $state Map is mutated in place + reassigned to the same ref.
       const next = new Map(childrenCache);
@@ -213,8 +291,14 @@
         if (entry.id === docId) return true;
         if (hasKids(entry)) {
           const kids = childrenCache.get(entry.id) ?? [];
-          next.add(entry.id);
-          if (searchLevel(kids)) return true;
+          // Post-order: mark an id as expanded only AFTER its subtree is
+          // confirmed to contain the target. Adding before the recursion
+          // expanded every branch the search merely passed through,
+          // blowing away the user's manual collapses.
+          if (searchLevel(kids)) {
+            next.add(entry.id);
+            return true;
+          }
         }
       }
       return false;
@@ -243,9 +327,14 @@
   }
 
   // ─── Select doc ──────────────────────────────────────────────────
+  let docTreeEl = $state<HTMLElement | null>(null);
+
   async function selectDoc(doc: DocEntry) {
     selectedDoc = doc;
-    loading = true;
+    // Content-pane-only refresh: the tree stays mounted — the old global
+    // `loading` flag unmounted it into a spinner on every click, which
+    // lost scroll position and blinked the whole view.
+    docLoading = true;
     try {
       const full = await docs.get({ id: doc.id });
       selectedDoc = full;
@@ -263,18 +352,22 @@
       }
       // Auto-expand tree path to this document
       await expandPathToDoc(full.id);
-      // Reset scroll positions to top for the new document
+      // Reset scroll positions to top for the new document, then bring the
+      // selected tree row into view (it may sit below the fold).
       requestAnimationFrame(() => {
         if (previewContainer) previewContainer.scrollTop = 0;
         if (editorContainer) {
           const scroller = editorContainer.querySelector('.cm-scroller');
           if (scroller) scroller.scrollTop = 0;
         }
+        docTreeEl
+          ?.querySelector(`[data-doc-id="${CSS.escape(full.id)}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
       });
     } catch (e: any) {
       showError(e.toString());
     } finally {
-      loading = false;
+      docLoading = false;
     }
   }
 
@@ -323,6 +416,7 @@
     editorSlug = '';
     editorContent = '# New Document\n\n';
     editorTags = '';
+    newDocParent = '';
     showSearchResults = false;
     viewMode = 'edit';
   }
@@ -365,16 +459,26 @@
           }
         }
       } else {
-        // New document → create via /doc/create
-        const parent = selectedDoc?.id ?? undefined;
+        // New document → create via /doc/create under the chosen parent
+        // ('' = root level).
+        const parent = newDocParent || undefined;
         await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
           tags,
           parent,
         });
         // create returns only {id, slug} — re-fetch for full state
         const full = await docs.get({ slug: editorSlug });
+        // Provenance: human wrote this via the UI (doc/create ignores
+        // metadata, so the stamp rides on a follow-up update).
+        try {
+          await docs.update({ id: full.id, metadata: { author: 'human' } });
+        } catch { /* stamping is best-effort */ }
         selectedDoc = full;
         showNewDoc = false;
+        // Reveal the new doc inside its parent branch.
+        if (newDocParent) {
+          expandedIds = new Set([...expandedIds, newDocParent]);
+        }
       }
       await loadRootDocs();
       showSuccess(selectedDoc && !showNewDoc ? 'Document updated' : 'Document saved');
@@ -393,6 +497,7 @@
 
   async function executeDelete() {
     if (!deleteTarget) return;
+    const targetTitle = deleteTarget.title || deleteTarget.slug;
     try {
       await docs.delete({ id: deleteTarget.id });
       if (selectedDoc?.id === deleteTarget.id) {
@@ -400,6 +505,7 @@
         showNewDoc = false;
       }
       await loadRootDocs();
+      showSuccess(`\u201c${targetTitle}\u201d deleted`);
     } catch (e: any) {
       showError(e.toString());
     }
@@ -510,7 +616,11 @@
       || href.startsWith('mailto:') || href.startsWith('tel:');
 
     if (isExternal) {
-      // Open in system default browser
+      // Web: let the browser handle it. Desktop: system default browser.
+      if (isWebMode) {
+        window.open(href, '_blank', 'noopener');
+        return;
+      }
       shellOpen(href).catch((err) => showError(`Cannot open link: ${err}`));
       return;
     }
@@ -628,13 +738,13 @@
   {#if error}
     <div class="error-bar">
       <span class="error-text">{error}</span>
-      <button class="dismiss-btn" onclick={() => (error = '')}>✕</button>
+      <button class="dismiss-btn" onclick={() => (error = '')}><X size={13} strokeWidth={2.5} /></button>
     </div>
   {/if}
   {#if success}
     <div class="success-bar">
       <span class="success-text">{success}</span>
-      <button class="dismiss-btn success-dismiss" onclick={() => (success = '')}>✕</button>
+      <button class="dismiss-btn success-dismiss" onclick={() => (success = '')}><X size={13} strokeWidth={2.5} /></button>
     </div>
   {/if}
 
@@ -650,7 +760,7 @@
           oninput={onSearchInput}
         />
         {#if searchQuery}
-          <button class="search-clear" onclick={() => { searchQuery = ''; showSearchResults = false; searchResults = []; }}>✕</button>
+          <button class="search-clear" onclick={() => { searchQuery = ''; showSearchResults = false; searchResults = []; }}><X size={13} strokeWidth={2.5} /></button>
         {/if}
       </div>
 
@@ -679,12 +789,12 @@
         <div class="msg"><span class="spinner"></span> Loading...</div>
       {:else if rootDocs.length === 0}
         <div class="empty-tree">
-          <div class="empty-tree-icon">📄</div>
+          <div class="empty-tree-icon"><FileText size={28} strokeWidth={1.5} /></div>
           <p>No documents yet</p>
           <button class="action-btn new-btn small" onclick={newDoc}><Plus size={12} strokeWidth={2.5} /> Create first doc</button>
         </div>
       {:else}
-        <div class="doc-tree">
+        <div class="doc-tree" bind:this={docTreeEl}>
           {#each rootDocs as doc (doc.id)}
             {@render treeNode(doc)}
           {/each}
@@ -693,7 +803,7 @@
     </div>
 
     <!-- ─── Right Panel: Editor/Preview ─────────────────────────── -->
-    <div class="editor-panel">
+    <div class="editor-panel" class:busy={docLoading}>
       {#if selectedDoc || showNewDoc}
         <!-- Top bar: breadcrumb + mode toggle -->
         <div class="top-bar">
@@ -710,6 +820,20 @@
               <span class="crumb-current">New Document</span>
             {/if}
           </div>
+
+          {#if showNewDoc}
+            <div class="tb-parent">
+              <span class="tb-parent-label">Parent</span>
+              <div class="tb-parent-select">
+                <SearchableSelect
+                  options={parentOptions}
+                  bind:value={newDocParent}
+                  emptyLabel="No parent — root level"
+                  placeholder="Search documents…"
+                />
+              </div>
+            </div>
+          {/if}
 
           <!-- View mode toggle -->
           <div class="mode-toggle">
@@ -743,10 +867,23 @@
           </div>
         </div>
 
-        <!-- Properties row: title, slug, tags -->
-        {#if showProps}
+        <!-- Properties disclosure: the trigger sits ABOVE the content it
+             expands (clicking grows downward), and new docs skip the toggle —
+             title/slug are required, parent is the primary creation choice. -->
+        {#if !showNewDoc}
+          <button
+            class="props-toggle props-toggle-row"
+            onclick={() => (showProps = !showProps)}
+            aria-expanded={showProps}
+          >
+            <ChevronDown size={12} strokeWidth={2} class={showProps ? "flip" : ""} />
+            Properties
+          </button>
+        {/if}
+
+        {#if showNewDoc || showProps}
           <div class="props-row">
-            <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} />
+            <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} autofocus />
             <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
             <input type="text" class="prop-input tags-input" placeholder="tag1, tag2" bind:value={editorTags} />
           </div>
@@ -755,10 +892,6 @@
         <!-- Meta bar: version, date + actions -->
         <div class="meta-bar">
           <div class="meta-left">
-            <button class="props-toggle" onclick={() => (showProps = !showProps)}>
-              <ChevronDown size={12} strokeWidth={2} />
-              Properties
-            </button>
             {#if selectedDoc && !showNewDoc}
               <span class="meta-item">v{selectedDoc.version ?? 1}</span>
               {#if selectedDoc.updated_at}
@@ -770,7 +903,7 @@
             <span class="meta-item meta-dim">{getWordCount(editorContent)} words{getReadingTime(getWordCount(editorContent)) ? ` · ${getReadingTime(getWordCount(editorContent))}` : ''}</span>
           </div>
           <div class="meta-actions">
-            <button class="icon-btn" onclick={saveDoc} disabled={saving} title="Save (Ctrl+S)">
+            <button class="icon-btn" onclick={saveDoc} disabled={saving} title={`Save (${kbdCombo('S')})`}>
               {#if saving}
                 <span class="spinner small"></span>
               {:else}
@@ -792,7 +925,12 @@
         <div class="content-area" class:split-mode={viewMode === 'split'}>
           {#if viewMode === 'edit' || viewMode === 'split'}
             <div class="editor-pane">
-              <div class="editor-container" bind:this={editorContainer} use:editorMount></div>
+              <div class="editor-container">
+                <MilkdownEditor
+                  value={editorContent}
+                  onchange={(md) => (editorContent = md)}
+                />
+              </div>
             </div>
           {/if}
           {#if viewMode === 'preview' || viewMode === 'split'}
@@ -812,7 +950,7 @@
         </div>
       {:else}
         <div class="empty-state">
-          <div class="empty-icon">📄</div>
+          <div class="empty-icon"><FileText size={32} strokeWidth={1.5} /></div>
           <p class="empty-title">Select a document to view</p>
           <p class="empty-sub">or create a new one with <strong>+ New</strong></p>
         </div>
@@ -823,17 +961,15 @@
 
 <!-- Delete Confirmation Dialog -->
 {#if showDeleteConfirm}
-  <div class="overlay" onclick={() => { showDeleteConfirm = false; deleteTarget = null; }}>
-    <div class="confirm-dialog" onclick={(e) => e.stopPropagation()}>
-      <h3>Delete Document</h3>
-      <p>Are you sure you want to delete <strong>{deleteTarget?.title}</strong>?</p>
-      <p class="sub">This action cannot be undone.</p>
-      <div class="confirm-actions">
-        <button class="action-btn" onclick={() => { showDeleteConfirm = false; deleteTarget = null; }}>Cancel</button>
-        <button class="action-btn danger" onclick={executeDelete}>Delete</button>
-      </div>
-    </div>
-  </div>
+  <ConfirmDialog
+    open={showDeleteConfirm}
+    title="Delete document?"
+    message="Are you sure you want to delete \u201c{deleteTarget?.title}\u201d? This action cannot be undone."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={executeDelete}
+    oncancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+  />
 {/if}
 
 {#snippet treeNode(doc: DocEntry)}
@@ -841,7 +977,7 @@
   {@const isFolder = kids.length > 0}
   {@const expanded = expandedIds.has(doc.id)}
   <div class="tree-node">
-    <div class="tree-row" class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
+    <div class="tree-row" data-doc-id={doc.id} class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
       <button
         class="tree-toggle"
         class:has-children={isFolder}
@@ -871,7 +1007,7 @@
       </button>
     </div>
     {#if expanded && kids.length > 0}
-      <div class="tree-children" transition:slide={{ duration: 180 }}>
+      <div class="tree-children" transition:expandSlide>
         {#each kids as child (child.id)}
           {@render treeNode(child)}
         {/each}
@@ -914,8 +1050,8 @@
      ═══════════════════════════════════════════════════════════════════ */
   .error-bar {
     padding: 8px 20px;
-    background: rgba(243, 139, 168, 0.1);
-    border-bottom: 1px solid rgba(243, 139, 168, 0.25);
+    background: var(--color-red-bg);
+    border-bottom: 1px solid var(--color-red-line);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -924,8 +1060,8 @@
   }
   .success-bar {
     padding: 8px 20px;
-    background: rgba(166, 227, 161, 0.1);
-    border-bottom: 1px solid rgba(166, 227, 161, 0.25);
+    background: var(--color-green-bg);
+    border-bottom: 1px solid var(--color-green-line);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -934,8 +1070,8 @@
   }
   .version-banner {
     padding: 10px 20px;
-    background: rgba(245, 208, 135, 0.12);
-    border-bottom: 1px solid rgba(245, 208, 135, 0.3);
+    background: var(--color-yellow-bg);
+    border-bottom: 1px solid var(--color-yellow-line);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -949,7 +1085,7 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.82rem;
     font-weight: 600;
     cursor: pointer;
@@ -959,7 +1095,7 @@
   .vb-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } }
   .error-text {
-    color: #f38ba8;
+    color: var(--red);
     font-size: 0.8rem;
     flex: 1;
     min-width: 0;
@@ -968,7 +1104,7 @@
     white-space: nowrap;
   }
   .success-text {
-    color: #a6e3a1;
+    color: var(--green);
     font-size: 0.8rem;
     font-weight: 500;
     flex: 1;
@@ -980,12 +1116,14 @@
   .dismiss-btn {
     background: none;
     border: none;
-    color: #f38ba8;
+    color: var(--red);
     cursor: pointer;
     padding: 0 2px;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
   }
-  .dismiss-btn.success-dismiss { color: #a6e3a1; }
+  .dismiss-btn.success-dismiss { color: var(--green); }
 
   /* ═══════════════════════════════════════════════════════════════════
      Left Panel — Tree
@@ -1034,7 +1172,7 @@
   }
   .search-clear:hover { color: var(--text-primary); }
 
-  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 10px 4px 0; }
 
   .tree-node { user-select: none; }
   .tree-children {
@@ -1066,7 +1204,7 @@
     color: var(--text-muted);
     background: var(--bg-hover);
     padding: 1px 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     margin-left: 2px;
     flex-shrink: 0;
     line-height: 1.4;
@@ -1169,6 +1307,13 @@
     flex-direction: column;
     overflow: hidden;
     min-width: 0;
+    transition: opacity 0.12s var(--ease-out);
+  }
+  /* Doc-switch fetch in flight: dim the pane and block interaction so the
+     stale content can't be edited mid-swap. The tree stays untouched. */
+  .editor-panel.busy {
+    opacity: 0.55;
+    pointer-events: none;
   }
 
   /* ── Top bar: breadcrumb + mode toggle ── */
@@ -1220,7 +1365,7 @@
     color: var(--text-muted);
     font-size: 0.7rem;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: background-color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), color 0.15s var(--ease-out);
   }
   .mode-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
   .mode-btn.active { color: var(--accent); background: var(--bg-tertiary); }
@@ -1235,6 +1380,24 @@
     flex-shrink: 0;
     animation: slideDown 0.12s ease;
   }
+  /* New-doc parent picker lives in the top-bar (left of the mode toggle):
+     one compact row, no wasted gutter below it. */
+  .tb-parent {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 auto;
+    min-width: 240px;
+    max-width: 420px;
+  }
+  .tb-parent-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .tb-parent-select { flex: 1; }
   .prop-input {
     padding: 4px 8px;
     background: var(--bg-tertiary);
@@ -1274,7 +1437,7 @@
   .ns-badge {
     padding: 1px 6px;
     background: var(--bg-tertiary);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     color: var(--accent);
     font-size: 0.65rem;
     font-family: var(--font-mono);
@@ -1288,11 +1451,26 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     padding: 2px 4px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
   .props-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+  /* Full-width trigger row above the expanding properties. */
+  .props-toggle-row {
+    width: 100%;
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .props-toggle-row :global(svg) {
+    transition: transform 0.12s var(--ease-out);
+  }
+  .props-toggle-row :global(svg.flip) {
+    transform: rotate(180deg);
+  }
 
   .meta-actions {
     display: flex;
@@ -1312,11 +1490,11 @@
     border-radius: var(--radius);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.12s;
+    transition: background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
   }
   .icon-btn:hover { background: var(--bg-hover); border-color: var(--border); color: var(--text-primary); }
   .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .icon-btn.danger:hover { color: #f38ba8; background: rgba(243,139,168,0.1); }
+  .icon-btn.danger:hover { color: var(--red); background: var(--color-red-bg); }
 
   /* ── Content area ── */
   .content-area {
@@ -1371,22 +1549,22 @@
     line-height: 1.65;
     font-size: 0.9rem;
   }
-  .markdown-body :global(h1) { color: #cba6f7; font-size: 1.6em; font-weight: 700; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-  .markdown-body :global(h2) { color: #cba6f7; font-size: 1.3em; font-weight: 600; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(49,50,68,0.5); }
-  .markdown-body :global(h3) { color: #cba6f7; font-size: 1.1em; font-weight: 600; margin: 20px 0 6px; }
-  .markdown-body :global(h4), .markdown-body :global(h5), .markdown-body :global(h6) { color: #cba6f7; font-weight: 600; margin: 16px 0 4px; }
+  .markdown-body :global(h1) { color: var(--mauve); font-size: 1.6em; font-weight: 700; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .markdown-body :global(h2) { color: var(--mauve); font-size: 1.3em; font-weight: 600; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .markdown-body :global(h3) { color: var(--mauve); font-size: 1.1em; font-weight: 600; margin: 20px 0 6px; }
+  .markdown-body :global(h4), .markdown-body :global(h5), .markdown-body :global(h6) { color: var(--mauve); font-weight: 600; margin: 16px 0 4px; }
   .markdown-body :global(p) { margin: 0 0 10px; }
-  .markdown-body :global(a) { color: #89b4fa; text-decoration: none; }
+  .markdown-body :global(a) { color: var(--accent); text-decoration: none; }
   .markdown-body :global(a:hover) { text-decoration: underline; }
   .markdown-body :global(a[data-internal]) { color: var(--mauve); cursor: pointer; }
   .markdown-body :global(a[data-internal]:hover) { text-decoration: underline; }
-  .markdown-body :global(strong) { color: #fab387; font-weight: 600; }
-  .markdown-body :global(em) { color: #f9e2af; }
+  .markdown-body :global(strong) { color: var(--peach); font-weight: 600; }
+  .markdown-body :global(em) { color: var(--yellow); }
   .markdown-body :global(code) {
-    color: #a6e3a1;
-    background: rgba(30,30,46,0.8);
+    color: var(--green);
+    background: var(--bg-secondary);
     padding: 2px 5px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.85em;
   }
@@ -1409,7 +1587,7 @@
     margin: 12px 0;
     padding: 4px 16px;
     color: var(--text-secondary);
-    background: rgba(137,180,250,0.04);
+    background: var(--color-blue-bg);
     border-radius: 0 var(--radius) var(--radius) 0;
   }
   .markdown-body :global(ul), .markdown-body :global(ol) { padding-left: 24px; margin: 8px 0; }
@@ -1451,8 +1629,8 @@
   }
   .action-btn:hover { background: var(--bg-tertiary); border-color: var(--text-muted); }
   .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .action-btn.danger { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
-  .action-btn.danger:hover { background: rgba(243,139,168,0.12); }
+  .action-btn.danger { color: var(--red); border-color: var(--color-red-line); }
+  .action-btn.danger:hover { background: var(--color-red-bg); }
   .action-btn.small { padding: 4px 10px; font-size: 0.72rem; }
   .new-btn { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
   .new-btn:hover { opacity: 0.85; border-color: var(--accent); }
@@ -1486,24 +1664,6 @@
 
   /* ── Dialog ── */
   .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
+    display: none;
   }
-  .confirm-dialog {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-  }
-  .confirm-dialog h3 { margin: 0 0 12px; }
-  .confirm-dialog p { margin: 0; font-size: 0.85rem; }
-  .confirm-dialog .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
-  .confirm-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 </style>

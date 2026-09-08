@@ -4,6 +4,8 @@
   import { relativeTime } from '../utils/format';
   import { renderMarkdown } from '../utils/markdown';
   import RoomCreateForm from './rooms/RoomCreateForm.svelte';
+  import { Trash2, TriangleAlert, X, Plus } from 'lucide-svelte';
+  import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface UtekeRoom {
     id: string;
@@ -123,6 +125,7 @@
       selectedRoom = null;
       roomMemories = [];
       await loadRooms();
+      toastStore.success('Room deleted');
     } catch (e) {
       reportError('Delete room', e);
       showDeleteConfirm = false;
@@ -134,8 +137,8 @@
 <div class="rooms-view">
   {#if lastError}
     <div class="error-banner">
-      <span>⚠ {lastError}</span>
-      <button class="error-dismiss" onclick={() => lastError = null}>×</button>
+      <span class="error-inner"><TriangleAlert size={13} strokeWidth={2.5} /> {lastError}</span>
+      <button class="error-dismiss" onclick={() => lastError = null}><X size={14} strokeWidth={2.5} /></button>
     </div>
   {/if}
   <div class="rooms-header">
@@ -145,20 +148,23 @@
     </div>
     {#if utekeReady}
       <button class="btn-new" onclick={toggleCreateForm}>
-        {showCreateForm ? '✕ Cancel' : '+ New Room'}
+        {#if showCreateForm}
+          <X size={13} strokeWidth={2.5} /> Cancel
+        {:else}
+          <Plus size={13} strokeWidth={2.5} /> New Room
+        {/if}
       </button>
     {/if}
   </div>
 
   {#if loading}
-    <div class="msg">Loading...</div>
+    <div class="msg"><Spinner size={18} /> Loading...</div>
   {:else if rooms.length === 0}
     <div class="msg">
       {#if utekeReady}
         <p>No rooms yet.</p>
         <p class="sub">Rooms are shared workspaces for multi-agent collaboration.<br>
-        Create one via Uteke CLI: <code>uteke room create --id "sprint-1"</code><br>
-        Or click "New Room" above to create one from here.</p>
+        Click "New Room" above to create one from here.</p>
       {:else}
         <p>Uteke not installed.</p>
         <p class="sub">Install from https://github.com/codecoradev/uteke</p>
@@ -205,14 +211,12 @@
                   onclick={() => showDeleteConfirm = true}
                   title="Delete this room"
                 >
-                  🗑 Delete
+                  <Trash2 size={12} strokeWidth={2} /> Delete
                 </button>
               {:else}
-                <div class="delete-confirm">
-                  <span class="delete-label">Delete "{currentRoom?.title ?? selectedRoom}"?</span>
-                  <button class="btn-confirm-delete" onclick={deleteRoom}>Confirm</button>
-                  <button class="btn-cancel-del" onclick={() => showDeleteConfirm = false}>Cancel</button>
-                </div>
+                <button class="btn-delete" onclick={() => showDeleteConfirm = false} title="Cancel delete">
+                  Cancel
+                </button>
               {/if}
             </div>
           </div>
@@ -272,18 +276,29 @@
       </div>
     </div>
   {/if}
+
+  <ConfirmDialog
+    open={showDeleteConfirm}
+    title="Delete room?"
+    message="The room and its memory references will be removed. This cannot be undone."
+    confirmLabel="Delete"
+    danger={true}
+    onconfirm={deleteRoom}
+    oncancel={() => (showDeleteConfirm = false)}
+  />
 </div>
 
 <style>
   .rooms-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: rgba(230,69,83,0.12); color: #e64553; font-size: 0.8rem; border-bottom: 1px solid rgba(230,69,83,0.3); }
-  .error-dismiss { background: none; border: none; color: inherit; font-size: 1.1rem; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: var(--color-red-bg); color: var(--red); font-size: 0.8rem; border-bottom: 1px solid var(--color-red-line); }
+  .error-inner { display: inline-flex; align-items: center; gap: 6px; }
+  .error-dismiss { background: none; border: none; color: inherit; cursor: pointer; padding: 0 4px; line-height: 1; display: inline-flex; align-items: center; }
   .rooms-header { padding: 16px 24px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); }
   .header-left { display: flex; align-items: baseline; gap: 12px; }
   h2 { font-size: 1.1rem; }
   .count { font-size: 0.8rem; color: var(--text-muted); }
 
-  .btn-new { font-size: 0.8rem; padding: 4px 12px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
+  .btn-new { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; padding: 4px 12px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: var(--radius); cursor: pointer; font-weight: 500; }
   .btn-new:hover { opacity: 0.85; }
 
   .layout { flex: 1; display: flex; overflow: hidden; }
@@ -291,18 +306,18 @@
   .room-list { width: 280px; overflow-y: auto; padding: 8px 12px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 
   /* Create form */
-  .create-form { padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
-  .input { font-size: 0.85rem; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; outline: none; font-family: inherit; }
+  .create-form { padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .input { font-size: 0.85rem; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none; font-family: inherit; }
   .input:focus { border-color: var(--accent); }
   .input::placeholder { color: var(--text-muted); opacity: 0.6; }
   .create-actions { display: flex; gap: 8px; }
-  .btn-create { font-size: 0.8rem; padding: 5px 14px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 4px; cursor: pointer; font-weight: 500; }
+  .btn-create { font-size: 0.8rem; padding: 5px 14px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-weight: 500; }
   .btn-create:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-cancel { font-size: 0.8rem; padding: 5px 14px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .btn-cancel { font-size: 0.8rem; padding: 5px 14px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
   .btn-cancel:hover { border-color: var(--text-muted); }
 
   /* Room cards */
-  .room-card { display: block; padding: 10px 14px; background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; text-align: left; width: 100%; margin-bottom: 4px; flex-shrink: 0; }
+  .room-card { display: block; padding: 10px 14px; background: transparent; border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer; text-align: left; width: 100%; margin-bottom: 4px; flex-shrink: 0; }
   .room-card:hover { background: var(--bg-hover); }
   .room-card.active { background: var(--bg-hover); border-color: var(--accent); }
 
@@ -314,17 +329,17 @@
   .room-detail { flex: 1; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; }
   .detail-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .detail-header h3 { font-size: 1rem; color: var(--accent); font-family: var(--font-mono); }
-  .badge { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 10px; }
+  .badge { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-lg); }
   .header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 
-  .btn-delete { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
-  .btn-delete:hover { color: #e64553; border-color: #e64553; }
+  .btn-delete { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+  .btn-delete:hover { color: var(--red); border-color: var(--red); }
 
   .delete-confirm { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
   .delete-label { color: var(--text-secondary); }
-  .btn-confirm-delete { font-size: 0.75rem; padding: 3px 10px; background: #e64553; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-  .btn-confirm-delete:hover { background: #c7374a; }
-  .btn-cancel-del { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .btn-confirm-delete { font-size: 0.75rem; padding: 3px 10px; background: var(--red); color: var(--bg-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; }
+  .btn-confirm-delete:hover { opacity: 0.85; }
+  .btn-cancel-del { font-size: 0.75rem; padding: 3px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
 
   /* Tabs */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; flex-shrink: 0; }
@@ -335,7 +350,7 @@
   /* Tab content */
   .tab-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); gap: 8px; padding: 48px 24px; }
   .tab-empty .sub { font-size: 0.85rem; opacity: 0.7; line-height: 1.6; }
-  .tab-empty code { font-family: var(--font-mono); font-size: 0.8rem; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 3px; color: var(--text-secondary); }
+  .tab-empty code { font-family: var(--font-mono); font-size: 0.8rem; padding: 2px 6px; background: var(--bg-tertiary); border-radius: var(--radius-sm); color: var(--text-secondary); }
   .tab-loading { color: var(--text-muted); font-size: 0.85rem; padding: 32px; text-align: center; }
 
   /* Room document */
@@ -343,21 +358,21 @@
   .room-document :global(h2) { font-size: 1.05rem; color: var(--accent); margin: 16px 0 8px; }
   .room-document :global(h3) { font-size: 0.95rem; color: var(--accent); margin: 12px 0 6px; }
   .room-document :global(h4) { font-size: 0.9rem; color: var(--text-primary); margin: 10px 0 4px; font-weight: 600; }
-  .room-document :global(code) { font-family: var(--font-mono); font-size: 0.8rem; padding: 1px 5px; background: var(--bg-tertiary); border-radius: 3px; color: var(--text-secondary); }
+  .room-document :global(code) { font-family: var(--font-mono); font-size: 0.8rem; padding: 1px 5px; background: var(--bg-tertiary); border-radius: var(--radius-sm); color: var(--text-secondary); }
 
   /* Memory list (timeline) */
   .mem-list { display: flex; flex-direction: column; gap: 8px; }
-  .mem-card { padding: 12px 16px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+  .mem-card { padding: 12px 16px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer; }
   .mem-card:hover { border-color: var(--accent); }
   .mem-timestamp { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; }
   .mem-content { font-size: 0.85rem; color: var(--text-primary); line-height: 1.4; margin-bottom: 6px; }
   .mem-meta { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
-  .tag { font-size: 0.7rem; padding: 2px 6px; background: var(--bg-hover); color: var(--text-secondary); border-radius: 3px; }
-  .ns { font-size: 0.7rem; padding: 2px 6px; background: rgba(137,180,250,0.15); color: var(--accent); border-radius: 3px; }
+  .tag { font-size: 0.7rem; padding: 2px 6px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-sm); }
+  .ns { font-size: 0.7rem; padding: 2px 6px; background: var(--color-blue-bg); color: var(--accent); border-radius: var(--radius-sm); }
 
   /* General */
   .msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; gap: 8px; }
   .msg .sub { font-size: 0.85rem; opacity: 0.7; line-height: 1.6; }
-  .msg code { font-family: var(--font-mono); font-size: 0.8rem; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 3px; color: var(--text-secondary); }
+  .msg code { font-family: var(--font-mono); font-size: 0.8rem; padding: 2px 6px; background: var(--bg-tertiary); border-radius: var(--radius-sm); color: var(--text-secondary); }
 </style>

@@ -21,5 +21,14 @@ export default defineConfig({
     watch: {
       ignored: ["**/src-tauri/**"],
     },
+    // Web dev mode: bridge REST calls to a local uteke-serve so the UI can
+    // run in a plain browser (see src/lib/ts/web-routes.ts).
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8767",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
   },
 });

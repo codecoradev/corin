@@ -46,7 +46,7 @@
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.12s ease;
+    transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
     flex-shrink: 0;
   }
   .icon-btn:active:not(:disabled) {
@@ -70,7 +70,7 @@
     color: var(--red);
   }
   .icon-btn-danger:hover:not(:disabled) {
-    background: rgba(243, 139, 168, 0.12);
+    background: var(--color-red-bg);
     color: var(--red);
   }
 

@@ -4,6 +4,8 @@
   import { system } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
   import { pendingDocSlug } from './lib/stores/nav';
+  import { hasMod } from './lib/utils/platform';
+	import { theme } from './lib/stores/theme.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
   import MemoryList from './lib/components/MemoryList.svelte';
@@ -14,22 +16,39 @@
   import SettingsModal from './lib/components/SettingsModal.svelte';
   import NamespacesView from './lib/components/NamespacesView.svelte';
   import DocumentsView from './lib/components/DocumentsView.svelte';
+  import LifecycleView from './lib/components/LifecycleView.svelte';
+  import ToolsView from './lib/components/ToolsView.svelte';
   import { Notification } from './lib/ui';
   import { toastStore } from './lib/ui';
-  import { fadeQuick } from './lib/transitions';
-  import { fade, fly } from 'svelte/transition';
+  import { fadeQuick, overlayFade, overlayFlyUp } from './lib/transitions';
   import DetailPanel from './lib/components/DetailPanel.svelte';
+  import CommandPalette from './lib/components/CommandPalette.svelte';
+  import UpgradePrompt from './lib/components/UpgradePrompt.svelte';
+  import { isWebMode } from './lib/ts/transport';
 
   // App state
   let dataDirInitialized = $state(false);
   let dataDir = $state<string | null>(null);
   let activeView = $state<View>('dashboard');
-  let sidebarCollapsed = $state(false);
+  // Rail collapse persisted (issue #292); default = collapsed rail per redesign decision.
+  const SIDEBAR_LS = 'corin.sidebar.collapsed';
+
+  function loadSidebarCollapsed(): boolean {
+    try {
+      const v = localStorage.getItem(SIDEBAR_LS);
+      return v === null ? true : v === '1'; // default: collapsed rail (mockup A decision)
+    } catch {
+      return true;
+    }
+  }
+
+  let sidebarCollapsed = $state(loadSidebarCollapsed());
   let namespace = $state<string | null>(null);
 
   // Overlay state (views stay mounted underneath)
   let showEditor = $state(false);
   let showSettings = $state(false);
+  let showPalette = $state(false);
   let detailId = $state<string | null>(null);
   let editorMemory = $state<MemoryEntry | null>(null);
   let searchQuery = $state<string | null>(null);
@@ -42,17 +61,27 @@
       dataDirInitialized = true;
     } catch (e) {
       console.error('Failed to init data dir:', e);
+      if (isWebMode) {
+        toastStore.error(String(e instanceof Error ? e.message : e));
+      }
     }
   }
 
   function navigate(view: View) {
-    activeView = view;
-    searchQuery = null;
-
-    // Settings is a modal popup, not a full view.
+    // Settings is a modal popup, not a full view — the page behind it
+    // must stay exactly as it is.
     if (view === 'settings') {
       showSettings = true;
       return;
+    }
+
+    activeView = view;
+    searchQuery = null;
+
+    // Deep-linkable views (web mode): keep the hash in sync so a view can
+    // be opened directly via #memories, #lifecycle, etc.
+    if (isWebMode && location.hash !== `#${view}`) {
+      history.replaceState(null, '', `#${view}`);
     }
   }
 
@@ -97,12 +126,29 @@
   }
 
   function handleSave() {
+    const wasEditing = !!editorMemory;
     showEditor = false;
     editorMemory = null;
     refreshKey++;
+    toastStore.success(wasEditing ? 'Memory updated' : 'Memory created');
+  }
+
+  // Memory deleted from the detail panel — refresh the list underneath and
+  // confirm to the user (the panel closing alone is ambiguous). The id is
+  // forwarded (Settings → recycle bin prunes the row locally) so a stale
+  // entry can't be acted on twice.
+  let lastDeletedMemoryId = $state<string | null>(null);
+  function handleMemoryDeleted(id: string) {
+    refreshKey++;
+    detailId = null;
+    lastDeletedMemoryId = id;
+    toastStore.success('Memory deleted');
   }
 
   function closeSettings() {
+    // The memory detail panel can sit above the settings modal (recycle-bin
+    // drill-in); Esc fires for both layers — only close the topmost one.
+    if (detailId) return;
     showSettings = false;
   }
 
@@ -112,20 +158,72 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.ctrlKey && e.key === 'b') {
+    if (hasMod(e) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      sidebarCollapsed = !sidebarCollapsed;
+      showPalette = !showPalette;
+      return;
     }
-    if (e.ctrlKey && e.key === 'n' && !showEditor) {
+    if (hasMod(e) && e.key === 'b') {
+      e.preventDefault();
+      toggleSidebar();
+    }
+    if (hasMod(e) && e.key === 'n' && !showEditor) {
       e.preventDefault();
       newMemory();
     }
   }
 
+  // Auto-collapse to the icon rail on narrow viewports (web in a small
+  // window, narrow desktop windows). A manual toggle cancels the auto
+  // restore so we never fight the user's explicit choice.
+  let autoCollapsed = false;
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    autoCollapsed = false;
+    try {
+      localStorage.setItem(SIDEBAR_LS, sidebarCollapsed ? '1' : '0');
+    } catch { /* storage unavailable */ }
+  }
+
+  function handleViewportChange() {
+    if (window.innerWidth < 900 && !sidebarCollapsed) {
+      sidebarCollapsed = true;
+      autoCollapsed = true;
+    } else if (window.innerWidth >= 900 && autoCollapsed) {
+      sidebarCollapsed = false;
+      autoCollapsed = false;
+    }
+  }
+
+  const VALID_HASH_VIEWS: View[] = [
+    'dashboard', 'memories', 'namespaces', 'graph', 'rooms', 'documents', 'lifecycle', 'tools',
+  ];
+
+  function viewFromHash(): View | null {
+    const h = location.hash.replace('#', '');
+    return (VALID_HASH_VIEWS as string[]).includes(h) ? (h as View) : null;
+  }
+
+  function handleHashChange() {
+    const v = viewFromHash();
+    if (v && v !== activeView) navigate(v);
+  }
+
   onMount(() => {
+		theme.init();
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('resize', handleViewportChange);
+    const initial = viewFromHash();
+    if (initial) activeView = initial;
+    handleViewportChange();
     initDataDir();
-    return () => window.removeEventListener('keydown', handleKeydown);
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('resize', handleViewportChange);
+    };
   });
 </script>
 
@@ -146,7 +244,7 @@
       collapsed={sidebarCollapsed}
       onnavigate={navigate}
       onnewmemory={newMemory}
-      oncollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+      oncollapse={toggleSidebar}
     />
 
     <!--
@@ -155,15 +253,16 @@
       refreshKey forces re-fetch after editor save.
     -->
     <main class="main-content">
+      <UpgradePrompt />
       {#key activeView}
         <div class="view-container" transition:fadeQuick>
           {#if activeView === 'dashboard'}
             {#key refreshKey}
-              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} />
+              <Dashboard {namespace} onmemoryclick={openDetail} onquicksearch={quickSearch} onnewmemory={newMemory} />
             {/key}
           {:else if activeView === 'memories'}
             {#key refreshKey}
-              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} />
+              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} ongraph={() => navigate('graph')} />
             {/key}
           {:else if activeView === 'namespaces'}
             <NamespacesView onmemoryclick={openDetail} />
@@ -173,6 +272,10 @@
             <RoomsView {namespace} onmemoryclick={openDetail} />
           {:else if activeView === 'documents'}
             <DocumentsView />
+          {:else if activeView === 'lifecycle'}
+            <LifecycleView {namespace} onmemoryclick={openDetail} />
+          {:else if activeView === 'tools'}
+            <ToolsView />
           {/if}
         </div>
       {/key}
@@ -182,26 +285,39 @@
 
 <!-- Universal slide-in detail panel (used by all views) -->
 {#if detailId}
-  <div transition:fade={{ duration: 150 }}>
+  <div transition:overlayFade>
     <DetailPanel memoryId={detailId} onclose={closeDetail} onneighborclick={detailNavigate} onedit={editMemory}>
       <MemoryDetail
         memoryId={detailId}
         onback={closeDetail}
         onneighborclick={detailNavigate}
         onedit={editMemory}
+        ondeleted={handleMemoryDeleted}
+        onmoved={() => refreshKey++}
       />
     </DetailPanel>
   </div>
 {/if}
 
 {#if showSettings}
-  <div transition:fade={{ duration: 150 }}>
-    <SettingsModal onclose={closeSettings} />
+  <div transition:overlayFade>
+    <SettingsModal onclose={closeSettings} onopenmemory={openDetail} deletedMemoryId={lastDeletedMemoryId} />
   </div>
 {/if}
 
+{#if showPalette}
+  <CommandPalette
+    onnavigate={navigate}
+    onnewmemory={newMemory}
+    onopenmemory={openDetail}
+    onopendocument={openDocument}
+    onopensettings={() => (showSettings = true)}
+    onclose={() => (showPalette = false)}
+  />
+{/if}
+
 {#if showEditor}
-  <div transition:fly={{ duration: 200, y: 20, opacity: 0 }}>
+  <div transition:overlayFlyUp>
     <MemoryEditor
       memory={editorMemory}
       {namespace}
@@ -271,14 +387,17 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius);
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: filter 0.15s var(--ease-out), transform 0.08s var(--ease-out);
   }
 
   .primary-btn:hover {
-    opacity: 0.85;
+    filter: brightness(1.12);
+  }
+  .primary-btn:active {
+    transform: translateY(1px);
   }
 </style>

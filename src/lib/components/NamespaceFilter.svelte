@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { uteke } from '../ts/ipc';
+  import { Layers, SquareCheck, Square, SquareMinus } from 'lucide-svelte';
 
   interface Props {
     /**
@@ -105,14 +106,14 @@
 
 <div class="namespace-filter">
   <button class="trigger" onclick={handleTriggerClick} title="Filter namespaces">
-    <span class="ns-icon">◫</span>
+    <span class="ns-icon"><Layers size={14} strokeWidth={2} /></span>
     <span class="label">{label}</span>
     <span class="caret">{open ? '▴' : '▾'}</span>
   </button>
 
   {#if open}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="dropdown" role="menu" onclick={(e) => e.stopPropagation()}>
+    <div class="dropdown" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <div class="search">
         <input
           type="text"
@@ -123,8 +124,16 @@
       </div>
 
       <button class="select-all" onclick={toggleAll}>
-        <span class="check">{allSelected ? '☑' : noneSelected ? '☐' : '⊟'}</span>
-        <span>{allSelected ? 'Deselect all' : noneSelected ? 'Select all' : 'Select all'}</span>
+        <span class="check">
+          {#if allSelected}
+            <SquareCheck size={14} strokeWidth={2} />
+          {:else if noneSelected}
+            <Square size={14} strokeWidth={2} />
+          {:else}
+            <SquareMinus size={14} strokeWidth={2} />
+          {/if}
+        </span>
+        <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
         <span class="count">{totalMemories}</span>
       </button>
 
@@ -158,14 +167,15 @@
   .trigger {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
+    gap: 8px;
+    height: 36px;
+    padding: 0 12px;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     white-space: nowrap;
     transition: border-color 0.1s;
   }
@@ -177,6 +187,8 @@
 
   .ns-icon {
     opacity: 0.7;
+    display: inline-flex;
+    align-items: center;
   }
 
   .caret {
@@ -195,7 +207,7 @@
     flex-direction: column;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     overflow: hidden;
   }
@@ -211,7 +223,7 @@
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     outline: none;
   }

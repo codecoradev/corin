@@ -8,7 +8,9 @@
 //! dependency. All operations (memory CRUD, graph, rooms) go through
 //! the HTTP API.
 //!
-//! Compatibility: verified against uteke 0.7.x–0.9.x (released + develop).
+//! Compatibility: verified against uteke 0.7.x–0.10.x (released + develop).
+//! Note: uteke 0.10.1 migrated the default data dir from `~/.uteke` to
+//! `~/.codecora/uteke`; `config.rs` resolves both (new first, legacy fallback).
 //! The `/recall` (plain, no `search_type`) and `/search` endpoints return
 //! the stable `[{memory, score}]` shape across these versions, so no
 //! API-version prefix (`/api/v1/` / `/api/v2/`) is needed. `room_document`
@@ -33,6 +35,8 @@ pub struct UtekeMemory {
     pub created_at: String,
     pub updated_at: String,
     pub pinned: bool,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -533,6 +537,25 @@ impl UtekeClient {
             .collect())
     }
 
+    /// Namespace rows as raw JSON — 0.16.1+ servers include
+    /// active/deprecated breakdown fields alongside name/count, and a
+    /// pass-through keeps us from needing a struct per shape.
+    pub async fn namespaces_breakdown(&self) -> Result<serde_json::Value, String> {
+        let resp = self
+            .authed(
+                self.client
+                    .get(format!("{}/namespaces", self.base_url))
+                    .query(&[("with_counts", "true")]),
+            )
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
     /// Get graph data (nodes + edges from memory_edges + graph_edges).
     pub async fn graph(&self, namespace: Option<&str>) -> Result<GraphResponse, String> {
         let mut req = self.authed(self.client.get(format!("{}/graph", self.base_url)));
@@ -630,21 +653,6 @@ impl UtekeClient {
         resp.json().await.map_err(|e| e.to_string())
     }
 
-    /// Get graph statistics only (no nodes/edges).
-    pub async fn graph_stats(&self) -> Result<GraphStats, String> {
-        let resp = self
-            .authed(self.client.get(format!("{}/graph/stats", self.base_url)))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if !resp.status().is_success() {
-            return Err(format!("server returned {}", resp.status()));
-        }
-
-        resp.json().await.map_err(|e| e.to_string())
-    }
-
     /// List rooms.
     pub async fn rooms(&self, namespace: Option<&str>) -> Result<Vec<UtekeRoom>, String> {
         let mut req = self.authed(self.client.get(format!("{}/room/list", self.base_url)));
@@ -667,6 +675,9 @@ impl UtekeClient {
         content: &str,
         tags: &[String],
         namespace: Option<&str>,
+        metadata: Option<&serde_json::Value>,
+        memory_type: Option<&str>,
+        importance: Option<f32>,
     ) -> Result<String, String> {
         let mut body = serde_json::json!({
             "content": content,
@@ -674,6 +685,18 @@ impl UtekeClient {
         });
         if let Some(ns) = namespace {
             body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(md) = metadata {
+            // Provenance slot (e.g. {"author":"human"}) — accepted by the
+            // server on create and round-tripped verbatim.
+            body["metadata"] = md.clone();
+        }
+        // Honored by 0.17+; older servers apply their own defaults.
+        if let Some(mt) = memory_type {
+            body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(imp) = importance {
+            body["importance"] = serde_json::json!(imp);
         }
 
         #[derive(Deserialize)]
@@ -1265,4 +1288,529 @@ impl UtekeClient {
             .map_err(|e| e.to_string())?;
         Self::json_checked(resp, "/doc/move").await
     }
+
+    /// Cross-entity linking: documents that reference a memory (POST /memory/doc-refs).
+    pub async fn memory_doc_refs(&self, memory_id: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "memory_id": memory_id,
+        });
+
+        self.authed(
+            self.client
+                .post(format!("{}/memory/doc-refs", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// Cross-entity linking: memories that reference a document (POST /doc/mem-refs).
+    pub async fn doc_mem_refs(&self, doc_slug: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "doc_slug": doc_slug,
+        });
+
+        self.authed(self.client.post(format!("{}/doc/mem-refs", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Submit trust feedback on a memory (POST /memory/feedback).
+    /// `feedback` must be "helpful" or "unhelpful".
+    pub async fn memory_feedback(
+        &self,
+        id: &str,
+        feedback: &str,
+    ) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({
+            "id": id,
+            "feedback": feedback,
+        });
+        let resp = self
+            .authed(
+                self.client
+                    .post(format!("{}/memory/feedback", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::json_checked(resp, "/memory/feedback").await
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Lifecycle endpoints (uteke ≥ 0.13.0) — issue #227, #228
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get lifecycle status: counts of active vs deprecated memories.
+    /// (GET /lifecycle/status)
+    pub async fn lifecycle_status(
+        &self,
+        namespace: Option<&str>,
+    ) -> Result<LifecycleStatus, String> {
+        let mut req = self.authed(
+            self.client
+                .get(format!("{}/lifecycle/status", self.base_url)),
+        );
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+        req.send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Run lifecycle cycle: deprecate aged memories, prune expired ones.
+    /// (POST /lifecycle/cycle)
+    pub async fn lifecycle_cycle(
+        &self,
+        namespace: Option<&str>,
+    ) -> Result<LifecycleCycleResult, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        self.authed(
+            self.client
+                .post(format!("{}/lifecycle/cycle", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// Promote (restore) a deprecated memory back to active.
+    /// (POST /lifecycle/promote)
+    pub async fn lifecycle_promote(&self, id: &str) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({ "id": id });
+        self.authed(
+            self.client
+                .post(format!("{}/lifecycle/promote", self.base_url)),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// List deprecated memories (the recycle bin).
+    /// (GET /lifecycle/deprecated)
+    pub async fn lifecycle_deprecated(
+        &self,
+        namespace: Option<&str>,
+        limit: u32,
+    ) -> Result<DeprecatedListResponse, String> {
+        let mut req = self.authed(
+            self.client
+                .get(format!("{}/lifecycle/deprecated", self.base_url)),
+        );
+        if let Some(ns) = namespace {
+            req = req.query(&[("namespace", ns)]);
+        }
+        req = req.query(&[("limit", limit)]);
+        req.send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Find orphaned memories (no room, no edges).
+    /// (POST /orphans)
+    pub async fn find_orphans(&self, namespace: Option<&str>) -> Result<Vec<OrphanMemory>, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        self.authed(self.client.post(format!("{}/orphans", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Consolidate (merge) similar/duplicate memories.
+    /// Always called with dry_run=true from Corin for preview mode.
+    /// (POST /consolidate)
+    pub async fn consolidate(
+        &self,
+        threshold: Option<f64>,
+        dry_run: bool,
+        namespace: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({ "dry_run": dry_run });
+        if let Some(t) = threshold {
+            body["threshold"] = serde_json::json!(t);
+        }
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        self.authed(self.client.post(format!("{}/consolidate", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    // ── Endpoint Gap: PUT /memory — update memory (#216) ──────────────
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn memory_update(
+        &self,
+        id: &str,
+        content: Option<&str>,
+        tags: Option<&[String]>,
+        metadata: Option<&serde_json::Value>,
+        importance: Option<f64>,
+        pinned: Option<bool>,
+        memory_type: Option<&str>,
+        namespace: Option<&str>,
+        content_type: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({ "id": id });
+        if let Some(c) = content {
+            body["content"] = serde_json::Value::String(c.to_string());
+        }
+        if let Some(tg) = tags {
+            body["tags"] = serde_json::json!(tg);
+        }
+        if let Some(md) = metadata {
+            body["metadata"] = md.clone();
+        }
+        if let Some(imp) = importance {
+            body["importance"] = serde_json::json!(imp);
+        }
+        if let Some(p) = pinned {
+            body["pinned"] = serde_json::json!(p);
+        }
+        if let Some(mt) = memory_type {
+            body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(ns) = namespace {
+            // Plain namespace move (#1181) — single UPDATE, no re-embed.
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(ct) = content_type {
+            body["content_type"] = serde_json::Value::String(ct.to_string());
+        }
+        let resp = self
+            .authed(self.client.put(format!("{}/memory", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
+    }
+
+    // ── Endpoint Gap: POST /room/remember (#216) ─────────────────────
+
+    pub async fn room_remember(
+        &self,
+        room_id: &str,
+        content: &str,
+        tags: &[String],
+        namespace: Option<&str>,
+        memory_type: Option<&str>,
+        author: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut body = serde_json::json!({
+            "room_id": room_id,
+            "content": content,
+            "tags": tags,
+        });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(mt) = memory_type {
+            body["type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(a) = author {
+            body["author"] = serde_json::Value::String(a.to_string());
+        }
+        let resp = self
+            .authed(self.client.post(format!("{}/room/remember", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
+    }
+
+    // ── Endpoint Gap: POST /import (#216) ────────────────────────────
+
+    pub async fn import(
+        &self,
+        jsonl_content: &str,
+        namespace: Option<&str>,
+    ) -> Result<ImportResult, String> {
+        let mut body = serde_json::json!({ "content": jsonl_content });
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        let resp = self
+            .authed(self.client.post(format!("{}/import", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/import").await?;
+        Ok(ImportResult {
+            imported: val.get("imported").and_then(|v| v.as_u64()).unwrap_or(0),
+            skipped: val.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0),
+        })
+    }
+
+    // ── Endpoint Gap: GET /export (#216) ─────────────────────────────
+
+    pub async fn export(&self, namespace: Option<&str>) -> Result<String, String> {
+        let url = match namespace {
+            Some(ns) => format!("{}/export?namespace={}", self.base_url, ns),
+            None => format!("{}/export", self.base_url),
+        };
+        let resp = self
+            .authed(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .text()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
+    }
+
+    // ── Endpoint Gap: POST /context (#216) ───────────────────────────
+
+    pub async fn context(&self, namespace: Option<&str>) -> Result<String, String> {
+        let mut body = serde_json::json!({});
+        if let Some(ns) = namespace {
+            body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        let resp = self
+            .authed(self.client.post(format!("{}/context", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/context").await?;
+        let ctx = val
+            .get("context")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok(ctx)
+    }
+
+    // ── Endpoint Gap: Room-Document linking (#231) ───────────────────
+
+    pub async fn room_doc_list(&self, room_id: &str) -> Result<Vec<String>, String> {
+        let body = serde_json::json!({ "room_id": room_id });
+        let resp = self
+            .authed(
+                self.client
+                    .post(format!("{}/room/document/list", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/room/document/list").await?;
+        let slugs = val
+            .get("doc_slugs")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(slugs)
+    }
+
+    pub async fn room_doc_add(&self, room_id: &str, doc_slug: &str) -> Result<(), String> {
+        let body = serde_json::json!({ "room_id": room_id, "doc_slug": doc_slug });
+        let resp = self
+            .authed(
+                self.client
+                    .put(format!("{}/room/document/add", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+        let _ = resp.bytes().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn room_doc_remove(&self, room_id: &str, doc_slug: &str) -> Result<(), String> {
+        let body = serde_json::json!({ "room_id": room_id, "doc_slug": doc_slug });
+        let resp = self
+            .authed(
+                self.client
+                    .delete(format!("{}/room/document/remove", self.base_url)),
+            )
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?;
+        let _ = resp.bytes().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn doc_room_list(&self, doc_slug: &str) -> Result<Vec<String>, String> {
+        let body = serde_json::json!({ "doc_slug": doc_slug });
+        let resp = self
+            .authed(self.client.post(format!("{}/doc/room/list", self.base_url)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let val: serde_json::Value = Self::json_checked(resp, "/doc/room/list").await?;
+        let rooms = val
+            .get("room_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(rooms)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle types (uteke ≥ 0.13.0)
+// ─────────────────────────────────────────────────────────────────
+
+/// Response from GET /lifecycle/status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleStatus {
+    #[serde(default)]
+    pub active: usize,
+    #[serde(default)]
+    pub deprecated: usize,
+    #[serde(default)]
+    pub pruned: usize,
+}
+
+/// One deprecated-memory entry from GET /lifecycle/deprecated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeprecatedMemoryInfo {
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub memory_type: String,
+    #[serde(default)]
+    pub namespace: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub importance: f64,
+    #[serde(default)]
+    pub deprecated_at: Option<String>,
+    #[serde(default)]
+    pub deprecate_reason: Option<String>,
+}
+
+/// Response from GET /lifecycle/deprecated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeprecatedListResponse {
+    #[serde(default)]
+    pub deprecated: Vec<DeprecatedMemoryInfo>,
+    #[serde(default)]
+    pub count: usize,
+}
+
+/// Response from POST /lifecycle/cycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleCycleResult {
+    #[serde(default)]
+    pub deprecated: usize,
+    #[serde(default)]
+    pub pruned: usize,
+    #[serde(default)]
+    pub skipped: usize,
+}
+
+/// Orphaned memory from POST /orphans.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrphanMemory {
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub namespace: String,
+    #[serde(default)]
+    pub importance: f32,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+// ── Import Result struct (#216) ─────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImportResult {
+    pub imported: u64,
+    pub skipped: u64,
 }

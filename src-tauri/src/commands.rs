@@ -53,6 +53,12 @@ pub struct MemoryEntry {
     pub namespace: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    pub memory_type: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,12 +137,13 @@ pub struct AppState {
 
 #[tauri::command]
 pub async fn remember(
-    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
     content: String,
     tags: Vec<String>,
     namespace: Option<String>,
-    _content_type: Option<String>,
-    _importance: Option<f32>,
+    memory_type: Option<String>,
+    importance: Option<f32>,
+    metadata: Option<serde_json::Value>,
 ) -> Result<String, CommandError> {
     let client = {
         let s = state.lock().await;
@@ -147,7 +154,14 @@ pub async fn remember(
     };
     let ns = namespace.as_deref();
     client
-        .remember(&content, &tags, ns)
+        .remember(
+            &content,
+            &tags,
+            ns,
+            metadata.as_ref(),
+            memory_type.as_deref(),
+            importance,
+        )
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
@@ -263,6 +277,9 @@ pub async fn list(
             namespace: Some(m.namespace),
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
+            pinned: Some(m.pinned),
+            memory_type: Some(m.memory_type),
+            metadata: m.metadata.clone(),
         })
         .collect())
 }
@@ -312,6 +329,9 @@ pub async fn get_memory(
         namespace: Some(m.namespace),
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
+        pinned: Some(m.pinned),
+        memory_type: Some(m.memory_type),
+        metadata: m.metadata.clone(),
     })
 }
 
@@ -359,6 +379,9 @@ pub async fn get_graph_data(
             namespace: None,
             created_at: None,
             updated_at: None,
+            pinned: None,
+            memory_type: None,
+            metadata: None,
         })
         .collect();
 
@@ -428,6 +451,9 @@ pub async fn get_neighbors(
                 namespace: Some(m.namespace),
                 created_at: Some(m.created_at),
                 updated_at: Some(m.updated_at),
+                pinned: Some(m.pinned),
+                memory_type: Some(m.memory_type),
+                metadata: m.metadata.clone(),
             });
         }
     }
@@ -746,6 +772,9 @@ pub async fn uteke_list(
             namespace: Some(m.namespace),
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
+            pinned: Some(m.pinned),
+            memory_type: Some(m.memory_type),
+            metadata: m.metadata.clone(),
         })
         .collect())
 }
@@ -801,6 +830,9 @@ async fn list_multi_namespace(
             namespace: Some(m.namespace),
             created_at: Some(m.created_at),
             updated_at: Some(m.updated_at),
+            pinned: Some(m.pinned),
+            memory_type: Some(m.memory_type),
+            metadata: m.metadata.clone(),
         })
         .collect())
 }
@@ -844,6 +876,9 @@ pub async fn uteke_get(
         namespace: Some(m.namespace),
         created_at: Some(m.created_at),
         updated_at: Some(m.updated_at),
+        pinned: Some(m.pinned),
+        memory_type: Some(m.memory_type),
+        metadata: m.metadata.clone(),
     })
 }
 
@@ -914,6 +949,9 @@ pub async fn uteke_graph(
                         namespace: None,
                         created_at: None,
                         updated_at: None,
+                        pinned: None,
+                        memory_type: None,
+                        metadata: None,
                     })
                     .collect(),
                 edges: graph
@@ -979,6 +1017,25 @@ pub async fn uteke_namespaces_with_counts(
     }
     client
         .namespaces_with_counts()
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Namespace rows incl. active/deprecated breakdown when the server
+/// provides it (raw pass-through, uteke >= 0.16.1).
+#[tauri::command]
+pub async fn uteke_namespaces_breakdown(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .namespaces_breakdown()
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))
 }
@@ -1127,6 +1184,9 @@ pub async fn uteke_room_recall(
             namespace: Some(r.memory.namespace),
             created_at: Some(r.memory.created_at),
             updated_at: Some(r.memory.updated_at),
+            pinned: Some(r.memory.pinned),
+            memory_type: Some(r.memory.memory_type),
+            metadata: r.memory.metadata.clone(),
         })
         .collect())
 }
@@ -1196,6 +1256,9 @@ pub async fn uteke_room_memories(
                 namespace: Some(m.namespace),
                 created_at: Some(m.created_at),
                 updated_at: Some(m.updated_at),
+                pinned: Some(m.pinned),
+                memory_type: Some(m.memory_type),
+                metadata: m.metadata.clone(),
             })
             .collect()),
         Err(_) => {
@@ -1215,6 +1278,9 @@ pub async fn uteke_room_memories(
                     namespace: Some(r.memory.namespace),
                     created_at: Some(r.memory.created_at),
                     updated_at: Some(r.memory.updated_at),
+                    pinned: Some(r.memory.pinned),
+                    memory_type: Some(r.memory.memory_type),
+                    metadata: r.memory.metadata.clone(),
                 })
                 .collect())
         }
@@ -1306,8 +1372,8 @@ pub async fn list_namespaces(
 #[tauri::command]
 pub async fn list_tags(
     state: tauri::State<'_, std::sync::Arc<Mutex<AppState>>>,
-    _namespace: Option<String>,
-) -> Result<HashMap<String, usize>, CommandError> {
+    namespace: Option<String>,
+) -> Result<Vec<crate::uteke_client::TagInfo>, CommandError> {
     let client = {
         let s = state.lock().await;
         s.uteke_client.clone()
@@ -1316,16 +1382,10 @@ pub async fn list_tags(
         return Err(CommandError::NotInitialized);
     };
 
-    // No direct HTTP endpoint for tags_with_counts.
-    // Approximate with namespaces_with_counts (namespace names as "tags").
-    let ns_counts = client.namespaces_with_counts().await.unwrap_or_default();
-
-    let tag_counts: HashMap<String, usize> = ns_counts
-        .into_iter()
-        .map(|nc| (nc.name, nc.count))
-        .collect();
-
-    Ok(tag_counts)
+    client
+        .list_tags(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
 }
 
 #[tauri::command]
@@ -1641,7 +1701,7 @@ pub async fn import_data(
                     .map(|s| s.to_string());
 
                 client
-                    .remember(content, &tags, namespace.as_deref())
+                    .remember(content, &tags, namespace.as_deref(), None, None, None)
                     .await
                     .map_err(|e| CommandError::Uteke(e.to_string()))?;
                 count += 1;
@@ -1730,7 +1790,7 @@ pub async fn import_data(
                     }
 
                     client
-                        .remember(body, &tags, namespace.as_deref())
+                        .remember(body, &tags, namespace.as_deref(), None, None, None)
                         .await
                         .map_err(|e| CommandError::Uteke(e.to_string()))?;
                     count += 1;
@@ -1885,6 +1945,9 @@ pub async fn uteke_remember(
     content: String,
     tags: Option<Vec<String>>,
     namespace: Option<String>,
+    metadata: Option<serde_json::Value>,
+    memory_type: Option<String>,
+    importance: Option<f64>,
 ) -> Result<serde_json::Value, CommandError> {
     let tags = tags.unwrap_or_default();
     let client = {
@@ -1921,7 +1984,14 @@ pub async fn uteke_remember(
 
     // No duplicate found — insert.
     let id = client
-        .remember(&content, &tags, namespace.as_deref())
+        .remember(
+            &content,
+            &tags,
+            namespace.as_deref(),
+            metadata.as_ref(),
+            memory_type.as_deref(),
+            importance.map(|v| v as f32),
+        )
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
 
@@ -2942,6 +3012,7 @@ pub async fn doc_update(
     title: Option<String>,
     content: Option<String>,
     tags: Option<Vec<String>>,
+    metadata: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, CommandError> {
     require_uteke_version(&state, crate::MIN_UTEKE_FOR_DOCS).await?;
     let id_or_slug = id
@@ -2960,7 +3031,7 @@ pub async fn doc_update(
             title.as_deref(),
             content.as_deref(),
             tags.as_deref(),
-            None,
+            metadata.as_ref(),
         )
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
@@ -3032,6 +3103,434 @@ pub async fn doc_move(
     };
     let result = client
         .doc_move(id.as_deref(), slug.as_deref(), new_parent.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Cross-entity linking: documents that reference a memory (POST /memory/doc-refs).
+#[tauri::command]
+pub async fn memory_doc_refs(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    memory_id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .memory_doc_refs(&memory_id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Cross-entity linking: memories that reference a document (POST /doc/mem-refs).
+#[tauri::command]
+pub async fn doc_mem_refs(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    doc_slug: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::NotInitialized);
+    };
+    client
+        .doc_mem_refs(&doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Trust feedback on a memory (POST /memory/feedback).
+/// Submits "helpful" or "unhelpful" signal for ranking.
+#[tauri::command]
+pub async fn memory_feedback(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    feedback: String,
+) -> Result<serde_json::Value, CommandError> {
+    // Validate feedback at IPC boundary — only accept known values.
+    match feedback.as_str() {
+        "helpful" | "unhelpful" => {}
+        _ => return Err(CommandError::Uteke("invalid feedback value".into())),
+    }
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .memory_feedback(&id, &feedback)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Get timeline events for a memory (created, updated, recalled, etc.).
+/// Returns chronological event history from uteke-serve.
+#[tauri::command]
+pub async fn memory_timeline(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::uteke_client::TimelineEvent>, CommandError> {
+    let limit = limit.unwrap_or(50);
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Ok(vec![]);
+    };
+    if !client.is_available().await {
+        return Ok(vec![]);
+    }
+    let events = client
+        .timeline(&id, limit)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(events)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle commands (uteke ≥ 0.13.0) — issues #227, #228
+// ─────────────────────────────────────────────────────────────────
+
+/// Get lifecycle status: active vs deprecated memory counts.
+#[tauri::command]
+pub async fn lifecycle_status(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<crate::uteke_client::LifecycleStatus, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_status(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Run lifecycle cycle: deprecate aged, prune expired.
+#[tauri::command]
+pub async fn lifecycle_cycle(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<crate::uteke_client::LifecycleCycleResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_cycle(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Restore a deprecated memory back to active.
+#[tauri::command]
+pub async fn lifecycle_promote(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_promote(&id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// List deprecated memories (the recycle bin).
+#[tauri::command]
+pub async fn lifecycle_deprecated(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+    limit: Option<u32>,
+) -> Result<crate::uteke_client::DeprecatedListResponse, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .lifecycle_deprecated(namespace.as_deref(), limit.unwrap_or(100))
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Find orphaned memories (no room, no edges).
+#[tauri::command]
+pub async fn find_orphans(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<Vec<crate::uteke_client::OrphanMemory>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .find_orphans(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+/// Consolidate (merge) similar memories. Always dry_run from Corin.
+#[tauri::command]
+pub async fn consolidate_memories(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    threshold: Option<f64>,
+    dry_run: Option<bool>,
+    namespace: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("Uteke server not running".into()));
+    };
+    client
+        .consolidate(threshold, dry_run.unwrap_or(true), namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))
+}
+
+// ── Endpoint Gap Commands (#216 + #231) ─────────────────────────────────
+
+/// Update a memory via PUT /memory (#216)
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn memory_update(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    id: String,
+    content: Option<String>,
+    tags: Option<Vec<String>>,
+    metadata: Option<serde_json::Value>,
+    importance: Option<f64>,
+    pinned: Option<bool>,
+    memory_type: Option<String>,
+    namespace: Option<String>,
+    content_type: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .memory_update(
+            &id,
+            content.as_deref(),
+            tags.as_deref(),
+            metadata.as_ref(),
+            importance,
+            pinned,
+            memory_type.as_deref(),
+            namespace.as_deref(),
+            content_type.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Remember into a room via POST /room/remember (#216)
+#[tauri::command]
+pub async fn room_remember(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    content: String,
+    tags: Vec<String>,
+    namespace: Option<String>,
+    memory_type: Option<String>,
+    author: Option<String>,
+) -> Result<serde_json::Value, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .room_remember(
+            &room_id,
+            &content,
+            &tags,
+            namespace.as_deref(),
+            memory_type.as_deref(),
+            author.as_deref(),
+        )
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Import JSONL data via POST /import (#216)
+#[tauri::command]
+pub async fn uteke_import(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    jsonl_content: String,
+    namespace: Option<String>,
+) -> Result<crate::uteke_client::ImportResult, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .import(&jsonl_content, namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Export memories as JSONL via GET /export (#216)
+#[tauri::command]
+pub async fn uteke_export(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<String, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .export(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Build context summary via POST /context (#216)
+#[tauri::command]
+pub async fn uteke_context(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    namespace: Option<String>,
+) -> Result<String, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .context(namespace.as_deref())
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// List documents linked to a room (#231)
+#[tauri::command]
+pub async fn room_doc_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+) -> Result<Vec<String>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .room_doc_list(&room_id)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(result)
+}
+
+/// Link a document to a room (#231)
+#[tauri::command]
+pub async fn room_doc_add(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    doc_slug: String,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    client
+        .room_doc_add(&room_id, &doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(())
+}
+
+/// Unlink a document from a room (#231)
+#[tauri::command]
+pub async fn room_doc_remove(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    room_id: String,
+    doc_slug: String,
+) -> Result<(), CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    client
+        .room_doc_remove(&room_id, &doc_slug)
+        .await
+        .map_err(|e| CommandError::Uteke(e.to_string()))?;
+    Ok(())
+}
+
+/// List rooms linked to a document (#231)
+#[tauri::command]
+pub async fn doc_room_list(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    doc_slug: String,
+) -> Result<Vec<String>, CommandError> {
+    let client = {
+        let s = state.lock().await;
+        s.uteke_client.clone()
+    };
+    let Some(client) = client else {
+        return Err(CommandError::Uteke("uteke-serve not running".into()));
+    };
+    let result = client
+        .doc_room_list(&doc_slug)
         .await
         .map_err(|e| CommandError::Uteke(e.to_string()))?;
     Ok(result)

@@ -1,5 +1,5 @@
 // View type for navigation
-export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'documents' | 'settings';
+export type View = 'dashboard' | 'memories' | 'namespaces' | 'graph' | 'rooms' | 'documents' | 'lifecycle' | 'settings' | 'tools';
 
 // Memory entry from uteke-serve (HTTP API)
 export interface MemoryEntry {
@@ -11,6 +11,12 @@ export interface MemoryEntry {
   namespace: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** Present on uteke list/get responses; undefined in hand-built results. */
+  pinned?: boolean | null;
+  /** Semantic class: fact/procedure/decision/… (server defaults to fact). */
+  memory_type?: string | null;
+  /** Provenance slot — { author: 'human' | <agent-name>, … }. */
+  metadata?: Record<string, unknown> | null;
 }
 
 // Search result with score
@@ -105,6 +111,27 @@ export interface DocSearchResult {
   mode: string | null;
 }
 
+// Cross-entity linking (#207): documents that reference a memory.
+export interface MemoryDocRefsResponse {
+  memory_id: string;
+  doc_slugs: string[];
+}
+
+// Cross-entity linking (#207): memories that reference a document.
+export interface DocMemRefsResponse {
+  doc_slug: string;
+  memory_ids: string[];
+}
+
+// Timeline event for a memory (created, updated, recalled, etc.)
+export interface TimelineEvent {
+  id: number;
+  memory_id: string;
+  event_type: string;
+  event_data: string | null;
+  created_at: string;
+}
+
 // Stats response
 export interface StatsResponse {
   total_memories: number;
@@ -112,4 +139,114 @@ export interface StatsResponse {
   total_tags: number;
   total_edges: number;
   db_size_bytes: number;
+}
+
+// Trust feedback response (POST /memory/feedback)
+export interface MemoryFeedbackResponse {
+  id: string;
+  feedback: string;
+  delta: number;
+  importance: number;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle types (uteke ≥ 0.13.0) — issue #227, #228
+// ─────────────────────────────────────────────────────────────────
+
+/** Response from GET /lifecycle/status */
+export interface LifecycleStatus {
+  active: number;
+  deprecated: number;
+  pruned: number;
+}
+
+/** Response from POST /lifecycle/cycle */
+export interface LifecycleCycleResult {
+  deprecated: number;
+  pruned: number;
+  skipped: number;
+}
+
+/** Orphaned memory from POST /orphans */
+export interface OrphanMemory {
+  id: string;
+  content: string;
+  tags: string[];
+  namespace: string;
+  importance: number;
+  created_at: string;
+}
+
+/** One deprecated-memory entry from GET /lifecycle/deprecated */
+export interface DeprecatedMemoryInfo {
+  id: string;
+  content: string;
+  memory_type: string;
+  namespace: string;
+  tags: string[];
+  importance: number;
+  deprecated_at: string | null;
+  deprecate_reason: string | null;
+}
+
+/** Response from GET /lifecycle/deprecated */
+export interface DeprecatedListResponse {
+  deprecated: DeprecatedMemoryInfo[];
+  count: number;
+}
+
+// ── Endpoint Gap Types (#216 + #231) ────────────────────────────────────
+
+// Import result (POST /import)
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+}
+
+// Memory update params (PUT /memory) — all fields optional except id
+export interface MemoryUpdateParams {
+  id: string;
+  content?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  importance?: number;
+  pinned?: boolean;
+  memory_type?: string;
+  /** Plain move to another namespace (uteke #1181, PUT /memory). */
+  namespace?: string;
+  /** Render format ('text', …) — backfillable via PUT /memory. */
+  content_type?: string;
+}
+
+// Room remember params (POST /room/remember)
+export interface RoomRememberParams {
+  room_id: string;
+  content: string;
+  tags: string[];
+  namespace?: string;
+  memory_type?: string;
+  author?: string;
+}
+
+// ── Connection manager types (#37) ───────────────────────────────────────
+// Moved here from ipc.ts so both transports (desktop/web-routes) share them.
+
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  product_type: 'uteke';
+  url: string;
+  has_token: boolean;
+  capabilities: { read: boolean; write: boolean; search: boolean; realtime: boolean };
+  status: string;
+  is_primary: boolean;
+  created_at: string;
+  last_tested_at: string | null;
+}
+
+export interface HealthInfo {
+  success: boolean;
+  latency_ms: number;
+  version: string | null;
+  error: string | null;
 }

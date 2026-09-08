@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { fade, scale } from 'svelte/transition';
   import type { Snippet } from 'svelte';
+  import { X } from 'lucide-svelte';
+  import { backdropFade, modalScale } from '../transitions';
+  import { focusTrap } from './focusTrap';
 
   interface Props {
     open: boolean;
@@ -23,15 +25,24 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#if open}
-  <div class="modal-overlay" transition:fade={{ duration: 150 }}>
+  <div class="modal-overlay" transition:backdropFade>
     <!-- backdrop -->
-    <div class="modal-backdrop" onclick={onclose}></div>
+    <div class="modal-backdrop" role="presentation" onclick={onclose}></div>
     <!-- dialog -->
-    <div class="modal-dialog" style="--modal-width: {width}" transition:scale={{ duration: 200, start: 0.96, opacity: 0 }}>
+    <div
+      class="modal-dialog"
+      style="--modal-width: {width}"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      tabindex="-1"
+      use:focusTrap
+      transition:modalScale
+    >
       {#if title}
         <div class="modal-header">
           <h3>{title}</h3>
-          <button class="modal-close" onclick={onclose} title="Close (Esc)">✕</button>
+          <button class="modal-close" onclick={onclose} title="Close (Esc)"><X size={14} strokeWidth={2.5} /></button>
         </div>
       {/if}
       <div class="modal-body">
@@ -53,7 +64,7 @@
   .modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--scrim);
     backdrop-filter: blur(2px);
   }
   .modal-dialog {
@@ -63,7 +74,7 @@
     max-height: 88vh;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -90,8 +101,8 @@
     cursor: pointer;
     font-size: 1rem;
     padding: 4px 8px;
-    border-radius: 4px;
-    transition: all 0.12s;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
   }
   .modal-close:hover {
     background: var(--bg-hover);

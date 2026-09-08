@@ -1,17 +1,18 @@
 <script lang="ts">
   import type { View } from '../ts/types';
   import { utekeServer } from '../ts/ipc';
+  import { theme } from '../stores/theme.svelte';
+  import { kbdCombo } from '../utils/platform';
   import {
     LayoutDashboard,
     Brain,
-    Boxes,
-    Share2,
-    MessagesSquare,
     FileText,
     Settings,
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
+    Sun,
+    Moon,
   } from 'lucide-svelte';
 
   interface Props {
@@ -24,7 +25,7 @@
 
   let { activeView, collapsed, onnavigate, onnewmemory, oncollapse }: Props = $props();
 
-  // Uteke server status — always visible in sidebar
+  // Uteke server status — always visible in the rail
   let serverOnline = $state(false);
   let serverChecking = $state(true);
 
@@ -46,17 +47,16 @@
     return () => clearInterval(interval);
   });
 
+  // IA decision (owner, 2026-09-06): 3 primary destinations only.
+  // - Namespaces -> workspace/filter chip (read-only) — #297
+  // - Graph      -> exploration mode inside Memories — #298
+  // - Rooms      -> grouping dimension in the Memories hub panel — #293
+  // - Lifecycle  -> Settings > Maintenance — #290
+  // Routes remain reachable via hash for deep links.
   const navItems: { view: View; label: string; icon: IconComp }[] = [
-    { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { view: 'dashboard', label: 'Home', icon: LayoutDashboard },
     { view: 'memories', label: 'Memories', icon: Brain },
-    { view: 'namespaces', label: 'Namespaces', icon: Boxes },
-    { view: 'graph', label: 'Graph', icon: Share2 },
-    { view: 'rooms', label: 'Rooms', icon: MessagesSquare },
     { view: 'documents', label: 'Documents', icon: FileText },
-  ];
-
-  const bottomItems: { view: View; label: string; icon: IconComp }[] = [
-    { view: 'settings', label: 'Settings', icon: Settings },
   ];
 
   type IconComp = typeof LayoutDashboard;
@@ -64,28 +64,34 @@
 </script>
 
 <aside class="sidebar" class:collapsed>
-  {#if !collapsed}
-    <div class="sidebar-header">
+  <div class="sidebar-header" class:hidden={collapsed}>
+    {#if !collapsed}
       <div class="logo">
         <img src="/corin-logo.png" alt="CorIn" class="logo-img" />
         <span class="logo-text">CorIn</span>
       </div>
-    </div>
+    {/if}
+    {#if collapsed}
+      <button class="rail-btn new-memory-rail" onclick={onnewmemory} title={`New Memory (${kbdCombo('N')})`} aria-label="New Memory">
+        <Plus size={18} strokeWidth={2.25} />
+      </button>
+    {:else}
+      <button class="new-memory-btn" onclick={onnewmemory}>
+        <Plus size={16} strokeWidth={2.5} />
+        <span>New Memory</span>
+        <kbd>{kbdCombo('N')}</kbd>
+      </button>
+    {/if}
+  </div>
 
-    <button class="new-memory-btn" onclick={onnewmemory}>
-      <Plus size={16} strokeWidth={2.5} />
-      <span>New Memory</span>
-      <kbd>Ctrl+N</kbd>
-    </button>
-  {/if}
-
-  <nav class="nav">
+  <nav class="nav" aria-label="Primary">
     {#each navItems as item (item.view)}
       <button
         class="nav-item"
         class:active={activeView === item.view}
         onclick={() => onnavigate(item.view)}
         title={collapsed ? item.label : ''}
+        aria-label={item.label}
       >
         <span class="nav-icon">
           <item.icon size={iconSize} strokeWidth={1.75} />
@@ -110,34 +116,54 @@
         {/if}
       </div>
     {:else}
-      <div class="server-status-collapsed" class:online={serverOnline} title={serverOnline ? 'Semantic search active' : 'uteke-serve offline'}>
+      <div
+        class="server-status-collapsed"
+        class:online={serverOnline}
+        title={serverOnline ? 'Semantic search active' : 'uteke-serve offline'}
+      >
         <span class="status-dot"></span>
       </div>
     {/if}
 
-    {#each bottomItems as item (item.view)}
-      <button
-        class="nav-item"
-        class:active={activeView === item.view}
-        onclick={() => onnavigate(item.view)}
-        title={collapsed ? item.label : ''}
-      >
-        <span class="nav-icon">
-          <item.icon size={iconSize} strokeWidth={1.75} />
-        </span>
-        {#if !collapsed}
-          <span class="nav-label">{item.label}</span>
-        {/if}
-      </button>
-    {/each}
-  </div>
-
-  <div class="sidebar-footer">
-    <button class="collapse-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'}>
-      {#if collapsed}
-        <PanelLeftOpen size={16} strokeWidth={1.75} />
+    <button
+      class="rail-btn"
+      onclick={() => theme.toggle()}
+      title={theme.current === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      aria-label="Toggle theme"
+    >
+      {#if theme.current === 'dark'}
+        <span class="nav-icon"><Sun size={iconSize} strokeWidth={1.75} /></span>
       {:else}
-        <PanelLeftClose size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><Moon size={iconSize} strokeWidth={1.75} /></span>
+      {/if}
+      {#if !collapsed}
+        <span class="rail-btn-label">{theme.current === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+      {/if}
+    </button>
+
+    <button
+      class="nav-item"
+      class:active={activeView === 'settings'}
+      onclick={() => onnavigate('settings')}
+      title={collapsed ? 'Settings' : ''}
+      aria-label="Settings"
+    >
+      <span class="nav-icon">
+        <Settings size={iconSize} strokeWidth={1.75} />
+      </span>
+      {#if !collapsed}
+        <span class="nav-label">Settings</span>
+      {/if}
+    </button>
+
+    <button class="rail-btn" onclick={oncollapse} title={collapsed ? `Expand (${kbdCombo('B')})` : `Collapse (${kbdCombo('B')})`} aria-label="Toggle sidebar">
+      {#if collapsed}
+        <span class="nav-icon"><PanelLeftOpen size={iconSize} strokeWidth={1.75} /></span>
+      {:else}
+        <span class="nav-icon"><PanelLeftClose size={iconSize} strokeWidth={1.75} /></span>
+      {/if}
+      {#if !collapsed}
+        <span class="rail-btn-label">Collapse</span>
       {/if}
     </button>
   </div>
@@ -150,7 +176,7 @@
     flex-direction: column;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
-    transition: width 0.15s ease;
+    transition: width 0.15s var(--ease-out);
     overflow: hidden;
     flex-shrink: 0;
   }
@@ -158,16 +184,38 @@
   .sidebar.collapsed { width: 56px; }
 
   .sidebar-header {
-    padding: 16px 16px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 4px;
+  }
+  .sidebar-header.hidden {
+    padding: 12px 0 4px;
+    display: flex;
+    justify-content: center;
   }
 
   .logo { display: flex; align-items: center; gap: 8px; }
   .logo-img { width: 24px; height: 24px; }
   .logo-text { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
 
+  /* Compact rail CTA — mirrors mockup A (teal tile, 2+ changes on hover) */
+  .new-memory-rail {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+  }
+  .new-memory-rail:hover { opacity: 0.85; }
+  .new-memory-rail:active { transform: scale(0.98); }
+
   .new-memory-btn {
-    margin: 12px 16px;
+    margin-top: 10px;
+    width: 100%;
     padding: 8px 12px;
     display: flex;
     align-items: center;
@@ -175,44 +223,46 @@
     background: var(--accent);
     color: var(--bg-primary);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s var(--ease-out);
   }
   .new-memory-btn:hover { opacity: 0.85; }
   kbd {
     margin-left: auto;
     font-size: 0.7rem;
     padding: 1px 4px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
+    opacity: 0.75;
   }
 
-  .nav { flex: 1; padding: 8px 0; display: flex; flex-direction: column; }
+  .nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
 
   .nav-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 16px;
+    padding: 8px 12px;
     background: transparent;
     border: none;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: 0.9rem;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
     text-align: left;
     width: 100%;
   }
   .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  /* Active = 2+ visual changes (ui-standards): tint bg + accent color + icon fill accent + left indicator */
   .nav-item.active {
-    background: var(--bg-hover);
+    background: var(--color-teal-bg);
     color: var(--accent);
-    border-left: 2px solid var(--accent);
-    padding-left: 14px;
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   .nav-item.active :global(svg) { stroke: var(--accent); }
   .nav-icon {
@@ -225,15 +275,19 @@
   }
   .nav-label { white-space: nowrap; flex: 1; }
 
-  .sidebar-footer { padding: 8px 16px; border-top: 1px solid var(--border); }
-
-  .nav-bottom { padding: 8px 0; border-top: 1px solid var(--border); }
+  .nav-bottom {
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
 
   .server-status {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
+    gap: 10px;
+    padding: 6px 12px;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
@@ -242,18 +296,26 @@
   .server-status-collapsed {
     display: flex;
     justify-content: center;
-    padding: 6px;
+    padding: 6px 0;
   }
+  /* 20px column so the label lines up with .nav-icon labels (12+20+10). */
   .status-dot {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .status-dot::before {
+    content: '';
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    flex-shrink: 0;
     background: var(--text-muted);
   }
-  .online .status-dot {
+  .online .status-dot::before {
     background: var(--green);
-    box-shadow: 0 0 6px rgba(166, 227, 161, 0.5);
     animation: pulse 2s infinite;
   }
   @keyframes pulse {
@@ -261,24 +323,40 @@
     50% { opacity: 0.4; }
   }
 
-  .collapse-btn {
-    width: 100%;
-    padding: 6px 8px;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
+  /* Rail utility buttons (theme toggle, collapse) — same row grid as
+     .nav-item so the whole footer is left-aligned on one icon column. */
+  .rail-btn {
     display: flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    transition: background 0.1s;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+    text-align: left;
   }
-  .collapse-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .rail-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .rail-btn-label { font-size: 0.8rem; white-space: nowrap; }
 
-  .sidebar.collapsed .sidebar-header,
-  .sidebar.collapsed .new-memory-btn { display: none; }
-  .sidebar.collapsed .nav-item { justify-content: center; padding: 10px; }
-  .sidebar.collapsed .nav-bottom .nav-item { justify-content: center; padding: 10px; }
-  .sidebar.collapsed .nav-item.active { padding-left: 10px; }
+  /* Rail tiles (collapsed): uniform 36px rounded squares on radius-lg so
+     every control reads as the same soft tile. The active view keeps the
+     teal tint + accent icon but swaps the wide-mode left bar for a soft
+     shadow — on a 36px tile the inset bar read as a harsh border. */
+  .sidebar.collapsed .nav-item,
+  .sidebar.collapsed .rail-btn {
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-lg);
+  }
+  .sidebar.collapsed .nav-item.active {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  }
+  .sidebar.collapsed .nav { padding: 10px 8px; align-items: center; }
+  .sidebar.collapsed .nav-bottom { padding: 8px 8px; align-items: center; }
 </style>

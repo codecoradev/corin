@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import type { GraphData } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
   import { pickColor, buildTagEdges, NODE_COLORS as COLORS } from './graph/graph-utils.ts';
@@ -25,6 +26,25 @@
   // Simulation state
   let W = 800;
   let H = 600;
+
+  // Canvas color cache — resolved from CSS custom properties on mount so the
+  // graph tracks the rest of the UI. Canvas can't read var() directly.
+  let COL = {
+    crust: '#1e1e2e',
+    ink: '#cdd6f4',
+    muted: '#6c7086',
+    blue: '#89b4fa',
+  };
+
+  function resolveCanvasTokens(): void {
+    const root = document.documentElement;
+    const s = getComputedStyle(root);
+    const get = (n: string, fb: string): string => s.getPropertyValue(n).trim() || fb;
+    COL.crust = get('--color-crust', COL.crust);
+    COL.ink = get('--color-text', COL.ink);
+    COL.muted = get('--color-overlay', COL.muted);
+    COL.blue = get('--color-blue', COL.blue);
+  }
 
   interface SimNode {
     id: string;
@@ -52,9 +72,48 @@
   let physicsActive = true;
   let calmFrames = 0;
   let needRedraw = true;
+  let labelsVisible = $state(false); // default hidden (owner: avoid clutter); toggle or hover to reveal
 
-  const INITIAL_SEED = 30;
+  // Respect user's reduced-motion preference. When true, physics is
+  // skipped entirely — nodes render at their initial positions and
+  // the RAF loop only redraws on hover/expand, not continuously.
+  const prefersReducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const INITIAL_SEED = 300; // owner: load banyak sekaligus (#298)
+  const MAX_RENDER = 800;   // physics/canvas safety ceiling
+  let visibleCount = $state(INITIAL_SEED);
+  let fullPool: { id: string; content: string; tags: string[] }[] = [];
+  let poolEdges: { source: string; target: string; weight: number }[] = [];
+  let hasMoreNodes = $state(false);
+
+  function loadMoreNodes() {
+    visibleCount = Math.min(MAX_RENDER, visibleCount + 300);
+    // Rebuild in-place from the already-fetched pool: no extra server hit.
+    nodes = [];
+    edges = [];
+    nodeId.clear();
+    edgeSet.clear();
+    knownSet.clear();
+    for (const m of fullPool.slice(0, visibleCount)) {
+      addNode(m.id, m.content, m.tags);
+    }
+    for (const e of poolEdges) {
+      if (nodeId.has(e.source) && nodeId.has(e.target)) {
+        addEdge(e.source, e.target, e.weight ?? 0.5);
+      }
+    }
+    hasMoreNodes = visibleCount < fullPool.length;
+    totalNodesShown = nodes.length;
+    totalEdgesShown = edges.length;
+    // Iterations scale inversely with node count: O(n²) steps keep the
+    // one-shot settle inside a reasonable sync budget on big graphs.
+    settle(Math.max(80, Math.min(260, Math.round(90_000 / Math.max(60, nodes.length)))));
+  }
   const EXPAND_LIMIT = 5;
+  // Matches uteke memory/node IDs (UUID v7) used as fallback labels
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   // ─── Initial seed: fetch recent memories ───────────────────────────
   async function loadSeed() {
     loading = true;
@@ -65,6 +124,9 @@
     knownSet.clear();
     edgeSet.clear();
     expandedSet.clear();
+    visibleCount = INITIAL_SEED;
+    fullPool = [];
+    poolEdges = [];
     try {
       // Check server status
       try {
@@ -92,12 +154,18 @@
           // Build the node pool from the server graph nodes. We only
           // seed INITIAL_SEED of them, but keep ALL edges that connect
           // the seeded nodes so lines appear on first paint.
-          const serverNodeMap = new Map<string, { id: string; content: string; tags: string[] }>();
+          const serverNodeMap = new Map<
+            string,
+            { id: string; content: string; tags: string[]; memoryId?: string | null }
+          >();
           for (const n of sg.nodes) {
             serverNodeMap.set(n.id, {
               id: n.id,
+              // Memory nodes are labeled with the memory UUID server-side;
+              // resolved to readable content below via memory_id.
               content: n.label ?? n.id,
               tags: n.entity_type ? [n.entity_type] : [],
+              memoryId: (n as { memory_id?: string | null }).memory_id ?? null,
             });
           }
           seedMemories = [...serverNodeMap.values()];
@@ -106,6 +174,10 @@
             target: e.target,
             weight: e.weight ?? 0.5,
           }));
+          // Pool > visibleCount? offer Load more (#298 owner request)
+          fullPool = seedMemories;
+          poolEdges = seedEdges;
+          hasMoreNodes = seedMemories.length > visibleCount;
 
           // Enrich: the /graph endpoint only exposes entity_type (first tag).
           // Fetch full tags via /list so colors and labels are accurate.
@@ -113,17 +185,33 @@
           try {
             const namespaces = await uteke.namespaces();
             const tagMap = new Map<string, string[]>();
-            const nsResults = await Promise.all(
-              namespaces.slice(0, 12).map(ns =>
-                uteke.list({ namespace: ns, limit: 50 }).catch(() => [])
-              )
-            );
-            for (const list of nsResults) {
-              for (const m of list) tagMap.set(m.id, m.tags ?? []);
+            const contentMap = new Map<string, string>();
+            // Server caps /list at 100/page — paginate so every memory node in
+            // the pool gets resolved (labels come from memory content, #298).
+            const unresolved = new Set(seedMemories.map(m => m.id));
+            for (const ns of namespaces.slice(0, 12)) {
+              for (let page = 0; page < 10 && unresolved.size > 0; page++) {
+                const batch = await uteke
+                  .list({ namespace: ns, limit: 100, offset: page * 100 })
+                  .catch(() => []);
+                if (!batch.length) break;
+                for (const m of batch) {
+                  tagMap.set(m.id, m.tags ?? []);
+                  // Memory-linked graph nodes carry the memory ID as their label
+                  // (server ensure_node_for_memory labels = memory_id). Resolve a
+                  // readable preview from the memory content itself (#298).
+                  if (m.content && !contentMap.has(m.id)) contentMap.set(m.id, m.content);
+                  unresolved.delete(m.id);
+                }
+                if (batch.length < 100) break;
+              }
             }
             for (const m of seedMemories) {
               const full = tagMap.get(m.id);
               if (full && full.length) m.tags = full;
+              const mem = m as { memoryId?: string | null };
+              const c = contentMap.get(mem.memoryId ?? m.id);
+              if (c && UUID_RE.test(m.content)) m.content = c;
             }
           } catch {
             // Tags enrichment is best-effort; entity_type is enough to draw.
@@ -212,10 +300,12 @@
       const seedPool = [...seedMemories].sort((a, b) =>
         (edgeDegree.get(b.id) ?? 0) - (edgeDegree.get(a.id) ?? 0),
       );
+      fullPool = seedPool; // persisted for loadMore
+      poolEdges = [...seedEdges];
 
       // Add seed nodes (only INITIAL_SEED become visible)
       const seededIds = new Set<string>();
-      for (const m of seedPool.slice(0, INITIAL_SEED)) {
+      for (const m of seedPool.slice(0, visibleCount)) {
         if (addNode(m.id, m.content, m.tags)) seededIds.add(m.id);
       }
 
@@ -231,7 +321,7 @@
       console.error('[GraphView] loadSeed() failed', err);
     }
     loading = false;
-    physicsActive = true;
+    physicsActive = !prefersReducedMotion;
     calmFrames = 0;
     needRedraw = true;
     updateCounts();
@@ -294,9 +384,7 @@
       }
 
       if (added > 0 || neighbors.length > 0) {
-        physicsActive = true;
-        calmFrames = 0;
-        needRedraw = true;
+        settle(140);
       }
       updateCounts();
     } catch {
@@ -317,7 +405,7 @@
 
   // ─── Drawing ───────────────────────────────────────────────────────
   function draw(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = '#1e1e2e';
+    ctx.fillStyle = COL.crust;
     ctx.fillRect(0, 0, W, H);
     if (!nodes.length) return;
 
@@ -327,7 +415,7 @@
       if (ai === undefined || bi === undefined) continue;
       const a = nodes[ai], b = nodes[bi];
       const hi = hoveredNode === a.id || hoveredNode === b.id;
-      ctx.strokeStyle = hi ? 'rgba(137,180,250,1)' : 'rgba(137,180,250,0.45)';
+      ctx.strokeStyle = hi ? COL.blue : COL.blue + '73';
       ctx.lineWidth = hi ? 3 : 1.5;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -358,43 +446,132 @@
         ctx.fill();
       }
 
-      // Pulsing indicator for nodes that haven't been expanded (clickable)
-      if (!n.expanded && !isExpanding) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 600 + n.id.charCodeAt(0));
+      // Static affordance ring for clickable, not-yet-expanded nodes.
+      // (The animated pulse forced a full-canvas redraw every frame —
+      // jank with labels on; a dashed ring reads the same when idle.)
+      if (!n.expanded && !isExpanding && !hi) {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 2 + pulse * 2, 0, 6.283);
-        ctx.strokeStyle = `rgba(137,180,250,${0.1 + pulse * 0.15})`;
+        ctx.arc(n.x, n.y, r + 2.5, 0, 6.283);
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = COL.blue + '66';
         ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       // Node circle
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, 6.283);
-      ctx.fillStyle = hi ? '#cdd6f4' : n.color;
+      ctx.fillStyle = hi ? COL.ink : n.color;
       ctx.fill();
 
-      // Label: show on hover, or for highly-connected nodes
-      if (hi || n.conns >= 3) {
+      // Label: always visible by default (audit HIGH) — halo for readability
+      if (labelsVisible || hi) {
         ctx.font = '11px -apple-system, sans-serif';
-        ctx.fillStyle = hi ? '#cdd6f4' : '#6c7086';
         ctx.textAlign = 'center';
-        // Truncate long labels
         const label = n.label.length > 30 ? n.label.slice(0, 27) + '…' : n.label;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = COL.crust;
+        ctx.strokeText(label, n.x, n.y - r - 5);
+        ctx.fillStyle = hi ? COL.ink : COL.muted;
         ctx.fillText(label, n.x, n.y - r - 5);
       }
 
       // Expanding spinner
       if (isExpanding) {
         ctx.font = '10px -apple-system, sans-serif';
-        ctx.fillStyle = '#89b4fa';
+        ctx.fillStyle = COL.blue;
         ctx.textAlign = 'center';
         ctx.fillText('…', n.x, n.y - r - 5);
       }
     }
   }
 
+  // ─── Fit view (audit: graph not auto-fit/centered) ─────────────────
+  function fitView() {
+    if (!nodes.length) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+    const bw = Math.max(1, maxX - minX);
+    const bh = Math.max(1, maxY - minY);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const scale = Math.min(2.5, Math.max(0.2, Math.min((W * 0.8) / bw, (H * 0.8) / bh)));
+    for (const n of nodes) {
+      n.x = W / 2 + (n.x - cx) * scale;
+      n.y = H / 2 + (n.y - cy) * scale;
+    }
+    needRedraw = true;
+  }
+
   // ─── Physics ───────────────────────────────────────────────────────
+  /** One integration step; returns total velocity (settle metric). */
+  function physicsStep(): number {
+    let totalV = 0;
+
+    // Repulsion (O(n²) but fine for <200 nodes)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) { d2 = 1; dx = Math.random(); dy = Math.random(); }
+        const d = Math.sqrt(d2);
+        const f = 1800 / d2;
+        a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
+        b.vx += (dx / d) * f; b.vy += (dy / d) * f;
+      }
+    }
+
+    // Spring (edges)
+    for (const e of edges) {
+      const ai = nodeId.get(e.source), bi = nodeId.get(e.target);
+      if (ai === undefined || bi === undefined) continue;
+      const a = nodes[ai], b = nodes[bi];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - 100) * 0.03;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+
+    // Apply velocity + damping + center gravity
+    for (const p of nodes) {
+      p.vx += (W / 2 - p.x) * 0.002;
+      p.vy += (H / 2 - p.y) * 0.002;
+      p.vx *= 0.72;
+      p.vy *= 0.72;
+      totalV += Math.abs(p.vx) + Math.abs(p.vy);
+      p.x = Math.max(15, Math.min(W - 15, p.x + p.vx));
+      p.y = Math.max(15, Math.min(H - 15, p.y + p.vy));
+    }
+    return totalV;
+  }
+
+  /**
+   * Pre-run the simulation synchronously so the graph paints settled and
+   * calm — no entry animation, no live jitter. Replaces the old
+   * physicsActive heat-up that bounced nodes into place on screen.
+   */
+  function settle(iterations: number) {
+    if (prefersReducedMotion) {
+      physicsActive = false;
+      untrack(() => fitView());
+      needRedraw = true;
+      return;
+    }
+    for (let i = 0; i < iterations; i++) physicsStep();
+    physicsActive = false;
+    calmFrames = 0;
+    untrack(() => fitView());
+    needRedraw = true;
+  }
+
   function tick() {
     const canvas = canvasEl;
     if (!canvas) { raf = requestAnimationFrame(tick); return; }
@@ -404,52 +581,13 @@
     if (!ctx) { raf = requestAnimationFrame(tick); return; }
 
     if (physicsActive && nodes.length > 0) {
-      let totalV = 0;
-
-      // Repulsion (O(n²) but fine for <200 nodes)
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j];
-          let dx = b.x - a.x, dy = b.y - a.y;
-          let d2 = dx * dx + dy * dy;
-          if (d2 < 1) { d2 = 1; dx = Math.random(); dy = Math.random(); }
-          const d = Math.sqrt(d2);
-          const f = 1800 / d2;
-          a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
-          b.vx += (dx / d) * f; b.vy += (dy / d) * f;
-        }
-      }
-
-      // Spring (edges)
-      for (const e of edges) {
-        const ai = nodeId.get(e.source), bi = nodeId.get(e.target);
-        if (ai === undefined || bi === undefined) continue;
-        const a = nodes[ai], b = nodes[bi];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.sqrt(dx * dx + dy * dy) || 1;
-        const f = (d - 100) * 0.03;
-        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
-        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
-      }
-
-      // Apply velocity + damping + center gravity
-      for (const p of nodes) {
-        p.vx += (W / 2 - p.x) * 0.002;
-        p.vy += (H / 2 - p.y) * 0.002;
-        p.vx *= 0.72;
-        p.vy *= 0.72;
-        totalV += Math.abs(p.vx) + Math.abs(p.vy);
-        p.x = Math.max(15, Math.min(W - 15, p.x + p.vx));
-        p.y = Math.max(15, Math.min(H - 15, p.y + p.vy));
-      }
-
-      // Settle check
+      const totalV = physicsStep();
       const settleThreshold = Math.max(1.5, nodes.length * 0.15);
       if (totalV < settleThreshold) {
         calmFrames++;
         if (calmFrames > 10) {
           physicsActive = false;
-          needRedraw = true;
+          untrack(() => fitView());
         }
       } else {
         calmFrames = 0;
@@ -457,9 +595,10 @@
       needRedraw = true;
     }
 
-    // Always redraw if there are un-expanded nodes (they have pulse animation)
-    const hasPulse = nodes.some(n => !n.expanded);
-    if (needRedraw || hasPulse) {
+    // Redraw only on demand. (The old pulse check forced a full-canvas
+    // redraw at 60fps whenever an un-expanded node existed — with labels
+    // on and hundreds of nodes that was the render jank.)
+    if (needRedraw) {
       draw(ctx);
       if (!physicsActive) needRedraw = false;
     }
@@ -537,6 +676,7 @@
   });
 
   onMount(() => {
+    resolveCanvasTokens();
     const canvas = canvasEl;
     if (canvas && canvas.parentElement) {
       W = canvas.parentElement.clientWidth || 800;
@@ -548,9 +688,7 @@
           const nw = p.clientWidth, nh = p.clientHeight;
           if (nw > 0 && nh > 0 && (nw !== W || nh !== H)) {
             W = nw; H = nh;
-            physicsActive = true;
-            calmFrames = 0;
-            needRedraw = true;
+            settle(140);
           }
         }
       });
@@ -566,16 +704,30 @@
 <div class="graph-view">
   <div class="graph-toolbar">
     {#if !loading && totalNodesShown > 0}
-      <span class="graph-info">{totalNodesShown} nodes · {totalEdgesShown} edges</span>
+      <span class="graph-info">{totalNodesShown} node{totalNodesShown === 1 ? '' : 's'} · {totalEdgesShown} edge{totalEdgesShown === 1 ? '' : 's'}</span>
       {#if serverOnline}
         <span class="mode-tag semantic">Semantic</span>
       {:else}
         <span class="mode-tag local">Local</span>
       {/if}
-      <span class="hint-text">click to expand · double-click for detail</span>
+      <span class="hint-text">Single-click a node to expand neighbors · double-click to open detail</span>
     {/if}
     <div class="toolbar-spacer"></div>
+    {#if hasMoreNodes}
+      <button class="graph-btn" onclick={loadMoreNodes} title="Load 300 more nodes">+ Load more</button>
+    {/if}
+    <button class="graph-btn" onclick={() => fitView()} title="Fit graph to view">⤢ Fit</button>
+    <button
+      class="graph-btn"
+      title={labelsVisible ? 'Hide labels' : 'Show labels'}
+      onclick={() => { labelsVisible = !labelsVisible; needRedraw = true; }}
+    >{labelsVisible ? 'Labels on' : 'Labels off'}</button>
     <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
+  </div>
+  <div class="graph-legend">
+    <span class="legend-item"><span class="legend-dot" style="background: var(--accent)"></span> memory</span>
+    <span class="legend-item"><span class="legend-dot" style="background: var(--text-muted)"></span> isolated</span>
+    <span class="legend-item"><span class="legend-line"></span> connection</span>
   </div>
   <div class="canvas-wrap">
     <canvas
@@ -588,20 +740,48 @@
     {#if loading}
       <div class="overlay">Loading graph...</div>
     {:else if totalNodesShown === 0}
-      <div class="overlay"><p>No memories to visualize.</p></div>
+      <div class="overlay">
+        <p>No memories to visualize yet.</p>
+        <p class="overlay-hint">Save a memory ({kbdCombo('N')}) — edges appear automatically as related memories accumulate.</p>
+      </div>
     {/if}
   </div>
 </div>
 
 <style>
   .graph-view { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .graph-btn {
+    padding: 4px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background 0.15s var(--ease-out);
+  }
+  .graph-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+  .graph-legend {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 8px 16px 6px;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .legend-line { width: 14px; height: 0; border-top: 2px solid var(--color-blue); display: inline-block; }
+
   .graph-toolbar { padding: 8px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border); }
   .toolbar-spacer { flex: 1; }
   .graph-info { font-size: 0.8rem; color: var(--text-muted); }
-  .hint-text { font-size: 0.7rem; color: var(--text-muted); opacity: 0.6; }
-  .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
-  .mode-tag.semantic { background: rgba(166,227,161,0.15); color: var(--green); }
-  .mode-tag.local { background: rgba(148,226,213,0.15); color: var(--teal); }
+  .hint-text { font-size: 0.72rem; color: var(--text-secondary); opacity: 0.75; }
+  .mode-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: var(--radius-sm); font-weight: 600; }
+  .mode-tag.semantic { background: var(--color-green-bg); color: var(--green); }
+  .mode-tag.local { background: var(--color-teal-bg); color: var(--teal); }
   .canvas-wrap { flex: 1; position: relative; overflow: hidden; }
-  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); pointer-events: none; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; text-align: center; color: var(--text-muted); pointer-events: none; }
+  .overlay .overlay-hint { font-size: 0.78rem; opacity: 0.7; max-width: 380px; }
 </style>

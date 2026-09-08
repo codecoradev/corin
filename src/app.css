@@ -6,30 +6,35 @@
    bg-base, bg-mantle, bg-crust, text-text, text-subtext, etc.
    ═══════════════════════════════════════════════════════════════════ */
 @theme {
-  /* Backgrounds */
-  --color-base: #0e0e12;
-  --color-mantle: #181825;
-  --color-crust: #1e1e2e;
-  --color-surface0: #313244;
+  /* Backgrounds — dark (default), palette A; see DESIGN.md */
+  --color-base: #0E1015;
+  --color-mantle: #12151D;
+  --color-crust: #171B26;
+  --color-surface0: #222836;
+  --color-surface1: #2A3242;
+  --color-surface2: #3A4254;
+  --color-rosewater: #F0E6D8;
 
   /* Text */
-  --color-text: #cdd6f4;
-  --color-subtext: #a6adc8;
-  --color-overlay: #6c7086;
+  --color-text: #E6E9EF;
+  --color-subtext: #8B93A7;
+  --color-overlay: #5A6478;
 
-  /* Accents (Catppuccin palette) */
-  --color-blue: #89b4fa;
-  --color-red: #f38ba8;
-  --color-green: #a6e3a1;
-  --color-yellow: #f9e2af;
-  --color-peach: #fab387;
-  --color-mauve: #cba6f7;
-  --color-teal: #94e2d5;
+  /* Accents — color lock: teal = brand, yellow = semantic score/warning */
+  --color-blue: #7CB2FF;
+  --color-red: #F87171;
+  --color-green: #34D399;
+  --color-yellow: #E89B3C;
+  --color-peach: #E0AF68;
+  --color-mauve: #C4A7FF;
+  --color-teal: #4FD8D2;
 
   /* Radius */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-sm: 5px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
 
   /* Fonts */
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -48,8 +53,8 @@
   --text-primary: var(--color-text);
   --text-secondary: var(--color-subtext);
   --text-muted: var(--color-overlay);
-  --accent: var(--color-blue);
-  --accent-dim: rgba(137, 180, 250, 0.35);
+  --accent: var(--color-teal);
+  --accent-dim: color-mix(in srgb, var(--color-teal) 35%, transparent);
   --red: var(--color-red);
   --green: var(--color-green);
   --yellow: var(--color-yellow);
@@ -59,6 +64,32 @@
   --font-mono: var(--font-mono);
   --font-sans: var(--font-sans);
   --radius: var(--radius-md);
+
+  /* ── Semantic tint tokens (alpha) ───────────────────────────────
+     Derived from the palette via color-mix. Use these for status
+     backgrounds, badges, banners, focus halos. Never hardcode
+     rgba() literals — they bypass the system.
+     Two strengths: `-bg` (14% surface tint) and `-line` (30% border). */
+  --color-blue-bg: color-mix(in srgb, var(--color-blue) 14%, transparent);
+  --color-blue-line: color-mix(in srgb, var(--color-blue) 30%, transparent);
+  --color-green-bg: color-mix(in srgb, var(--color-green) 14%, transparent);
+  --color-green-line: color-mix(in srgb, var(--color-green) 30%, transparent);
+  --color-red-bg: color-mix(in srgb, var(--color-red) 14%, transparent);
+  --color-red-line: color-mix(in srgb, var(--color-red) 30%, transparent);
+  --color-yellow-bg: color-mix(in srgb, var(--color-yellow) 14%, transparent);
+  --color-yellow-line: color-mix(in srgb, var(--color-yellow) 30%, transparent);
+  --color-peach-bg: color-mix(in srgb, var(--color-peach) 14%, transparent);
+  --color-peach-line: color-mix(in srgb, var(--color-peach) 30%, transparent);
+  --color-mauve-bg: color-mix(in srgb, var(--color-mauve) 14%, transparent);
+  --color-mauve-line: color-mix(in srgb, var(--color-mauve) 30%, transparent);
+  --color-teal-bg: color-mix(in srgb, var(--color-teal) 14%, transparent);
+  --color-teal-line: color-mix(in srgb, var(--color-teal) 30%, transparent);
+
+  /* Modal/overlay scrim — single value, not three different rgba(0,0,0,.x). */
+  --scrim: color-mix(in srgb, var(--color-base) 60%, transparent);
+
+  /* Easing curve — exponential ease-out for UI state. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -78,9 +109,24 @@ html, body, #app {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Dynamic numbers (counts, scores, timestamps) keep a fixed tabular width
+   so rows and stats don't jitter as values tick. Prose gets balanced/pretty
+   line breaking. */
+body {
+  font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3, h4 {
+  text-wrap: balance;
+}
+
+p, li, td, .hint, .section-desc {
+  text-wrap: pretty;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -88,12 +134,18 @@ html, body, #app {
 }
 
 ::-webkit-scrollbar-thumb {
+  /* Transparent border insets the thumb so it never touches content. */
   background: var(--bg-hover);
-  border-radius: 3px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
 }
 
 ::selection {
@@ -128,5 +180,48 @@ button {
 
 /* ── Global micro-interactions ───────────────────────────── */
 button:active:not(:disabled) {
-  transition: transform 0.08s ease;
+  transition: transform 0.08s var(--ease-out);
+}
+
+/* ── Reduced motion: respect user preference ──────────────────────
+   Users with vestibular disorders or motion sensitivity expect
+   apps to minimise movement. We disable all CSS animations and
+   transitions globally, and components that use JS-driven
+   animation frames (e.g. GraphView physics) should check this
+   media query via window.matchMedia('(prefers-reduced-motion: reduce)').
+   ─────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Light theme — palette B (warm paper). PALETTE-ONLY switch (DESIGN.md):
+   same typography/spacing/radius; only color values change.
+   Applies when <html data-theme="light"> (theme store, issue #291).
+   ═══════════════════════════════════════════════════════════════════ */
+:root[data-theme="light"] {
+  --color-base: #FBF8F1;
+  --color-mantle: #FFFDF8;
+  --color-crust: #F3EEE3;
+  --color-surface0: #E7E0D2;
+  --color-surface1: #DDD5C6;
+  --color-surface2: #CFC6B5;
+  --color-rosewater: #4A4436;
+  --color-text: #2E2A1F;
+  --color-subtext: #6E6650;
+  --color-overlay: #A39A85;
+  --color-blue: #5B7DB1;
+  --color-red: #C25B4E;
+  --color-green: #3E9B6C;
+  --color-yellow: #C07A3A;
+  --color-peach: #B8742F;
+  --color-mauve: #8B6FC7;
+  --color-teal: #0E7C74;
 }
