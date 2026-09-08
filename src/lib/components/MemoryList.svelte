@@ -553,13 +553,13 @@
           onkeydown={(e) => e.key === 'Enter' && onmemoryclick(m.id)}
         >
           <div class="card-head">
-            {#if m.pinned}
-              <span class="card-pin" title="Pinned"><Pin size={11} strokeWidth={2.5} /></span>
-            {/if}
             {#if authorClass(m) === 'human'}
               <span class="author-badge human" title="Written by a human"><User size={11} strokeWidth={2.25} /> Human</span>
             {:else}
               <span class="author-badge" title="Written by an agent"><Bot size={11} strokeWidth={2.25} /> Agent</span>
+            {/if}
+            {#if m.pinned}
+              <span class="card-pin" title="Pinned"><Pin size={11} strokeWidth={2.5} /></span>
             {/if}
             {#if m.created_at}<span class="card-time">{relativeTime(m.created_at)}</span>{/if}
           </div>
