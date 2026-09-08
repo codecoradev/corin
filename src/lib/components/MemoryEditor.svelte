@@ -17,7 +17,10 @@
   // Derive initial values reactively from props
   let content = $state('');
   let tagsInput = $state('');
-  let contentType = $state('memory');
+  // uteke's semantic class — fact/procedure/… (memory_type). The old
+  // select mixed content_type with memory_type vocabulary and its value
+  // was dropped on create; it now consistently edits memory_type.
+  let memoryType = $state('fact');
   let importance = $state(0.5);
   let ns = $state('');
   let namespaces = $state<string[]>([]);
@@ -32,14 +35,17 @@
     if (!initialized) {
       content = memory?.content ?? '';
       tagsInput = memory?.tags.join(', ') ?? '';
-      contentType = memory?.content_type ?? 'memory';
+      memoryType = memory?.memory_type ?? 'fact';
       importance = memory?.importance ?? 0.5;
       ns = memory?.namespace ?? namespace ?? '';
       initialized = true;
     }
   });
 
-  const contentTypes = ['memory', 'task', 'procedure', 'fact', 'decision'];
+  const memoryTypes = [
+    'fact', 'note', 'insight', 'decision', 'procedure',
+    'preference', 'context', 'reference', 'event',
+  ];
 
   async function loadNamespaces() {
     try {
@@ -66,29 +72,10 @@
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
-      // Check for duplicates via semantic search (if server available)
-      try {
-        const result = await utekeServer.remember(content, {
-          tags,
-          namespace: ns || undefined,
-        });
-        if (result.duplicate && !memory) {
-          // Only block new memories, not edits
-          duplicateWarning = {
-            content: result.existing_content ?? '',
-            score: result.score ?? 0,
-          };
-          saving = false;
-          return;
-        }
-      } catch {
-        // Server not available — fall through to Hub DB
-      }
-
       if (memory) {
-        // Edit existing: in-place PUT /memory (stable ID, auto re-embed).
-        // uteke requires UUID ids — anything else (shouldn't happen, HTTP-only
-        // architecture) falls back to create+delete.
+        // EDIT: update in place. No duplicate pre-check here — the old one
+        // used utekeServer.remember, which INSERTS, leaving a stray copy of
+        // the edited content behind (Cora critical #325).
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memory.id);
         if (isUuid) {
           await memoryUpdate({
@@ -96,27 +83,72 @@
             content,
             tags,
             importance,
-            memory_type: contentType,
+            memory_type: memoryType,
             namespace: ns || undefined,
           });
         } else {
           const newId = await memoryApi.remember(content, {
             tags,
-            content_type: contentType,
+            memory_type: memoryType,
             importance,
             namespace: ns || undefined,
+            // Re-created record keeps the original provenance.
+            metadata: { author: (memory.metadata?.author as string) ?? 'human' },
           });
           if (newId) {
             await memoryApi.forget(memory.id);
           }
         }
       } else {
-        await memoryApi.remember(content, {
-          tags,
-          content_type: contentType,
-          importance,
-          namespace: ns || undefined,
-        });
+        // CREATE: read-only duplicate check first (recall — remember
+        // INSERTS), then insert exactly once.
+        let inserted = false;
+        const serverUp = await utekeServer.status().then((s) => s.available).catch(() => false);
+        if (serverUp) {
+          try {
+            const hits = await utekeServer.recall(content, { namespace: ns || undefined, limit: 3 });
+            const dup = (hits ?? []).find((r) => (r.score ?? 0) >= 0.92);
+            if (dup) {
+              duplicateWarning = {
+                content: dup.content ?? '',
+                score: dup.score ?? 0,
+              };
+              saving = false;
+              return;
+            }
+            const result = await utekeServer.remember(content, {
+              tags,
+              namespace: ns || undefined,
+              memory_type: memoryType,
+              importance,
+              // UI-created memories are human-authored provenance.
+              metadata: { author: 'human' },
+            });
+            // The command re-runs its own ≥0.92 check before inserting — if
+            // it refuses (backend re-check vs frontend race, or a concurrent
+            // insert), surface it instead of reporting a phantom save.
+            if (result.duplicate) {
+              duplicateWarning = {
+                content: result.existing_content ?? '',
+                score: result.score ?? 0,
+              };
+              saving = false;
+              return;
+            }
+            inserted = true;
+          } catch {
+            // Server flaked mid-create — fall through to the Hub DB path.
+          }
+        }
+        if (!inserted) {
+          await memoryApi.remember(content, {
+            tags,
+            memory_type: memoryType,
+            importance,
+            namespace: ns || undefined,
+            metadata: { author: 'human' },
+          });
+        }
       }
 
       onsave();
@@ -144,7 +176,7 @@
       if (memory) {
         const newId = await memoryApi.remember(content, {
           tags,
-          content_type: contentType,
+          memory_type: memoryType,
           importance,
           namespace: ns || undefined,
         });
@@ -152,7 +184,7 @@
       } else {
         await memoryApi.remember(content, {
           tags,
-          content_type: contentType,
+          memory_type: memoryType,
           importance,
           namespace: ns || undefined,
         });
@@ -211,9 +243,9 @@
         </div>
 
         <div class="field">
-          <label for="content-type">Content Type</label>
-          <select id="content-type" bind:value={contentType}>
-            {#each contentTypes as ct}
+          <label for="memory-type">Type</label>
+          <select id="memory-type" bind:value={memoryType}>
+            {#each memoryTypes as ct}
               <option value={ct}>{ct}</option>
             {/each}
           </select>
@@ -373,6 +405,23 @@
   .field textarea:focus,
   .field select:focus {
     border-color: var(--accent);
+  }
+
+  /* WebKit renders native <select> text smaller than the surrounding form
+     controls — drop the native chrome so the font/padding follow ours. */
+  .field select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238B93A7' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+  .field select option {
+    font-size: 0.9rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
   }
 
   .field input[type='range'] {

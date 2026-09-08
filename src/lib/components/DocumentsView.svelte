@@ -40,25 +40,24 @@
   // Colors reference the app's CSS custom properties (src/app.css) so the
   // editor stays in lockstep with the rest of the UI. Resolved once at module
   // load; CodeMirror accepts these as opaque CSS strings.
-  const root = typeof document !== 'undefined' ? document.documentElement : null;
-  const v = (name: string, fallback: string): string =>
-    root ? getComputedStyle(root).getPropertyValue(name).trim() || fallback : fallback;
-
-  const INK = v('--color-text', '#cdd6f4');
-  const SURFACE = v('--color-crust', '#1e1e2e');
-  const MANTLE = v('--color-mantle', '#181825');
-  const OVERLAY = v('--color-overlay', '#6c7086');
-  const ROSE = v('--color-red', '#f38ba8');
-  const BLUE = v('--color-blue', '#89b4fa');
-  const GREEN = v('--color-green', '#a6e3a1');
-  const YELLOW = v('--color-yellow', '#f9e2af');
-  const PEACH = v('--color-peach', '#fab387');
-  const MAUVE = v('--color-mauve', '#cba6f7');
-  const TEAL = v('--color-teal', '#94e2d5');
-  const SUBTEXT = v('--color-subtext', '#a6adc8');
-  const SURFACE0 = v('--color-surface0', '#313244');
-  const SURFACE1 = v('--color-surface1', '#45475a');
-  const CARET = v('--color-rosewater', '#f5e0dc');
+  // Colors as var() references, not boot-time snapshots — the CodeMirror
+  // theme follows live dark/light flips (the old getComputedStyle copy
+  // froze whatever theme the app booted in).
+  const INK = 'var(--color-text, #cdd6f4)';
+  const SURFACE = 'var(--color-crust, #1e1e2e)';
+  const MANTLE = 'var(--color-mantle, #181825)';
+  const OVERLAY = 'var(--color-overlay, #6c7086)';
+  const ROSE = 'var(--color-red, #f38ba8)';
+  const BLUE = 'var(--color-blue, #89b4fa)';
+  const GREEN = 'var(--color-green, #a6e3a1)';
+  const YELLOW = 'var(--color-yellow, #f9e2af)';
+  const PEACH = 'var(--color-peach, #fab387)';
+  const MAUVE = 'var(--color-mauve, #cba6f7)';
+  const TEAL = 'var(--color-teal, #94e2d5)';
+  const SUBTEXT = 'var(--color-subtext, #a6adc8)';
+  const SURFACE0 = 'var(--color-surface0, #313244)';
+  const SURFACE1 = 'var(--color-surface1, #45475a)';
+  const CARET = 'var(--color-rosewater, #f5e0dc)';
 
   const catppuccinDarkTheme = EditorView.theme({
     '&': { color: INK, backgroundColor: SURFACE, height: '100%' },
@@ -469,6 +468,11 @@
         });
         // create returns only {id, slug} — re-fetch for full state
         const full = await docs.get({ slug: editorSlug });
+        // Provenance: human wrote this via the UI (doc/create ignores
+        // metadata, so the stamp rides on a follow-up update).
+        try {
+          await docs.update({ id: full.id, metadata: { author: 'human' } });
+        } catch { /* stamping is best-effort */ }
         selectedDoc = full;
         showNewDoc = false;
         // Reveal the new doc inside its parent branch.
@@ -817,6 +821,20 @@
             {/if}
           </div>
 
+          {#if showNewDoc}
+            <div class="tb-parent">
+              <span class="tb-parent-label">Parent</span>
+              <div class="tb-parent-select">
+                <SearchableSelect
+                  options={parentOptions}
+                  bind:value={newDocParent}
+                  emptyLabel="No parent — root level"
+                  placeholder="Search documents…"
+                />
+              </div>
+            </div>
+          {/if}
+
           <!-- View mode toggle -->
           <div class="mode-toggle">
             <button
@@ -849,8 +867,21 @@
           </div>
         </div>
 
-        <!-- Properties row: title, slug, tags -->
-        {#if showProps}
+        <!-- Properties disclosure: the trigger sits ABOVE the content it
+             expands (clicking grows downward), and new docs skip the toggle —
+             title/slug are required, parent is the primary creation choice. -->
+        {#if !showNewDoc}
+          <button
+            class="props-toggle props-toggle-row"
+            onclick={() => (showProps = !showProps)}
+            aria-expanded={showProps}
+          >
+            <ChevronDown size={12} strokeWidth={2} class={showProps ? "flip" : ""} />
+            Properties
+          </button>
+        {/if}
+
+        {#if showNewDoc || showProps}
           <div class="props-row">
             <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} autofocus />
             <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
@@ -858,27 +889,9 @@
           </div>
         {/if}
 
-        {#if showNewDoc}
-          <div class="parent-row">
-            <span class="parent-label">Parent</span>
-            <div class="parent-select">
-              <SearchableSelect
-                options={parentOptions}
-                bind:value={newDocParent}
-                emptyLabel="No parent — root level"
-                placeholder="Search documents…"
-              />
-            </div>
-          </div>
-        {/if}
-
         <!-- Meta bar: version, date + actions -->
         <div class="meta-bar">
           <div class="meta-left">
-            <button class="props-toggle" onclick={() => (showProps = !showProps)}>
-              <ChevronDown size={12} strokeWidth={2} />
-              Properties
-            </button>
             {#if selectedDoc && !showNewDoc}
               <span class="meta-item">v{selectedDoc.version ?? 1}</span>
               {#if selectedDoc.updated_at}
@@ -1367,23 +1380,24 @@
     flex-shrink: 0;
     animation: slideDown 0.12s ease;
   }
-  .parent-row {
+  /* New-doc parent picker lives in the top-bar (left of the mode toggle):
+     one compact row, no wasted gutter below it. */
+  .tb-parent {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    animation: slideDown 0.12s ease;
+    gap: 8px;
+    flex: 0 1 auto;
+    min-width: 240px;
+    max-width: 420px;
   }
-  .parent-label {
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+  .tb-parent-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--text-muted);
     flex-shrink: 0;
   }
-  .parent-select { flex: 1; max-width: 420px; }
+  .tb-parent-select { flex: 1; }
   .prop-input {
     padding: 4px 8px;
     background: var(--bg-tertiary);
@@ -1437,11 +1451,26 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     padding: 2px 4px;
     border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
   .props-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+  /* Full-width trigger row above the expanding properties. */
+  .props-toggle-row {
+    width: 100%;
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .props-toggle-row :global(svg) {
+    transition: transform 0.12s var(--ease-out);
+  }
+  .props-toggle-row :global(svg.flip) {
+    transform: rotate(180deg);
+  }
 
   .meta-actions {
     display: flex;

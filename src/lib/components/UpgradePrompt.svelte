@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { X } from 'lucide-svelte';
-  import { gatedFeatures, minVersion, type Feature } from '../ts/compat';
+  import { TriangleAlert } from 'lucide-svelte';
+  import { gatedFeatures, minVersion, serverVersion, type Feature } from '../ts/compat';
+  import { Modal } from '../ui';
 
   const FEATURE_LABEL: Record<Feature, string> = {
     graphEdgeWrite: 'graph linking',
@@ -10,73 +11,130 @@
   };
 
   let gated = $state<Feature[] | null>(null);
-  let dismissed = $state(false);
+  let serverVer = $state<string | null>(null);
+  let open = $state(false);
 
-  const DISMISS_LS = 'corin.upgrade.dismissed';
-
-  function dismiss() {
-    dismissed = true;
-    try {
-      localStorage.setItem(DISMISS_LS, new Date().toISOString().slice(0, 10));
-    } catch { /* storage unavailable */ }
-  }
-
+  /**
+   * First-launch notice: shows once per required-minimum version (acknow-
+   * ledgement persisted), instead of a thin banner that other content
+   * buries. Once the server is upgraded the gated list empties and this
+   * never appears again.
+   */
   onMount(async () => {
-    // Re-show after a day so users aren't nagged forever.
-    try {
-      const d = localStorage.getItem(DISMISS_LS);
-      if (d && (Date.now() - new Date(d).getTime()) < 86_400_000) {
-        dismissed = true;
-        return;
-      }
-    } catch { /* ignore */ }
     gated = await gatedFeatures().catch(() => null);
-    if (gated && gated.length === 0) dismissed = true;
+    if (!gated || gated.length === 0) return;
+    serverVer = await serverVersion().catch(() => null);
+    const key = `corin.upgrade.prompted.${minVersion(gated[0])}`;
+    try {
+      if (localStorage.getItem(key) === '1') return; // already acknowledged
+    } catch { /* storage unavailable */ }
+    open = true;
   });
+
+  function acknowledge() {
+    try {
+      const key = `corin.upgrade.prompted.${gated ? minVersion(gated[0]) : ''}`;
+      localStorage.setItem(key, '1');
+    } catch { /* storage unavailable */ }
+    open = false;
+  }
 </script>
 
-{#if !dismissed && gated && gated.length > 0}
-  <div class="upgrade-banner" role="status">
-    <span class="upgrade-text">
-      ⬆ Some features ({gated.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}) need
-      uteke ≥ {minVersion(gated[0])} — installed server is older. Run
-      <code>uteke upgrade</code> to unlock.
-    </span>
-    <button class="upgrade-close" onclick={dismiss} aria-label="Dismiss">
-      <X size={12} strokeWidth={2} />
-    </button>
+<Modal open={open} title="Server update needed" onclose={acknowledge} width="480px">
+  <div class="upgrade-dialog">
+    <div class="upgrade-icon"><TriangleAlert size={22} strokeWidth={1.75} /></div>
+    <p class="lead">
+      The connected uteke server{serverVer ? ` (v${serverVer})` : ''} is older than some
+      CorIn features require. Those features stay hidden until the server is updated:
+    </p>
+    <ul class="feature-list">
+      {#each gated ?? [] as f (f)}
+        <li><b>{FEATURE_LABEL[f] ?? f}</b><span class="req">needs uteke ≥ {minVersion(f)}</span></li>
+      {/each}
+    </ul>
+    <p class="how">
+      Update uteke on the machine running the server (<code>uteke upgrade</code>), then
+      reopen CorIn. Everything else keeps working in the meantime.
+    </p>
+    <button class="ack-btn" onclick={acknowledge}>Continue anyway</button>
   </div>
-{/if}
+</Modal>
 
 <style>
-  .upgrade-banner {
+  .upgrade-dialog {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+  .upgrade-icon {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 6px 40px 6px 14px;
-    background: color-mix(in srgb, var(--accent, #5eead4) 12%, var(--bg-surface, #11151d));
-    border-bottom: 1px solid color-mix(in srgb, var(--accent, #5eead4) 30%, transparent);
-    color: var(--text-primary, #e6e9ef);
-    font-size: 0.75rem;
+    border-radius: var(--radius-lg);
+    background: var(--color-yellow-bg);
+    color: var(--yellow);
   }
-  .upgrade-text { line-height: 1.4; }
-  .upgrade-text code {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.7rem;
-    background: var(--bg-hover, #1a2130);
-    padding: 1px 5px;
-    border-radius: 4px;
+  .lead {
+    margin: 0 0 12px;
+    line-height: 1.55;
+    text-align: center;
   }
-  .upgrade-close {
-    position: absolute;
-    right: 12px;
+  .feature-list {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .feature-list li {
     display: flex;
     align-items: center;
-    background: none;
-    border: none;
-    color: var(--text-muted, #8b93a5);
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .feature-list b {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .req {
+    font-size: 0.72rem;
+    color: var(--yellow);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+  .how {
+    margin: 0 0 14px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+  .how code {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    background: var(--bg-hover);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+  }
+  .ack-btn {
+    width: 100%;
+    padding: 9px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
     cursor: pointer;
-    padding: 4px;
+  }
+  .ack-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 </style>

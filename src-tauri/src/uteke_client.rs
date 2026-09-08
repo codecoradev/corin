@@ -35,6 +35,8 @@ pub struct UtekeMemory {
     pub created_at: String,
     pub updated_at: String,
     pub pinned: bool,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -673,6 +675,9 @@ impl UtekeClient {
         content: &str,
         tags: &[String],
         namespace: Option<&str>,
+        metadata: Option<&serde_json::Value>,
+        memory_type: Option<&str>,
+        importance: Option<f32>,
     ) -> Result<String, String> {
         let mut body = serde_json::json!({
             "content": content,
@@ -680,6 +685,18 @@ impl UtekeClient {
         });
         if let Some(ns) = namespace {
             body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(md) = metadata {
+            // Provenance slot (e.g. {"author":"human"}) — accepted by the
+            // server on create and round-tripped verbatim.
+            body["metadata"] = md.clone();
+        }
+        // Honored by 0.17+; older servers apply their own defaults.
+        if let Some(mt) = memory_type {
+            body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(imp) = importance {
+            body["importance"] = serde_json::json!(imp);
         }
 
         #[derive(Deserialize)]
@@ -1490,6 +1507,7 @@ impl UtekeClient {
         pinned: Option<bool>,
         memory_type: Option<&str>,
         namespace: Option<&str>,
+        content_type: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let mut body = serde_json::json!({ "id": id });
         if let Some(c) = content {
@@ -1513,6 +1531,9 @@ impl UtekeClient {
         if let Some(ns) = namespace {
             // Plain namespace move (#1181) — single UPDATE, no re-embed.
             body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(ct) = content_type {
+            body["content_type"] = serde_json::Value::String(ct.to_string());
         }
         let resp = self
             .authed(self.client.put(format!("{}/memory", self.base_url)))

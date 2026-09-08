@@ -94,6 +94,7 @@ interface UtekeMemoryRaw {
   pinned?: boolean | null;
   metadata?: Record<string, unknown> | null;
   deprecated?: boolean | null;
+  memory_type?: string | null;
 }
 
 function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, unknown>; deprecated?: boolean } {
@@ -110,6 +111,7 @@ function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, 
     metadata: (m.metadata ?? undefined) as Record<string, unknown> | undefined,
     deprecated: m.deprecated ?? false,
     pinned: m.pinned ?? null,
+    memory_type: m.memory_type ?? null,
   };
 }
 
@@ -283,7 +285,7 @@ async function rememberWithDupCheck(p: Payload): Promise<{ id?: string; duplicat
       return { duplicate: true, existing_id: dup.memory.id, existing_content: dup.memory.content, score: dup.score, hint: 'This memory appears to be a duplicate of an existing one.' };
     }
   } catch { /* recall failure must not block insertion */ }
-  const { id } = await req<{ id: string }>('POST', '/remember', { body: { content, tags, namespace: p.namespace ?? undefined } });
+  const { id } = await req<{ id: string }>('POST', '/remember', { body: { content, tags, namespace: p.namespace ?? undefined, memory_type: (p.memoryType as string) ?? undefined, importance: (p.importance as number) ?? undefined, metadata: p.metadata ?? undefined } });
   return { id, duplicate: false };
 }
 
@@ -489,7 +491,7 @@ export const webHandlers: Record<string, Handler> = {
   set_settings: async (p) => { lsSet(LS_SETTINGS, p.settings); },
 
   // Memories
-  remember: async (p) => (await req<{ id: string }>('POST', '/remember', { body: { content: p.content, tags: p.tags, namespace: p.namespace ?? undefined } })).id,
+  remember: async (p) => (await req<{ id: string }>('POST', '/remember', { body: { content: p.content, tags: p.tags, namespace: p.namespace ?? undefined, memory_type: (p.memoryType as string) ?? undefined, importance: (p.importance as number) ?? undefined, metadata: p.metadata ?? undefined } })).id,
   recall: async (p): Promise<SearchResult[]> =>
     (await recallRows(String(p.query), p.namespace as string | null, typeof p.limit === 'number' ? p.limit : 10))
       .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, tags: r.memory.tags ?? [] })),
@@ -753,7 +755,7 @@ export const webHandlers: Record<string, Handler> = {
     // Heuristik uuid-vs-slug dari uteke_client.rs
     const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const key: Payload = p.id && isUuid(String(p.id)) ? { id: p.id } : { slug: p.slug ?? p.id };
-    return req<DocEntry>('POST', '/doc/update', { body: { ...key, title: p.title ?? undefined, content: p.content ?? undefined, tags: p.tags ?? undefined } });
+    return req<DocEntry>('POST', '/doc/update', { body: { ...key, title: p.title ?? undefined, content: p.content ?? undefined, tags: p.tags ?? undefined, metadata: p.metadata ?? undefined } });
   },
   doc_search: async (p): Promise<DocSearchResult[]> =>
     req<DocSearchResult[]>('POST', '/doc/search', {
@@ -790,13 +792,20 @@ export const webHandlers: Record<string, Handler> = {
   // Endpoint-gap wrappers (#216 + #231)
   memory_update: async (p) =>
     req<Record<string, unknown>>('PUT', '/memory', {
-      // Tanpa body(): null di sini disengaja — artinya "hapus field ini"
-      // (semantik PUT /memory desktop), bukan nilai yang perlu dibuang.
-      body: {
-        id: p.id, content: p.content ?? null, tags: p.tags ?? null, metadata: p.metadata ?? null,
-        importance: p.importance ?? null, pinned: p.pinned ?? null, memory_type: p.memoryType ?? null,
-        namespace: (p.namespace as string) ?? undefined,
-      } as Payload,
+      // Desktop semantics: absent field = no change. Serializing explicit
+      // nulls here made every partial update WIPE the omitted fields
+      // server-side (Cora critical) — body() drops them instead.
+      body: body({
+        id: p.id,
+        content: p.content,
+        tags: p.tags,
+        metadata: p.metadata,
+        importance: p.importance,
+        pinned: p.pinned,
+        memory_type: p.memoryType,
+        namespace: p.namespace,
+        content_type: p.contentType,
+      }) as Payload,
     }),
   room_remember: async (p) =>
     req<Record<string, unknown>>('POST', '/room/remember', {

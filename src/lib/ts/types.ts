@@ -13,6 +13,10 @@ export interface MemoryEntry {
   updated_at: string | null;
   /** Present on uteke list/get responses; undefined in hand-built results. */
   pinned?: boolean | null;
+  /** Semantic class: fact/procedure/decision/… (server defaults to fact). */
+  memory_type?: string | null;
+  /** Provenance slot — { author: 'human' | <agent-name>, … }. */
+  metadata?: Record<string, unknown> | null;
 }
 
 // Search result with score
@@ -210,6 +214,8 @@ export interface MemoryUpdateParams {
   memory_type?: string;
   /** Plain move to another namespace (uteke #1181, PUT /memory). */
   namespace?: string;
+  /** Render format ('text', …) — backfillable via PUT /memory. */
+  content_type?: string;
 }
 
 // Room remember params (POST /room/remember)
