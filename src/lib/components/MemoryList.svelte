@@ -408,7 +408,8 @@
 
 <div class="memory-list-view">
   <aside class="hub-panel">
-    <div class="hub-seg" role="group" aria-label="Group memories by">
+    <div class="hub-head">
+  <div class="hub-seg" role="group" aria-label="Group memories by">
       <button class:on={hubGroup === 'namespaces'} onclick={() => (hubGroup = 'namespaces')}>Namespaces</button>
       <button class:on={hubGroup === 'rooms'} onclick={() => (hubGroup = 'rooms')}>Rooms</button>
       <button class:on={hubGroup === 'tags'} onclick={() => (hubGroup = 'tags')}>Tags</button>
@@ -427,7 +428,9 @@
         </button>
       {/if}
     </div>
+    </div>
 
+    <div class="hub-list">
     {#if hubGroup === 'namespaces'}
       <div class="hub-group-label">Namespaces <span class="hub-n">{hubNsHeader}</span></div>
       <button
@@ -491,6 +494,7 @@
         </button>
       {/if}
     {/if}
+    </div>
   </aside>
 
   <div class="hub-main">
@@ -701,12 +705,27 @@
   }
 
   /* ── Memories hub panel (#293) ─────────────────────────────────────── */
+  /* Hub panel: header (group switch + filter) stays fixed; only the list
+     scrolls — switching facets never requires scrolling back up. */
   .hub-panel {
     width: 216px;
     flex-shrink: 0;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     border-right: 1px solid var(--border);
-    padding-right: 12px;
+    padding: 0 12px;
+  }
+  .hub-head {
+    flex-shrink: 0;
+    padding-bottom: 8px;
+  }
+  .hub-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    margin: 0 -12px;
+    padding: 0 12px;
   }
   .hub-seg {
     display: flex;
