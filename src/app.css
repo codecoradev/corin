@@ -125,8 +125,8 @@ p, li, td, .hint, .section-desc {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -134,12 +134,18 @@ p, li, td, .hint, .section-desc {
 }
 
 ::-webkit-scrollbar-thumb {
+  /* Transparent border insets the thumb so it never touches content. */
   background: var(--bg-hover);
-  border-radius: var(--radius-sm);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
 }
 
 ::selection {

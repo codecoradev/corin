@@ -475,6 +475,7 @@ pub fn run() {
             commands::uteke_neighbors,
             commands::uteke_namespaces,
             commands::uteke_namespaces_with_counts,
+            commands::uteke_namespaces_breakdown,
             commands::uteke_rooms,
             commands::uteke_room_recall,
             commands::uteke_room_memories,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { graph as graphApi, uteke, utekeServer } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import type { GraphData } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
   import { pickColor, buildTagEdges, NODE_COLORS as COLORS } from './graph/graph-utils.ts';
@@ -106,9 +107,7 @@
     hasMoreNodes = visibleCount < fullPool.length;
     totalNodesShown = nodes.length;
     totalEdgesShown = edges.length;
-    physicsActive = true;
-    calmFrames = 0;
-    needRedraw = true;
+    settle(Math.min(260, 120 + nodes.length));
   }
   const EXPAND_LIMIT = 5;
   // Matches uteke memory/node IDs (UUID v7) used as fallback labels
@@ -383,9 +382,7 @@
       }
 
       if (added > 0 || neighbors.length > 0) {
-        physicsActive = true;
-        calmFrames = 0;
-        needRedraw = true;
+        settle(140);
       }
       updateCounts();
     } catch {
@@ -447,15 +444,17 @@
         ctx.fill();
       }
 
-      // Pulsing indicator for nodes that haven't been expanded (clickable)
-      if (!n.expanded && !isExpanding) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 600 + n.id.charCodeAt(0));
-        const ah = Math.round((0.1 + pulse * 0.15) * 255).toString(16).padStart(2, '0');
+      // Static affordance ring for clickable, not-yet-expanded nodes.
+      // (The animated pulse forced a full-canvas redraw every frame —
+      // jank with labels on; a dashed ring reads the same when idle.)
+      if (!n.expanded && !isExpanding && !hi) {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 2 + pulse * 2, 0, 6.283);
-        ctx.strokeStyle = COL.blue + ah;
+        ctx.arc(n.x, n.y, r + 2.5, 0, 6.283);
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = COL.blue + '66';
         ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       // Node circle
@@ -509,6 +508,68 @@
   }
 
   // ─── Physics ───────────────────────────────────────────────────────
+  /** One integration step; returns total velocity (settle metric). */
+  function physicsStep(): number {
+    let totalV = 0;
+
+    // Repulsion (O(n²) but fine for <200 nodes)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) { d2 = 1; dx = Math.random(); dy = Math.random(); }
+        const d = Math.sqrt(d2);
+        const f = 1800 / d2;
+        a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
+        b.vx += (dx / d) * f; b.vy += (dy / d) * f;
+      }
+    }
+
+    // Spring (edges)
+    for (const e of edges) {
+      const ai = nodeId.get(e.source), bi = nodeId.get(e.target);
+      if (ai === undefined || bi === undefined) continue;
+      const a = nodes[ai], b = nodes[bi];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - 100) * 0.03;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+
+    // Apply velocity + damping + center gravity
+    for (const p of nodes) {
+      p.vx += (W / 2 - p.x) * 0.002;
+      p.vy += (H / 2 - p.y) * 0.002;
+      p.vx *= 0.72;
+      p.vy *= 0.72;
+      totalV += Math.abs(p.vx) + Math.abs(p.vy);
+      p.x = Math.max(15, Math.min(W - 15, p.x + p.vx));
+      p.y = Math.max(15, Math.min(H - 15, p.y + p.vy));
+    }
+    return totalV;
+  }
+
+  /**
+   * Pre-run the simulation synchronously so the graph paints settled and
+   * calm — no entry animation, no live jitter. Replaces the old
+   * physicsActive heat-up that bounced nodes into place on screen.
+   */
+  function settle(iterations: number) {
+    if (prefersReducedMotion) {
+      physicsActive = false;
+      untrack(() => fitView());
+      needRedraw = true;
+      return;
+    }
+    for (let i = 0; i < iterations; i++) physicsStep();
+    physicsActive = false;
+    calmFrames = 0;
+    untrack(() => fitView());
+    needRedraw = true;
+  }
+
   function tick() {
     const canvas = canvasEl;
     if (!canvas) { raf = requestAnimationFrame(tick); return; }
@@ -518,53 +579,13 @@
     if (!ctx) { raf = requestAnimationFrame(tick); return; }
 
     if (physicsActive && nodes.length > 0) {
-      let totalV = 0;
-
-      // Repulsion (O(n²) but fine for <200 nodes)
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j];
-          let dx = b.x - a.x, dy = b.y - a.y;
-          let d2 = dx * dx + dy * dy;
-          if (d2 < 1) { d2 = 1; dx = Math.random(); dy = Math.random(); }
-          const d = Math.sqrt(d2);
-          const f = 1800 / d2;
-          a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
-          b.vx += (dx / d) * f; b.vy += (dy / d) * f;
-        }
-      }
-
-      // Spring (edges)
-      for (const e of edges) {
-        const ai = nodeId.get(e.source), bi = nodeId.get(e.target);
-        if (ai === undefined || bi === undefined) continue;
-        const a = nodes[ai], b = nodes[bi];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.sqrt(dx * dx + dy * dy) || 1;
-        const f = (d - 100) * 0.03;
-        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
-        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
-      }
-
-      // Apply velocity + damping + center gravity
-      for (const p of nodes) {
-        p.vx += (W / 2 - p.x) * 0.002;
-        p.vy += (H / 2 - p.y) * 0.002;
-        p.vx *= 0.72;
-        p.vy *= 0.72;
-        totalV += Math.abs(p.vx) + Math.abs(p.vy);
-        p.x = Math.max(15, Math.min(W - 15, p.x + p.vx));
-        p.y = Math.max(15, Math.min(H - 15, p.y + p.vy));
-      }
-
-      // Settle check
+      const totalV = physicsStep();
       const settleThreshold = Math.max(1.5, nodes.length * 0.15);
       if (totalV < settleThreshold) {
         calmFrames++;
         if (calmFrames > 10) {
           physicsActive = false;
           untrack(() => fitView());
-          needRedraw = true;
         }
       } else {
         calmFrames = 0;
@@ -572,10 +593,10 @@
       needRedraw = true;
     }
 
-    // Always redraw if there are un-expanded nodes (they have pulse animation)
-    // Skip pulse animation entirely when reduced motion is preferred.
-    const hasPulse = !prefersReducedMotion && nodes.some(n => !n.expanded);
-    if (needRedraw || hasPulse) {
+    // Redraw only on demand. (The old pulse check forced a full-canvas
+    // redraw at 60fps whenever an un-expanded node existed — with labels
+    // on and hundreds of nodes that was the render jank.)
+    if (needRedraw) {
       draw(ctx);
       if (!physicsActive) needRedraw = false;
     }
@@ -665,9 +686,7 @@
           const nw = p.clientWidth, nh = p.clientHeight;
           if (nw > 0 && nh > 0 && (nw !== W || nh !== H)) {
             W = nw; H = nh;
-            physicsActive = true;
-            calmFrames = 0;
-            needRedraw = true;
+            settle(140);
           }
         }
       });
@@ -721,7 +740,7 @@
     {:else if totalNodesShown === 0}
       <div class="overlay">
         <p>No memories to visualize yet.</p>
-        <p class="overlay-hint">Save a memory (Ctrl+N) — edges appear automatically as related memories accumulate.</p>
+        <p class="overlay-hint">Save a memory ({kbdCombo('N')}) — edges appear automatically as related memories accumulate.</p>
       </div>
     {/if}
   </div>

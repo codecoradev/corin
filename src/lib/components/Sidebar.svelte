@@ -2,6 +2,7 @@
   import type { View } from '../ts/types';
   import { utekeServer } from '../ts/ipc';
   import { theme } from '../stores/theme.svelte';
+  import { kbdCombo } from '../utils/platform';
   import {
     LayoutDashboard,
     Brain,
@@ -71,14 +72,14 @@
       </div>
     {/if}
     {#if collapsed}
-      <button class="rail-btn new-memory-rail" onclick={onnewmemory} title="New Memory (Ctrl+N)" aria-label="New Memory">
+      <button class="rail-btn new-memory-rail" onclick={onnewmemory} title={`New Memory (${kbdCombo('N')})`} aria-label="New Memory">
         <Plus size={18} strokeWidth={2.25} />
       </button>
     {:else}
       <button class="new-memory-btn" onclick={onnewmemory}>
         <Plus size={16} strokeWidth={2.5} />
         <span>New Memory</span>
-        <kbd>Ctrl+N</kbd>
+        <kbd>{kbdCombo('N')}</kbd>
       </button>
     {/if}
   </div>
@@ -131,9 +132,9 @@
       aria-label="Toggle theme"
     >
       {#if theme.current === 'dark'}
-        <Sun size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><Sun size={iconSize} strokeWidth={1.75} /></span>
       {:else}
-        <Moon size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><Moon size={iconSize} strokeWidth={1.75} /></span>
       {/if}
       {#if !collapsed}
         <span class="rail-btn-label">{theme.current === 'dark' ? 'Light theme' : 'Dark theme'}</span>
@@ -155,11 +156,11 @@
       {/if}
     </button>
 
-    <button class="rail-btn" onclick={oncollapse} title={collapsed ? 'Expand (Ctrl+B)' : 'Collapse (Ctrl+B)'} aria-label="Toggle sidebar">
+    <button class="rail-btn" onclick={oncollapse} title={collapsed ? `Expand (${kbdCombo('B')})` : `Collapse (${kbdCombo('B')})`} aria-label="Toggle sidebar">
       {#if collapsed}
-        <PanelLeftOpen size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><PanelLeftOpen size={iconSize} strokeWidth={1.75} /></span>
       {:else}
-        <PanelLeftClose size={16} strokeWidth={1.75} />
+        <span class="nav-icon"><PanelLeftClose size={iconSize} strokeWidth={1.75} /></span>
       {/if}
       {#if !collapsed}
         <span class="rail-btn-label">Collapse</span>
@@ -285,8 +286,8 @@
   .server-status {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: 10px;
+    padding: 6px 12px;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
@@ -297,14 +298,23 @@
     justify-content: center;
     padding: 6px 0;
   }
+  /* 20px column so the label lines up with .nav-icon labels (12+20+10). */
   .status-dot {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .status-dot::before {
+    content: '';
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    flex-shrink: 0;
     background: var(--text-muted);
   }
-  .online .status-dot {
+  .online .status-dot::before {
     background: var(--green);
     animation: pulse 2s infinite;
   }
@@ -313,25 +323,40 @@
     50% { opacity: 0.4; }
   }
 
-  /* Rail utility buttons (theme toggle, collapse) */
+  /* Rail utility buttons (theme toggle, collapse) — same row grid as
+     .nav-item so the whole footer is left-aligned on one icon column. */
   .rail-btn {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    padding: 8px;
+    padding: 8px 12px;
     background: transparent;
     border: none;
     border-radius: var(--radius-md);
     color: var(--text-muted);
     cursor: pointer;
     transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+    text-align: left;
   }
   .rail-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
   .rail-btn-label { font-size: 0.8rem; white-space: nowrap; }
 
-  .sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; width: auto; }
+  /* Rail tiles (collapsed): uniform 36px rounded squares on radius-lg so
+     every control reads as the same soft tile. The active view keeps the
+     teal tint + accent icon but swaps the wide-mode left bar for a soft
+     shadow — on a 36px tile the inset bar read as a harsh border. */
+  .sidebar.collapsed .nav-item,
+  .sidebar.collapsed .rail-btn {
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-lg);
+  }
+  .sidebar.collapsed .nav-item.active {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  }
   .sidebar.collapsed .nav { padding: 10px 8px; align-items: center; }
   .sidebar.collapsed .nav-bottom { padding: 8px 8px; align-items: center; }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { system, utekeExport, utekeImport } from '../ts/ipc';
+  import SearchableSelect from '../ui/SearchableSelect.svelte';
   import { open, save } from '@tauri-apps/plugin-dialog';
   import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
   import { isWebMode } from '../ts/transport';
@@ -15,9 +16,9 @@
   // Mode
   let mode = $state<'export' | 'import'>('export');
 
-  // Export state
+  // Export state — '' = all namespaces (SearchableSelect's empty value).
   let exportFormat = $state<'json' | 'jsonl' | 'markdown' | 'csv'>('json');
-  let exportNamespace = $state<string | null>(null);
+  let exportNamespace = $state('');
   let exporting = $state(false);
 
   // Import state
@@ -43,7 +44,7 @@
   function reset() {
     mode = 'export';
     exportFormat = 'json';
-    exportNamespace = null;
+    exportNamespace = '';
     exporting = false;
     importStep = 'pick';
     importFileName = null;
@@ -90,8 +91,8 @@
       // JSONL is the server-native format (GET /export); the other formats
       // are CorIn's own export engines (system.export_data).
       const data = exportFormat === 'jsonl'
-        ? await utekeExport(exportNamespace ?? undefined)
-        : await system.exportData(exportFormat, exportNamespace);
+        ? await utekeExport(exportNamespace || undefined)
+        : await system.exportData(exportFormat, exportNamespace || null);
 
       if (filePath) {
         await writeTextFile(filePath, data);
@@ -255,12 +256,12 @@
 
     <div class="section">
       <h3>Namespace</h3>
-      <select bind:value={exportNamespace}>
-        <option value="">All namespaces</option>
-        {#each namespaces as ns}
-          <option value={ns}>{ns}</option>
-        {/each}
-      </select>
+      <SearchableSelect
+        options={namespaces}
+        bind:value={exportNamespace}
+        emptyLabel="All namespaces"
+        placeholder="Search namespaces…"
+      />
     </div>
 
     <button class="primary-btn" onclick={handleExport} disabled={exporting}>
@@ -300,12 +301,12 @@
         {/if}
         <div class="section">
           <h3>Target namespace (optional)</h3>
-          <select bind:value={jsonlTargetNs}>
-            <option value="">Keep each entry's own namespace</option>
-            {#each namespaces as ns}
-              <option value={ns}>Override → {ns}</option>
-            {/each}
-          </select>
+          <SearchableSelect
+            options={namespaces}
+            bind:value={jsonlTargetNs}
+            emptyLabel="Keep each entry's own namespace"
+            placeholder="Search namespaces…"
+          />
         </div>
         <div class="preview-actions">
           <button class="secondary-btn" onclick={() => importStep = 'pick'}>
@@ -458,16 +459,6 @@
   .format-desc {
     font-size: 0.75rem;
     color: var(--text-muted);
-  }
-
-  select {
-    width: 100%;
-    padding: 8px 10px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: 0.85rem;
   }
 
   .hint {

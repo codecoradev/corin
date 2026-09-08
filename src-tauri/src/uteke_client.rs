@@ -535,6 +535,25 @@ impl UtekeClient {
             .collect())
     }
 
+    /// Namespace rows as raw JSON — 0.16.1+ servers include
+    /// active/deprecated breakdown fields alongside name/count, and a
+    /// pass-through keeps us from needing a struct per shape.
+    pub async fn namespaces_breakdown(&self) -> Result<serde_json::Value, String> {
+        let resp = self
+            .authed(
+                self.client
+                    .get(format!("{}/namespaces", self.base_url))
+                    .query(&[("with_counts", "true")]),
+            )
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("server returned {}", resp.status()));
+        }
+        resp.json().await.map_err(|e| e.to_string())
+    }
+
     /// Get graph data (nodes + edges from memory_edges + graph_edges).
     pub async fn graph(&self, namespace: Option<&str>) -> Result<GraphResponse, String> {
         let mut req = self.authed(self.client.get(format!("{}/graph", self.base_url)));
@@ -1470,6 +1489,7 @@ impl UtekeClient {
         importance: Option<f64>,
         pinned: Option<bool>,
         memory_type: Option<&str>,
+        namespace: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let mut body = serde_json::json!({ "id": id });
         if let Some(c) = content {
@@ -1489,6 +1509,10 @@ impl UtekeClient {
         }
         if let Some(mt) = memory_type {
             body["memory_type"] = serde_json::Value::String(mt.to_string());
+        }
+        if let Some(ns) = namespace {
+            // Plain namespace move (#1181) — single UPDATE, no re-embed.
+            body["namespace"] = serde_json::Value::String(ns.to_string());
         }
         let resp = self
             .authed(self.client.put(format!("{}/memory", self.base_url)))

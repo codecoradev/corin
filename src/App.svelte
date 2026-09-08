@@ -4,6 +4,7 @@
   import { system } from './lib/ts/ipc';
   import type { View, MemoryEntry } from './lib/ts/types';
   import { pendingDocSlug } from './lib/stores/nav';
+  import { hasMod } from './lib/utils/platform';
 	import { theme } from './lib/stores/theme.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Dashboard from './lib/components/Dashboard.svelte';
@@ -133,14 +134,21 @@
   }
 
   // Memory deleted from the detail panel — refresh the list underneath and
-  // confirm to the user (the panel closing alone is ambiguous).
-  function handleMemoryDeleted() {
+  // confirm to the user (the panel closing alone is ambiguous). The id is
+  // forwarded (Settings → recycle bin prunes the row locally) so a stale
+  // entry can't be acted on twice.
+  let lastDeletedMemoryId = $state<string | null>(null);
+  function handleMemoryDeleted(id: string) {
     refreshKey++;
     detailId = null;
+    lastDeletedMemoryId = id;
     toastStore.success('Memory deleted');
   }
 
   function closeSettings() {
+    // The memory detail panel can sit above the settings modal (recycle-bin
+    // drill-in); Esc fires for both layers — only close the topmost one.
+    if (detailId) return;
     showSettings = false;
   }
 
@@ -150,16 +158,16 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    if (hasMod(e) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       showPalette = !showPalette;
       return;
     }
-    if (e.ctrlKey && e.key === 'b') {
+    if (hasMod(e) && e.key === 'b') {
       e.preventDefault();
       toggleSidebar();
     }
-    if (e.ctrlKey && e.key === 'n' && !showEditor) {
+    if (hasMod(e) && e.key === 'n' && !showEditor) {
       e.preventDefault();
       newMemory();
     }
@@ -254,7 +262,7 @@
             {/key}
           {:else if activeView === 'memories'}
             {#key refreshKey}
-              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} />
+              <MemoryList {namespace} onmemoryclick={openDetail} onnewmemory={newMemory} ondocumentclick={openDocument} ongraph={() => navigate('graph')} />
             {/key}
           {:else if activeView === 'namespaces'}
             <NamespacesView onmemoryclick={openDetail} />
@@ -285,6 +293,7 @@
         onneighborclick={detailNavigate}
         onedit={editMemory}
         ondeleted={handleMemoryDeleted}
+        onmoved={() => refreshKey++}
       />
     </DetailPanel>
   </div>
@@ -292,7 +301,7 @@
 
 {#if showSettings}
   <div transition:overlayFade>
-    <SettingsModal onclose={closeSettings} onopenmemory={openDetail} />
+    <SettingsModal onclose={closeSettings} onopenmemory={openDetail} deletedMemoryId={lastDeletedMemoryId} />
   </div>
 {/if}
 

@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { uteke } from '../ts/ipc';
+  import { docs, system, uteke } from '../ts/ipc';
+  import { has as compatHas, minVersion } from '../ts/compat';
+  import { ConfirmDialog, toastStore } from '../ui';
+  import { ArrowRightLeft, Trash2 } from 'lucide-svelte';
   import { createPager } from '../stores/pagination.svelte';
   import type { MemoryEntry } from '../ts/types';
 
@@ -12,6 +15,18 @@
   let namespaces = $state<{ name: string; count: number }[]>([]);
   let loading = $state(true);
   let selectedNs = $state<string | null>(null);
+
+  // ── Management (rename/merge, delete) — same ops as Settings → Namespaces,
+  // now inline where you browse. Gated on uteke >= 0.16.1 (#1183).
+  let nsSupported = $state<boolean | null>(null);
+  let defaultNs = $state('default');
+  let busy = $state(false);
+
+  let renameTarget = $state<string | null>(null);
+  let renameTo = $state('');
+  let deleteTarget = $state<string | null>(null);
+  let deleteStrategy = $state<'refuse' | 'merge' | 'deprecate'>('refuse');
+  let deleteMergeTarget = $state('');
 
   // Detail pager (paginated memories of the selected namespace).
   let detailPager = $state(createPager({ pageSize: 20 }));
@@ -31,14 +46,69 @@
     }
   }
 
+  async function loadCompat() {
+    nsSupported = (await compatHas('namespaceManage')) ?? false;
+    try {
+      const s = await system.getSettings();
+      defaultNs = s['default_namespace'] || 'default';
+    } catch { /* settings unavailable — protect 'default' */ }
+  }
+
   $effect(() => {
+    loadCompat();
     loadNamespaces();
   });
+
+  function isProtected(name: string): boolean {
+    return name === defaultNs;
+  }
 
   async function selectNs(ns: string) {
     selectedNs = ns;
     detailPager = createPager({ namespace: ns, pageSize: 20, useUteke: true });
     await detailPager.loadInitial();
+  }
+
+  async function performRename() {
+    if (!renameTarget || !renameTo.trim()) return;
+    busy = true;
+    try {
+      await docs.namespaceRename(renameTarget, renameTo.trim());
+      toastStore.success(`Renamed to ${renameTo.trim()}`);
+      const newName = renameTo.trim();
+      if (selectedNs === renameTarget) await selectNs(newName);
+      renameTarget = null;
+      renameTo = '';
+      await loadNamespaces();
+    } catch (e) {
+      toastStore.error(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function performDelete() {
+    if (!deleteTarget) return;
+    if (deleteStrategy === 'merge' && !deleteMergeTarget.trim()) return;
+    busy = true;
+    try {
+      const res = await docs.namespaceDelete(
+        deleteTarget,
+        deleteStrategy,
+        deleteStrategy === 'merge' ? deleteMergeTarget.trim() : undefined,
+      );
+      toastStore.success(`${deleteTarget}: ${res.affected} memories processed`);
+      if (selectedNs === deleteTarget) {
+        selectedNs = null;
+        detailPager = createPager({ pageSize: 20, useUteke: true });
+      }
+      deleteTarget = null;
+      await loadNamespaces();
+    } catch (e) {
+      toastStore.error(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
@@ -46,6 +116,11 @@
   <div class="ns-header">
     <h2>Namespaces</h2>
     <span class="count">{namespaces.length} namespace{namespaces.length === 1 ? '' : 's'}</span>
+    {#if nsSupported === false}
+      <span class="upgrade-hint" title="Namespace management needs uteke ≥ {minVersion('namespaceManage')}">
+        manage needs uteke ≥ {minVersion('namespaceManage')}
+      </span>
+    {/if}
   </div>
 
   {#if loading}
@@ -54,14 +129,41 @@
     <div class="layout">
       <div class="ns-list">
         {#each namespaces as ns (ns.name)}
-          <button
+          <div
             class="ns-card"
             class:active={selectedNs === ns.name}
+            role="button"
+            tabindex="0"
             onclick={() => selectNs(ns.name)}
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectNs(ns.name)}
           >
             <div class="ns-name">{ns.name}</div>
-            <span class="count">{ns.count}</span>
-          </button>
+            <div class="ns-right">
+              <span class="count">{ns.count}</span>
+              {#if nsSupported}
+                <button
+                  class="ns-act"
+                  title={isProtected(ns.name) ? 'Default workspace is protected' : 'Rename / merge'}
+                  disabled={isProtected(ns.name) || busy}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    renameTarget = ns.name;
+                    renameTo = '';
+                  }}
+                ><ArrowRightLeft size={12} strokeWidth={2} /></button>
+                <button
+                  class="ns-act danger"
+                  title={isProtected(ns.name) ? 'Default workspace is protected' : 'Delete (choose strategy)'}
+                  disabled={isProtected(ns.name) || busy}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    deleteTarget = ns.name;
+                    deleteStrategy = 'refuse';
+                  }}
+                ><Trash2 size={12} strokeWidth={2} /></button>
+              {/if}
+            </div>
+          </div>
         {/each}
       </div>
 
@@ -177,4 +279,77 @@
   .load-more button:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .msg { text-align: center; padding: 40px; color: var(--text-muted); }
+
+  .ns-right { display: flex; align-items: center; gap: 6px; }
+  .ns-act {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text-secondary); cursor: pointer;
+  }
+  .ns-act:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+  .ns-act:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ns-act.danger:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+  .upgrade-hint {
+    font-size: 0.72rem; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-pill);
+    padding: 2px 9px;
+  }
+  .dlg p { margin: 6px 0; font-size: 0.85rem; color: var(--text-primary); }
+  .dlg code { font-family: var(--font-mono); font-size: 0.8rem; background: var(--bg-tertiary); padding: 1px 6px; border-radius: var(--radius-sm); }
+  .dlg-input {
+    width: 100%; padding: 6px 10px; margin: 6px 0;
+    background: var(--bg-primary); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    font-family: var(--font-mono); font-size: 0.8rem;
+  }
+  .strategy { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 0.8rem; color: var(--text-primary); }
 </style>
+
+{#if renameTarget}
+  <ConfirmDialog
+    open
+    title="Rename or merge namespace?"
+    message="Existing memories move with it in a single atomic update."
+    confirmLabel={renameTo.trim() ? 'Apply' : ''}
+    onconfirm={performRename}
+    oncancel={() => (renameTarget = null)}
+  >
+    <div class="dlg">
+      <p><code>{renameTarget}</code> →</p>
+      <input class="dlg-input" type="text" bind:value={renameTo} placeholder="new-name (existing name = merge)" />
+      <p class="hint">If the target exists, all memories are merged into it — no data loss.</p>
+    </div>
+  </ConfirmDialog>
+{/if}
+
+{#if deleteTarget}
+  <ConfirmDialog
+    open
+    title="Delete namespace — choose strategy"
+    message="A namespace is never hard-deleted — memories go somewhere safe."
+    confirmLabel="Execute"
+    danger
+    onconfirm={performDelete}
+    oncancel={() => (deleteTarget = null)}
+  >
+    <div class="dlg">
+      <p>Namespace <code>{deleteTarget}</code> — memories must go somewhere:</p>
+      <label class="strategy">
+        <input type="radio" bind:group={deleteStrategy} value="refuse" />
+        <span><b>Refuse</b> — cancel if any memory still uses it (safest)</span>
+      </label>
+      <label class="strategy">
+        <input type="radio" bind:group={deleteStrategy} value="merge" />
+        <span><b>Merge into</b> — move everything to:</span>
+      </label>
+      {#if deleteStrategy === 'merge'}
+        <input class="dlg-input" type="text" bind:value={deleteMergeTarget} placeholder="target-namespace" />
+      {/if}
+      <label class="strategy">
+        <input type="radio" bind:group={deleteStrategy} value="deprecate" />
+        <span><b>Deprecate</b> — soft-delete all (restorable from Recycle Bin until TTL)</span>
+      </label>
+    </div>
+  </ConfirmDialog>
+{/if}

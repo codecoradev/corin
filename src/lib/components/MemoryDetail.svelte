@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline } from '../ts/ipc';
+  import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link } from 'lucide-svelte';
-  import { has as compatHas } from '../ts/compat';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link, Pin } from 'lucide-svelte';
+  import { has as compatHas, minVersion } from '../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
 
@@ -45,10 +45,12 @@
     onedit: (m: MemoryEntry) => void;
     onback: () => void;
     onneighborclick: (id: string) => void;
-    ondeleted?: () => void;
+    ondeleted?: (id: string) => void;
+    /** Called after the memory moved to another namespace — refresh the list behind. */
+    onmoved?: () => void;
   }
 
-  let { memoryId, onedit, onback, onneighborclick, ondeleted }: Props = $props();
+  let { memoryId, onedit, onback, onneighborclick, ondeleted, onmoved }: Props = $props();
 
   let memory = $state<MemoryEntry | null>(null);
   let neighbors = $state<Neighbor[]>([]);
@@ -60,6 +62,41 @@
   let feedbackGiven = $state<'helpful' | 'unhelpful' | null>(null);
   let feedbackDelta = $state<number | null>(null);
   let submittingFeedback = $state(false);
+
+  // Namespace move — plain PUT /memory namespace field (uteke #1181, no re-embed).
+  let nsList = $state<string[]>([]);
+  let nsMoving = $state(false);
+  let nsMoveAvailable = $state<boolean | null>(null);
+
+  async function moveNamespace(target: string) {
+    const m = memory;
+    if (!m || !target || target === (m.namespace ?? '')) return;
+    nsMoving = true;
+    try {
+      await memoryUpdate({ id: memoryId, namespace: target });
+      memory = { ...m, namespace: target };
+      toastStore.success(`Moved to ${target}`);
+      onmoved?.();
+    } catch (e) {
+      toastStore.error(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      nsMoving = false;
+    }
+  }
+
+  // Pin/unpin — PUT /memory `pinned` (supported since uteke 0.15; no gate).
+  async function togglePin() {
+    const m = memory;
+    if (!m) return;
+    const next = !m.pinned;
+    try {
+      await memoryUpdate({ id: memoryId, pinned: next });
+      memory = { ...m, pinned: next };
+      toastStore.success(next ? 'Memory pinned' : 'Memory unpinned');
+    } catch (e) {
+      toastStore.error(`Pin failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   // Timeline state
   let timeline = $state<TimelineEvent[]>([]);
@@ -83,6 +120,9 @@
       } catch {
         memory = await uteke.get(memoryId);
       }
+      // Namespace list for the move control — non-fatal if unavailable.
+      uteke.namespaces().then((ns) => (nsList = ns)).catch(() => (nsList = []));
+      compatHas('namespaceMove').then((v) => (nsMoveAvailable = v === true)).catch(() => (nsMoveAvailable = false));
       // Load neighbors from Uteke (shared tags + explicit edges)
       neighbors = await uteke.neighbors(memoryId, 20).catch(() => []);
       // Cross-entity linking (#207): documents that reference this memory.
@@ -154,7 +194,11 @@
     load();
   });
 
+  let deleting = $state(false);
+
   async function handleDelete() {
+    if (deleting) return; // in-flight guard — no double delete
+    deleting = true;
     // Try server delete first (Uteke memory), fallback to Hub DB
     try {
       const status = await utekeServer.status();
@@ -164,15 +208,18 @@
         await memoryApi.forget(memoryId);
       }
       // Surface success: refresh the underlying list + toast. Just closing
-      // the panel is ambiguous (looks like nothing happened).
+      // the panel is ambiguous (looks like nothing happened). The id lets
+      // listeners (e.g. the recycle bin) prune the row locally.
       if (ondeleted) {
-        ondeleted();
+        ondeleted(memoryId);
       } else {
         onback();
       }
     } catch (e) {
       toastStore.error(`Failed to delete memory: ${e instanceof Error ? e.message : String(e)}`);
       showDeleteConfirm = false;
+    } finally {
+      deleting = false;
     }
   }
 
@@ -266,8 +313,17 @@
     <button class="back-btn" onclick={onback}><X size={13} strokeWidth={2} /> Close <kbd>Esc</kbd></button>
     {#if memory}
       <div class="header-actions">
+        <button
+          class="pin-btn"
+          class:pinned={memory.pinned}
+          onclick={togglePin}
+          title={memory.pinned ? 'Unpin memory' : 'Pin memory'}
+        >
+          <Pin size={12} strokeWidth={2.25} />
+          {memory.pinned ? 'Pinned' : 'Pin'}
+        </button>
         <button class="edit-btn" onclick={() => onedit(memory!)}>Edit</button>
-        <button class="delete-btn" onclick={() => (showDeleteConfirm = true)}>Delete</button>
+        <button class="delete-btn" disabled={deleting} onclick={() => (showDeleteConfirm = true)}>Delete</button>
       </div>
     {/if}
   </div>
@@ -279,28 +335,29 @@
   {:else}
     <div class="detail-body">
       <div class="content-section">
-        <div class="author-head">
-          {#if author}
-            <span class="author-avatar" style="background: {authorColor(author)}">{author.trim()[0].toUpperCase()}</span>
-            <span class="author-name">{author}</span>
-          {:else}
-            <span class="author-avatar anon">?</span>
-            <span class="author-name muted">unknown author</span>
-          {/if}
-          {#if memory.created_at}
-            <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
-          {/if}
-        </div>
+        {#if author || memory.created_at}
+          <div class="author-head">
+            {#if author}
+              <span class="author-avatar" style="background: {authorColor(author)}">{author.trim()[0].toUpperCase()}</span>
+              <span class="author-name">{author}</span>
+            {/if}
+            {#if memory.created_at}
+              <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
+            {/if}
+          </div>
+        {/if}
         <pre class="content-text">{memory.content}</pre>
 
-        <div class="copyid-row">
-          <span class="id-short">{memoryId.slice(0, 8)}</span>
-          <button class="copyid-btn" onclick={copyId} title="Copy full ID">
-            {#if copiedId}<Check size={12} strokeWidth={2.5} />{:else}<Copy size={12} strokeWidth={2} />{/if}
-          </button>
-        </div>
-
         <div class="meta-grid">
+          <div class="meta-row">
+            <span class="meta-label">ID</span>
+            <div class="id-row">
+              <code class="id-full" title="Memory ID">{memoryId}</code>
+              <button class="copyid-btn" onclick={copyId} title="Copy ID">
+                {#if copiedId}<Check size={12} strokeWidth={2.5} />{:else}<Copy size={12} strokeWidth={2} />{/if}
+              </button>
+            </div>
+          </div>
           {#if memory.tags.length > 0}
             <div class="meta-row">
               <span class="meta-label">Tags</span>
@@ -309,12 +366,31 @@
               </div>
             </div>
           {/if}
-          {#if memory.namespace}
-            <div class="meta-row">
-              <span class="meta-label">Namespace</span>
-              <span>{memory.namespace}</span>
-            </div>
-          {/if}
+          <div class="meta-row">
+            <span class="meta-label">Namespace</span>
+            {#if nsMoveAvailable && nsList.length > 0}
+              <select
+                class="ns-select"
+                value={memory.namespace ?? ''}
+                disabled={nsMoving}
+                onchange={(e) => moveNamespace((e.currentTarget as HTMLSelectElement).value)}
+                title="Move to another namespace"
+              >
+                {#if !memory.namespace}
+                  <option value="">—</option>
+                {:else if !nsList.includes(memory.namespace)}
+                  <option value="">{memory.namespace}</option>
+                {/if}
+                {#each nsList as ns (ns)}
+                  <option value={ns}>{ns}</option>
+                {/each}
+              </select>
+            {:else}
+              <span title={nsMoveAvailable === false ? `Namespace move needs uteke ≥ ${minVersion('namespaceMove')}` : undefined}>
+                {memory.namespace ?? '—'}
+              </span>
+            {/if}
+          </div>
           {#if memory.content_type}
             <div class="meta-row">
               <span class="meta-label">Type</span>
@@ -555,7 +631,8 @@
       open={showDeleteConfirm}
       title="Delete memory?"
       message="This action cannot be undone."
-      confirmLabel="Delete"
+      confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+      confirmDisabled={deleting}
       danger={true}
       onconfirm={handleDelete}
       oncancel={() => (showDeleteConfirm = false)}
@@ -587,23 +664,19 @@
     color: var(--bg-primary);
     flex-shrink: 0;
   }
-  .author-avatar.anon { background: var(--surface1); color: var(--text-muted); }
   .author-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
-  .author-name.muted { color: var(--text-muted); font-weight: 400; }
   .author-time { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); }
 
-  .copyid-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 12px;
-    padding: 2px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--bg-tertiary);
+  .id-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+  .id-full {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+    user-select: all;
   }
-  .id-short { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
   .copyid-btn {
+    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     background: transparent;
@@ -618,7 +691,10 @@
   .back-btn:hover { background: var(--bg-hover); }
   .back-btn kbd { font-family: var(--font-mono); font-size: 0.65rem; padding: 1px 4px; background: var(--bg-hover); border-radius: var(--radius-sm); opacity: 0.7; }
   .header-actions { display: flex; gap: 8px; }
-  .edit-btn, .delete-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; }
+  .edit-btn, .delete-btn, .pin-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem; }
+  .pin-btn { background: var(--bg-tertiary); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
+  .pin-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .pin-btn.pinned { background: var(--color-teal-bg); color: var(--accent); border-color: var(--accent); }
   .edit-btn { background: var(--bg-tertiary); color: var(--text-primary); }
   .edit-btn:hover { border-color: var(--accent); }
   .delete-btn { background: transparent; color: var(--red); border-color: var(--red); }
@@ -634,6 +710,17 @@
   .meta-grid { display: flex; flex-direction: column; gap: 8px; }
   .meta-row { display: flex; align-items: flex-start; gap: 12px; font-size: 0.85rem; }
   .meta-label { min-width: 80px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; padding-top: 2px; }
+  .ns-select {
+    padding: 2px 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    outline: none;
+    max-width: 220px;
+  }
+  .ns-select:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
 
   .tags { display: flex; gap: 4px; flex-wrap: wrap; }
   .tag { font-size: 0.75rem; padding: 2px 8px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-sm); }

@@ -73,7 +73,8 @@ export const room = {
 export const system = {
   stats: () => call<StatsResponse>('stats'),
   listNamespaces: () => call<string[]>('list_namespaces'),
-  listTags: (namespace?: string) => call<Record<string, number>>('list_tags', { namespace: namespace ?? null }),
+  /** Real usage counts from GET /tags (server-global, ordered by the server). */
+  listTags: (namespace?: string) => call<Array<{ name: string; count: number }>>('list_tags', { namespace: namespace ?? null }),
   getSettings: () => call<Record<string, string>>('get_settings'),
   setSettings: (settings: Record<string, string>) => call<void>('set_settings', { settings }),
   exportData: (format: 'json' | 'markdown' | 'csv', namespace?: string | null) => call<string>('export_data', { format, namespace: namespace ?? null }),
@@ -447,6 +448,7 @@ export async function memoryUpdate(params: MemoryUpdateParams): Promise<Record<s
     importance: params.importance ?? null,
     pinned: params.pinned ?? null,
     memoryType: params.memory_type ?? null,
+    namespace: params.namespace ?? null,
   });
 }
 

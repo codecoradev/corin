@@ -1,5 +1,6 @@
 <script lang="ts">
   import { memory as memoryApi, system, utekeServer, memoryUpdate } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
   import type { MemoryEntry } from '../ts/types';
   import { X, TriangleAlert } from 'lucide-svelte';
   import { focusTrap } from '../ui/focusTrap';
@@ -96,6 +97,7 @@
             tags,
             importance,
             memory_type: contentType,
+            namespace: ns || undefined,
           });
         } else {
           const newId = await memoryApi.remember(content, {
@@ -267,7 +269,7 @@
     </div>
 
     <div class="editor-footer">
-      <span class="hint"><kbd>Ctrl+Enter</kbd> to save</span>
+      <span class="hint"><kbd>{kbdCombo('Enter')}</kbd> to save</span>
       <div class="footer-actions">
         <button class="cancel-btn" onclick={onclose}>Cancel</button>
         <button class="save-btn" onclick={handleSave} disabled={saving}>

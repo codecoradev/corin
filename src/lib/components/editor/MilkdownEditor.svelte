@@ -323,4 +323,28 @@
     font-size: 0.92rem;
     line-height: 1.7;
   }
+  /* Editor follows the app palette: Crepe's frame theme ships light-only
+     tokens on .milkdown, so remap them onto the app's theme-aware tokens —
+     one block covers dark AND light because the tokens flip via
+     html[data-theme]. Specificity (0,2,0) beats the theme file's
+     .milkdown (0,1,0). */
+  .milkdown-host :global(.milkdown) {
+    --crepe-color-background: var(--bg-primary);
+    --crepe-color-on-background: var(--text-primary);
+    --crepe-color-surface: var(--bg-secondary);
+    --crepe-color-surface-low: var(--bg-tertiary);
+    --crepe-color-on-surface: var(--text-primary);
+    --crepe-color-on-surface-variant: var(--text-secondary);
+    --crepe-color-outline: var(--border);
+    --crepe-color-primary: var(--accent);
+    --crepe-color-secondary: var(--bg-hover);
+    --crepe-color-on-secondary: var(--text-primary);
+    --crepe-color-inverse: var(--color-surface1);
+    --crepe-color-on-inverse: var(--text-primary);
+    --crepe-color-inline-code: var(--peach);
+    --crepe-color-error: var(--red);
+    --crepe-color-hover: var(--bg-hover);
+    --crepe-color-selected: var(--color-teal-bg);
+    --crepe-color-inline-area: var(--color-surface1);
+  }
 </style>

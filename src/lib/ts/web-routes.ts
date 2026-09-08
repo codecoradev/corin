@@ -109,6 +109,7 @@ function toMemory(m: UtekeMemoryRaw): MemoryEntry & { metadata?: Record<string, 
     // Provenance passthrough — agent identity reads metadata.author (#293).
     metadata: (m.metadata ?? undefined) as Record<string, unknown> | undefined,
     deprecated: m.deprecated ?? false,
+    pinned: m.pinned ?? null,
   };
 }
 
@@ -555,11 +556,11 @@ export const webHandlers: Record<string, Handler> = {
     return rows;
   },
   uteke_namespaces_with_counts: namespacesWithCounts,
-  // commands.rs:list_tags mengaproksimasi dengan namespaces_with_counts
-  list_tags: async () => {
-    const counts = await namespacesWithCounts();
-    return Object.fromEntries(counts.map((nc) => [nc.name, nc.count]));
-  },
+  // GET /tags — real global usage counts (parity with desktop list_tags).
+  list_tags: async (p) =>
+    req<Array<{ name: string; count: number }>>('GET', '/tags', {
+      query: p.namespace ? { namespace: String(p.namespace) } : undefined,
+    }),
 
   // Import/export data desktop (JSON/markdown/CSV kustom — bukan /import JSONL)
   export_data: async (p) => exportData(String(p.format), (p.namespace as string | null) ?? null),
@@ -794,6 +795,7 @@ export const webHandlers: Record<string, Handler> = {
       body: {
         id: p.id, content: p.content ?? null, tags: p.tags ?? null, metadata: p.metadata ?? null,
         importance: p.importance ?? null, pinned: p.pinned ?? null, memory_type: p.memoryType ?? null,
+        namespace: (p.namespace as string) ?? undefined,
       } as Payload,
     }),
   room_remember: async (p) =>

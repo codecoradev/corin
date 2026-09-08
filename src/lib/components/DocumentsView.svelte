@@ -1,5 +1,7 @@
 <script lang="ts">
   import { docs } from '../ts/ipc';
+  import { kbdCombo } from '../utils/platform';
+  import SearchableSelect from '../ui/SearchableSelect.svelte';
   import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
@@ -129,7 +131,30 @@
   let searching = $state(false);
   let saving = $state(false);
   let showNewDoc = $state(false);
+  // Content-pane fetch in flight (doc switch) — dims only the editor panel;
+  // the tree never unmounts on selection.
+  let docLoading = $state(false);
+  // Parent for the doc being created — '' = root level. Every doc can act
+  // as a folder, so the picker lists the whole tree (indented by depth).
+  let newDocParent = $state('');
+
+  let parentOptions = $derived.by(() => {
+    const opts: { value: string; label: string }[] = [];
+    const walk = (entries: DocEntry[], depth: number) => {
+      for (const d of entries) {
+        opts.push({
+          value: d.id,
+          label: (depth ? '\u00A0'.repeat(depth * 3) + '↳ ' : '') + (d.title || d.slug),
+        });
+        walk(childrenCache.get(d.id) ?? [], depth + 1);
+      }
+    };
+    walk(rootDocs, 0);
+    return opts;
+  });
   let showDeleteConfirm = $state(false);
+  /** False after the first tree load — reloads then preserve expansion state. */
+  let treeInitialized = false;
   let deleteTarget = $state<DocEntry | null>(null);
   let error = $state('');
   let errorTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -183,6 +208,23 @@
   // Fetches the full flat doc list once and assembles parent→children so the
   // entire hierarchy is visible upfront (Obsidian/Outline-like), rather than
   // only roots with lazy-expanded children.
+  /** Leading number of a title ("7. Part III" → 7) — natural-order key. */
+  function leadingNumber(title: string): number | null {
+    const m = /^\s*(\d+)/.exec(title);
+    return m ? Number(m[1]) : null;
+  }
+
+  /** Numbered docs read in ascending order first; unnumbered follow,
+      newest-first. Chapters authored out of sequence still read 1,2,3… */
+  function naturalDocCompare(a: DocEntry, b: DocEntry): number {
+    const na = leadingNumber(a.title);
+    const nb = leadingNumber(b.title);
+    if (na !== null && nb !== null && na !== nb) return na - nb;
+    if (na !== null) return -1;
+    if (nb !== null) return 1;
+    return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+  }
+
   async function loadRootDocs() {
     loading = true;
     try {
@@ -202,11 +244,20 @@
           roots.push(d);
         }
       }
+      for (const arr of byParent.values()) arr.sort(naturalDocCompare);
+      roots.sort(naturalDocCompare);
       childrenCache = byParent;
       rootDocs = roots;
       docById = byId;
-      // Expand every folder by default so the full tree is visible.
-      expandedIds = new Set(byParent.keys());
+      if (!treeInitialized) {
+        // First paint: open the whole tree so it's discoverable.
+        expandedIds = new Set(byParent.keys());
+        treeInitialized = true;
+      } else {
+        // Reloads (save/create/delete) keep the user's manual collapses
+        // instead of re-opening every branch.
+        expandedIds = new Set([...expandedIds].filter((id) => byParent.has(id)));
+      }
     } catch (e: any) {
       showError(e.toString());
     } finally {
@@ -219,6 +270,7 @@
     if (childrenCache.has(docId)) return;
     try {
       const children = await docs.list({ parent: docId });
+      children.sort(naturalDocCompare);
       // Immutable update — Svelte 5 does not re-render {@const} reads when a
       // $state Map is mutated in place + reassigned to the same ref.
       const next = new Map(childrenCache);
@@ -240,8 +292,14 @@
         if (entry.id === docId) return true;
         if (hasKids(entry)) {
           const kids = childrenCache.get(entry.id) ?? [];
-          next.add(entry.id);
-          if (searchLevel(kids)) return true;
+          // Post-order: mark an id as expanded only AFTER its subtree is
+          // confirmed to contain the target. Adding before the recursion
+          // expanded every branch the search merely passed through,
+          // blowing away the user's manual collapses.
+          if (searchLevel(kids)) {
+            next.add(entry.id);
+            return true;
+          }
         }
       }
       return false;
@@ -270,9 +328,14 @@
   }
 
   // ─── Select doc ──────────────────────────────────────────────────
+  let docTreeEl = $state<HTMLElement | null>(null);
+
   async function selectDoc(doc: DocEntry) {
     selectedDoc = doc;
-    loading = true;
+    // Content-pane-only refresh: the tree stays mounted — the old global
+    // `loading` flag unmounted it into a spinner on every click, which
+    // lost scroll position and blinked the whole view.
+    docLoading = true;
     try {
       const full = await docs.get({ id: doc.id });
       selectedDoc = full;
@@ -290,18 +353,22 @@
       }
       // Auto-expand tree path to this document
       await expandPathToDoc(full.id);
-      // Reset scroll positions to top for the new document
+      // Reset scroll positions to top for the new document, then bring the
+      // selected tree row into view (it may sit below the fold).
       requestAnimationFrame(() => {
         if (previewContainer) previewContainer.scrollTop = 0;
         if (editorContainer) {
           const scroller = editorContainer.querySelector('.cm-scroller');
           if (scroller) scroller.scrollTop = 0;
         }
+        docTreeEl
+          ?.querySelector(`[data-doc-id="${CSS.escape(full.id)}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
       });
     } catch (e: any) {
       showError(e.toString());
     } finally {
-      loading = false;
+      docLoading = false;
     }
   }
 
@@ -350,6 +417,7 @@
     editorSlug = '';
     editorContent = '# New Document\n\n';
     editorTags = '';
+    newDocParent = '';
     showSearchResults = false;
     viewMode = 'edit';
   }
@@ -392,8 +460,9 @@
           }
         }
       } else {
-        // New document → create via /doc/create
-        const parent = selectedDoc?.id ?? undefined;
+        // New document → create via /doc/create under the chosen parent
+        // ('' = root level).
+        const parent = newDocParent || undefined;
         await docs.create(editorSlug, editorTitle || editorSlug, editorContent, {
           tags,
           parent,
@@ -402,6 +471,10 @@
         const full = await docs.get({ slug: editorSlug });
         selectedDoc = full;
         showNewDoc = false;
+        // Reveal the new doc inside its parent branch.
+        if (newDocParent) {
+          expandedIds = new Set([...expandedIds, newDocParent]);
+        }
       }
       await loadRootDocs();
       showSuccess(selectedDoc && !showNewDoc ? 'Document updated' : 'Document saved');
@@ -717,7 +790,7 @@
           <button class="action-btn new-btn small" onclick={newDoc}><Plus size={12} strokeWidth={2.5} /> Create first doc</button>
         </div>
       {:else}
-        <div class="doc-tree">
+        <div class="doc-tree" bind:this={docTreeEl}>
           {#each rootDocs as doc (doc.id)}
             {@render treeNode(doc)}
           {/each}
@@ -726,7 +799,7 @@
     </div>
 
     <!-- ─── Right Panel: Editor/Preview ─────────────────────────── -->
-    <div class="editor-panel">
+    <div class="editor-panel" class:busy={docLoading}>
       {#if selectedDoc || showNewDoc}
         <!-- Top bar: breadcrumb + mode toggle -->
         <div class="top-bar">
@@ -785,6 +858,20 @@
           </div>
         {/if}
 
+        {#if showNewDoc}
+          <div class="parent-row">
+            <span class="parent-label">Parent</span>
+            <div class="parent-select">
+              <SearchableSelect
+                options={parentOptions}
+                bind:value={newDocParent}
+                emptyLabel="No parent — root level"
+                placeholder="Search documents…"
+              />
+            </div>
+          </div>
+        {/if}
+
         <!-- Meta bar: version, date + actions -->
         <div class="meta-bar">
           <div class="meta-left">
@@ -803,7 +890,7 @@
             <span class="meta-item meta-dim">{getWordCount(editorContent)} words{getReadingTime(getWordCount(editorContent)) ? ` · ${getReadingTime(getWordCount(editorContent))}` : ''}</span>
           </div>
           <div class="meta-actions">
-            <button class="icon-btn" onclick={saveDoc} disabled={saving} title="Save (Ctrl+S)">
+            <button class="icon-btn" onclick={saveDoc} disabled={saving} title={`Save (${kbdCombo('S')})`}>
               {#if saving}
                 <span class="spinner small"></span>
               {:else}
@@ -877,7 +964,7 @@
   {@const isFolder = kids.length > 0}
   {@const expanded = expandedIds.has(doc.id)}
   <div class="tree-node">
-    <div class="tree-row" class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
+    <div class="tree-row" data-doc-id={doc.id} class:active={selectedDoc?.id === doc.id} class:folder={isFolder}>
       <button
         class="tree-toggle"
         class:has-children={isFolder}
@@ -1072,7 +1159,7 @@
   }
   .search-clear:hover { color: var(--text-primary); }
 
-  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .doc-tree { flex: 1; overflow-y: auto; padding: 4px 10px 4px 0; }
 
   .tree-node { user-select: none; }
   .tree-children {
@@ -1207,6 +1294,13 @@
     flex-direction: column;
     overflow: hidden;
     min-width: 0;
+    transition: opacity 0.12s var(--ease-out);
+  }
+  /* Doc-switch fetch in flight: dim the pane and block interaction so the
+     stale content can't be edited mid-swap. The tree stays untouched. */
+  .editor-panel.busy {
+    opacity: 0.55;
+    pointer-events: none;
   }
 
   /* ── Top bar: breadcrumb + mode toggle ── */
@@ -1273,6 +1367,23 @@
     flex-shrink: 0;
     animation: slideDown 0.12s ease;
   }
+  .parent-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    animation: slideDown 0.12s ease;
+  }
+  .parent-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .parent-select { flex: 1; max-width: 420px; }
   .prop-input {
     padding: 4px 8px;
     background: var(--bg-tertiary);

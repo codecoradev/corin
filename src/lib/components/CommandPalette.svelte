@@ -3,6 +3,7 @@
   import { utekeServer } from '../ts/ipc';
   import type { UnifiedSearchResult, View } from '../ts/types';
   import { fadeQuick, overlayFade } from '../transitions';
+  import { kbdCombo } from '../utils/platform';
 
   interface PaletteItem {
     key: string;
@@ -74,7 +75,7 @@
   ];
 
   const actionItems: PaletteItem[] = [
-    { key: 'a-new', icon: '＋', label: 'New memory', hint: 'Ctrl+N', kind: 'action', run: () => onnewmemory() },
+    { key: 'a-new', icon: '＋', label: 'New memory', hint: kbdCombo('N'), kind: 'action', run: () => onnewmemory() },
     { key: 'a-set', icon: '⚙', label: 'Open Settings', hint: 'Preferences', kind: 'action', run: () => onopensettings() },
   ];
 
@@ -224,7 +225,10 @@
   .palette-overlay {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    /* Global surface: above every modal (editor 200, detail 103) so Cmd+K
+       always takes over the screen cleanly instead of half-mixing with an
+       open modal; below ui/Modal dialogs (1000) and toasts (2000). */
+    z-index: 220;
     background: color-mix(in srgb, var(--bg-base, #0b0e14) 55%, transparent);
     backdrop-filter: blur(2px);
     display: flex;

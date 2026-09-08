@@ -11,6 +11,8 @@ export interface MemoryEntry {
   namespace: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** Present on uteke list/get responses; undefined in hand-built results. */
+  pinned?: boolean | null;
 }
 
 // Search result with score
@@ -206,6 +208,8 @@ export interface MemoryUpdateParams {
   importance?: number;
   pinned?: boolean;
   memory_type?: string;
+  /** Plain move to another namespace (uteke #1181, PUT /memory). */
+  namespace?: string;
 }
 
 // Room remember params (POST /room/remember)
