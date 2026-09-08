@@ -28,8 +28,8 @@
   // ── Memories hub grouping: Namespaces | Rooms | Tags ───────────────────
   // Agents lost its hub slot: provenance authors are rare, so the group sat
   // empty; namespaces are always populated and double as a list filter.
-  type HubGroup = 'rooms' | 'tags';
-  let hubGroup = $state<HubGroup>('rooms');
+  type HubGroup = 'namespaces' | 'rooms' | 'tags';
+  let hubGroup = $state<HubGroup>('namespaces');
   let selectedRoom = $state<string | null>(null);
   let selectedTag = $state<string | null>(null);
 
@@ -46,40 +46,46 @@
   });
 
 
-  let rooms = $state<{ id: string; title: string; count?: number }[]>([]);
+  // Hub Namespaces group — server list with real counts, always populated.
+  // Clicking one scopes the list to that single namespace (shared state with
+  // the toolbar filter, so both always agree).
+  let hubNamespaces = $state<{ name: string; count: number }[] | null>(null);
+  let hubNsLoading = $state(false);
+
+  async function loadHubNamespaces() {
+    hubNsLoading = true;
+    try {
+      const rows = await uteke.namespacesWithCounts();
+      hubNamespaces = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      hubNamespaces = [];
+    } finally {
+      hubNsLoading = false;
+    }
+  }
+
+  let rooms = $state<{ id: string; title: string; count?: number; namespace?: string }[]>([]);
   $effect(() => {
     uteke.rooms().then((rs) => {
-      rooms = (rs as { id?: string; title?: string; memory_count?: number }[]).map((r) => ({
+      rooms = (rs as { id?: string; title?: string; namespace?: string; memory_count?: number }[]).map((r) => ({
         id: String(r.id ?? ''),
         title: String(r.title ?? r.id ?? ''),
+        namespace: r.namespace,
         count: (r as { memory_count?: number }).memory_count,
       }));
     }).catch(() => { rooms = []; });
   });
 
-  // ── Room scope (#297): clicking a room loads its memories from the server
-  // (GET /room/memories with /room/recall fallback inside the command).
-  let roomItems = $state<MemoryEntry[] | null>(null);
-  let roomLoading = $state(false);
-
-  async function loadRoom(id: string) {
-    roomLoading = true;
-    try {
-      roomItems = (await uteke.roomMemories(id, { limit: 200 })) ?? [];
-    } catch {
-      roomItems = [];
-    } finally {
-      roomLoading = false;
-    }
-  }
-
-  function toggleRoom(id: string) {
-    if (selectedRoom === id) {
+  // ── Room scope (#297): clicking a room sets the namespace filter to the
+  // room's own namespace — the toolbar dropdown follows, and the list loads
+  // just that namespace's memories. Clicking the room again clears it.
+  function toggleRoom(room: { id: string; namespace?: string }) {
+    if (selectedRoom === room.id) {
       selectedRoom = null;
-      roomItems = null;
+      selectedNamespaces = null;
     } else {
-      selectedRoom = id;
-      loadRoom(id);
+      selectedRoom = room.id;
+      if (room.namespace) selectedNamespaces = [room.namespace];
     }
   }
 
@@ -168,6 +174,18 @@
   function hubMatches(name: string): boolean {
     const q = hubQuery.trim().toLowerCase();
     return !q || name.toLowerCase().includes(q);
+  }
+
+  let visibleHubNamespaces = $derived((hubNamespaces ?? []).filter((ns) => hubMatches(ns.name)));
+  let hubNsHeader = $derived(
+    hubQuery.trim() ? visibleHubNamespaces.length : (hubNamespaces?.length ?? 0),
+  );
+
+  /** Select one namespace as the list scope — the same selectedNamespaces
+      state the toolbar filter renders, so the two always agree. */
+  function selectNsFilter(name: string) {
+    selectedNamespaces =
+      selectedNamespaces?.length === 1 && selectedNamespaces[0] === name ? null : [name];
   }
 
   let visibleRooms = $derived(rooms.filter((r) => hubMatches(r.title || r.id)));
@@ -314,6 +332,11 @@
     loadList();
   });
 
+  // Hub namespace list is global — load once per view mount.
+  $effect(() => {
+    loadHubNamespaces();
+  });
+
   // Standalone hub: tag counts are global, unaffected by the toolbar
   // namespace filter.
   $effect(() => {
@@ -323,15 +346,15 @@
   type ListItem = MemoryEntry & { score?: number };
   const list = $derived.by((): ListItem[] => {
     if (searchResults) return searchResults as ListItem[];
-    if (selectedRoom) return (roomItems ?? []) as ListItem[];
     return pager.items as ListItem[];
   });
-  const isLoading = $derived(searching || pager.loading || roomLoading);
+  const isLoading = $derived(searching || pager.loading);
 </script>
 
 <div class="memory-list-view">
   <aside class="hub-panel">
     <div class="hub-seg" role="group" aria-label="Group memories by">
+      <button class:on={hubGroup === 'namespaces'} onclick={() => (hubGroup = 'namespaces')}>Namespaces</button>
       <button class:on={hubGroup === 'rooms'} onclick={() => (hubGroup = 'rooms')}>Rooms</button>
       <button class:on={hubGroup === 'tags'} onclick={() => (hubGroup = 'tags')}>Tags</button>
     </div>
@@ -350,14 +373,30 @@
       {/if}
     </div>
 
-    {#if hubGroup === 'rooms'}
+    {#if hubGroup === 'namespaces'}
+      <div class="hub-group-label">Namespaces <span class="hub-n">{hubNsHeader}</span></div>
+      {#each visibleHubNamespaces as ns (ns.name)}
+        <button
+          class="hub-item"
+          class:on={selectedNamespaces?.length === 1 && selectedNamespaces[0] === ns.name}
+          onclick={() => selectNsFilter(ns.name)}
+          title="Filter memories by namespace {ns.name}"
+        >
+          <span class="hub-ic">◇</span>
+          <span class="hub-name">{ns.name}</span>
+          <span class="hub-cnt">{ns.count}</span>
+        </button>
+      {:else}
+        <div class="hub-empty">{hubNsLoading ? 'Loading…' : 'No namespaces yet.'}</div>
+      {/each}
+    {:else if hubGroup === 'rooms'}
       <div class="hub-group-label">Rooms <span class="hub-n">{visibleRooms.length}</span></div>
       {#each visibleRooms as room (room.id)}
         <button
           class="hub-item"
           class:on={selectedRoom === room.id}
-          onclick={() => toggleRoom(room.id)}
-          title="Show memories in this room"
+          onclick={() => toggleRoom(room)}
+          title={`Show memories from namespace ${room.namespace ?? '—'}`}
         >
           <span class="hub-ic">◫</span>
           <span class="hub-name">{room.title || room.id}</span>
@@ -512,7 +551,7 @@
   {:else if list.length === 0}
     <EmptyState
       icon={Brain}
-      title={selectedRoom ? 'No memories in this room yet.' : searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
+      title={searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
       subtitle={searchQuery.trim()
         ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
         : `Save your first memory with ${kbdCombo('N')}, or use the button below.`}
@@ -570,7 +609,7 @@
       {/each}
     </div>
 
-    {#if !searchResults && !selectedRoom && pager.hasMore}
+    {#if !searchResults && pager.hasMore}
       <div class="load-more">
         <button onclick={() => pager.loadMore()} disabled={pager.loading}>
           {pager.loading ? 'Loading…' : 'Load more'}
