@@ -22,7 +22,7 @@ export const memory = {
     content,
     tags: opts?.tags ?? [],
     namespace: opts?.namespace ?? null,
-    memory_type: opts?.memory_type ?? null,
+    memoryType: opts?.memory_type ?? null,
     importance: opts?.importance ?? null,
     metadata: opts?.metadata ?? null,
   }),

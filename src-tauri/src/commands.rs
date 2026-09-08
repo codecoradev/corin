@@ -57,6 +57,8 @@ pub struct MemoryEntry {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub memory_type: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,6 +279,7 @@ pub async fn list(
             updated_at: Some(m.updated_at),
             pinned: Some(m.pinned),
             memory_type: Some(m.memory_type),
+            metadata: m.metadata.clone(),
         })
         .collect())
 }
@@ -328,6 +331,7 @@ pub async fn get_memory(
         updated_at: Some(m.updated_at),
         pinned: Some(m.pinned),
         memory_type: Some(m.memory_type),
+        metadata: m.metadata.clone(),
     })
 }
 
@@ -377,6 +381,7 @@ pub async fn get_graph_data(
             updated_at: None,
             pinned: None,
             memory_type: None,
+            metadata: None,
         })
         .collect();
 
@@ -448,6 +453,7 @@ pub async fn get_neighbors(
                 updated_at: Some(m.updated_at),
                 pinned: Some(m.pinned),
                 memory_type: Some(m.memory_type),
+                metadata: m.metadata.clone(),
             });
         }
     }
@@ -768,6 +774,7 @@ pub async fn uteke_list(
             updated_at: Some(m.updated_at),
             pinned: Some(m.pinned),
             memory_type: Some(m.memory_type),
+            metadata: m.metadata.clone(),
         })
         .collect())
 }
@@ -825,6 +832,7 @@ async fn list_multi_namespace(
             updated_at: Some(m.updated_at),
             pinned: Some(m.pinned),
             memory_type: Some(m.memory_type),
+            metadata: m.metadata.clone(),
         })
         .collect())
 }
@@ -870,6 +878,7 @@ pub async fn uteke_get(
         updated_at: Some(m.updated_at),
         pinned: Some(m.pinned),
         memory_type: Some(m.memory_type),
+        metadata: m.metadata.clone(),
     })
 }
 
@@ -942,6 +951,7 @@ pub async fn uteke_graph(
                         updated_at: None,
                         pinned: None,
                         memory_type: None,
+                        metadata: None,
                     })
                     .collect(),
                 edges: graph
@@ -1176,6 +1186,7 @@ pub async fn uteke_room_recall(
             updated_at: Some(r.memory.updated_at),
             pinned: Some(r.memory.pinned),
             memory_type: Some(r.memory.memory_type),
+            metadata: r.memory.metadata.clone(),
         })
         .collect())
 }
@@ -1247,6 +1258,7 @@ pub async fn uteke_room_memories(
                 updated_at: Some(m.updated_at),
                 pinned: Some(m.pinned),
                 memory_type: Some(m.memory_type),
+                metadata: m.metadata.clone(),
             })
             .collect()),
         Err(_) => {
@@ -1268,6 +1280,7 @@ pub async fn uteke_room_memories(
                     updated_at: Some(r.memory.updated_at),
                     pinned: Some(r.memory.pinned),
                     memory_type: Some(r.memory.memory_type),
+                    metadata: r.memory.metadata.clone(),
                 })
                 .collect())
         }

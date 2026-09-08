@@ -792,14 +792,20 @@ export const webHandlers: Record<string, Handler> = {
   // Endpoint-gap wrappers (#216 + #231)
   memory_update: async (p) =>
     req<Record<string, unknown>>('PUT', '/memory', {
-      // Tanpa body(): null di sini disengaja — artinya "hapus field ini"
-      // (semantik PUT /memory desktop), bukan nilai yang perlu dibuang.
-      body: {
-        id: p.id, content: p.content ?? null, tags: p.tags ?? null, metadata: p.metadata ?? null,
-        importance: p.importance ?? null, pinned: p.pinned ?? null, memory_type: p.memoryType ?? null,
-        namespace: (p.namespace as string) ?? undefined,
-        content_type: (p.contentType as string) ?? undefined,
-      } as Payload,
+      // Desktop semantics: absent field = no change. Serializing explicit
+      // nulls here made every partial update WIPE the omitted fields
+      // server-side (Cora critical) — body() drops them instead.
+      body: body({
+        id: p.id,
+        content: p.content,
+        tags: p.tags,
+        metadata: p.metadata,
+        importance: p.importance,
+        pinned: p.pinned,
+        memory_type: p.memoryType,
+        namespace: p.namespace,
+        content_type: p.contentType,
+      }) as Payload,
     }),
   room_remember: async (p) =>
     req<Record<string, unknown>>('POST', '/room/remember', {

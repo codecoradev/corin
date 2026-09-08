@@ -35,6 +35,8 @@ pub struct UtekeMemory {
     pub created_at: String,
     pub updated_at: String,
     pub pinned: bool,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
