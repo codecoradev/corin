@@ -61,12 +61,42 @@
     }
   }
 
-  let rooms = $state<{ id: string; title: string }[]>([]);
+  let rooms = $state<{ id: string; title: string; count?: number }[]>([]);
   $effect(() => {
     uteke.rooms().then((rs) => {
-      rooms = (rs as { id?: string; title?: string }[]).map((r) => ({ id: String(r.id ?? ''), title: String(r.title ?? r.id ?? '') }));
+      rooms = (rs as { id?: string; title?: string; memory_count?: number }[]).map((r) => ({
+        id: String(r.id ?? ''),
+        title: String(r.title ?? r.id ?? ''),
+        count: (r as { memory_count?: number }).memory_count,
+      }));
     }).catch(() => { rooms = []; });
   });
+
+  // ── Room scope (#297): clicking a room loads its memories from the server
+  // (GET /room/memories with /room/recall fallback inside the command).
+  let roomItems = $state<MemoryEntry[] | null>(null);
+  let roomLoading = $state(false);
+
+  async function loadRoom(id: string) {
+    roomLoading = true;
+    try {
+      roomItems = (await uteke.roomMemories(id, { limit: 200 })) ?? [];
+    } catch {
+      roomItems = [];
+    } finally {
+      roomLoading = false;
+    }
+  }
+
+  function toggleRoom(id: string) {
+    if (selectedRoom === id) {
+      selectedRoom = null;
+      roomItems = null;
+    } else {
+      selectedRoom = id;
+      loadRoom(id);
+    }
+  }
 
   /** Client-side tag filter over loaded page items (namespace scope is
       server-side via the pager + selectedNamespaces). Pinned memories float
@@ -325,10 +355,13 @@
     loadHubNamespaces();
   });
 
-  const list = $derived<(MemoryEntry & { score?: number })[]>(
-    (searchResults ?? pager.items) as (MemoryEntry & { score?: number })[]
-  );
-  const isLoading = $derived(searching || pager.loading);
+  type ListItem = MemoryEntry & { score?: number };
+  const list = $derived.by((): ListItem[] => {
+    if (searchResults) return searchResults as ListItem[];
+    if (selectedRoom) return (roomItems ?? []) as ListItem[];
+    return pager.items as ListItem[];
+  });
+  const isLoading = $derived(searching || pager.loading || roomLoading);
 </script>
 
 <div class="memory-list-view">
@@ -375,11 +408,12 @@
         <button
           class="hub-item"
           class:on={selectedRoom === room.id}
-          onclick={() => (selectedRoom = selectedRoom === room.id ? null : room.id)}
-          title="Room scoping lands with room-scoped pager (#297 follow-up)"
+          onclick={() => toggleRoom(room.id)}
+          title="Show memories in this room"
         >
           <span class="hub-ic">◫</span>
           <span class="hub-name">{room.title || room.id}</span>
+          {#if room.count !== undefined}<span class="hub-cnt">{room.count}</span>{/if}
         </button>
       {:else}
         <div class="hub-empty">{hubQuery.trim() ? 'No matches.' : 'No rooms yet.'}</div>
@@ -530,7 +564,7 @@
   {:else if list.length === 0}
     <EmptyState
       icon={Brain}
-      title={searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
+      title={selectedRoom ? 'No memories in this room yet.' : searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
       subtitle={searchQuery.trim()
         ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
         : `Save your first memory with ${kbdCombo('N')}, or use the button below.`}
@@ -588,7 +622,7 @@
       {/each}
     </div>
 
-    {#if !searchResults && pager.hasMore}
+    {#if !searchResults && !selectedRoom && pager.hasMore}
       <div class="load-more">
         <button onclick={() => pager.loadMore()} disabled={pager.loading}>
           {pager.loading ? 'Loading…' : 'Load more'}
