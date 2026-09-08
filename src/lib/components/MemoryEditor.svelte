@@ -407,6 +407,23 @@
     border-color: var(--accent);
   }
 
+  /* WebKit renders native <select> text smaller than the surrounding form
+     controls — drop the native chrome so the font/padding follow ours. */
+  .field select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238B93A7' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+  .field select option {
+    font-size: 0.9rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
   .field input[type='range'] {
     padding: 0;
     height: 6px;
