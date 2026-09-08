@@ -853,8 +853,21 @@
           </div>
         </div>
 
-        <!-- Properties row: title, slug, tags -->
-        {#if showProps}
+        <!-- Properties disclosure: the trigger sits ABOVE the content it
+             expands (clicking grows downward), and new docs skip the toggle —
+             title/slug are required, parent is the primary creation choice. -->
+        {#if !showNewDoc}
+          <button
+            class="props-toggle props-toggle-row"
+            onclick={() => (showProps = !showProps)}
+            aria-expanded={showProps}
+          >
+            <ChevronDown size={12} strokeWidth={2} class={showProps ? "flip" : ""} />
+            Properties
+          </button>
+        {/if}
+
+        {#if showNewDoc || showProps}
           <div class="props-row">
             <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} autofocus />
             <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
@@ -879,10 +892,6 @@
         <!-- Meta bar: version, date + actions -->
         <div class="meta-bar">
           <div class="meta-left">
-            <button class="props-toggle" onclick={() => (showProps = !showProps)}>
-              <ChevronDown size={12} strokeWidth={2} />
-              Properties
-            </button>
             {#if selectedDoc && !showNewDoc}
               <span class="meta-item">v{selectedDoc.version ?? 1}</span>
               {#if selectedDoc.updated_at}
@@ -1441,11 +1450,26 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     padding: 2px 4px;
     border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
   .props-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+  /* Full-width trigger row above the expanding properties. */
+  .props-toggle-row {
+    width: 100%;
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .props-toggle-row :global(svg) {
+    transition: transform 0.12s var(--ease-out);
+  }
+  .props-toggle-row :global(svg.flip) {
+    transform: rotate(180deg);
+  }
 
   .meta-actions {
     display: flex;
