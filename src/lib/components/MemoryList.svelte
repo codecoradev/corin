@@ -76,16 +76,34 @@
     }).catch(() => { rooms = []; });
   });
 
-  // ── Room scope (#297): clicking a room sets the namespace filter to the
-  // room's own namespace — the toolbar dropdown follows, and the list loads
-  // just that namespace's memories. Clicking the room again clears it.
+  // ── Room scope (#297): clicking a room loads THAT room's memories
+  // (GET /room/memories with /room/recall fallback inside the command) and
+  // syncs the namespace filter to the room's namespace so the toolbar agrees
+  // with what's on screen. Changing the toolbar filter drops the room scope.
+  let roomItems = $state<MemoryEntry[] | null>(null);
+  let roomLoading = $state(false);
+
+  async function loadRoom(id: string) {
+    roomLoading = true;
+    try {
+      roomItems = (await uteke.roomMemories(id, { limit: 200 })) ?? [];
+    } catch {
+      roomItems = [];
+    } finally {
+      roomLoading = false;
+    }
+  }
+
   function toggleRoom(room: { id: string; namespace?: string }) {
     if (selectedRoom === room.id) {
       selectedRoom = null;
+      roomItems = null;
       selectedNamespaces = null;
     } else {
       selectedRoom = room.id;
+      roomItems = null;
       if (room.namespace) selectedNamespaces = [room.namespace];
+      loadRoom(room.id);
     }
   }
 
@@ -346,9 +364,10 @@
   type ListItem = MemoryEntry & { score?: number };
   const list = $derived.by((): ListItem[] => {
     if (searchResults) return searchResults as ListItem[];
+    if (selectedRoom) return roomItems ?? [];
     return pager.items as ListItem[];
   });
-  const isLoading = $derived(searching || pager.loading);
+  const isLoading = $derived(searching || pager.loading || roomLoading);
 </script>
 
 <div class="memory-list-view">
@@ -481,7 +500,14 @@
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
     <button class="graph-link" title="Open graph exploration" onclick={() => ongraph()}>⌗ Graph</button>
-    <NamespaceFilter selected={selectedNamespaces} onchange={(ns) => (selectedNamespaces = ns)} />
+    <NamespaceFilter
+      selected={selectedNamespaces}
+      onchange={(ns) => {
+        selectedRoom = null;
+        roomItems = null;
+        selectedNamespaces = ns;
+      }}
+    />
   </div>
 
   <div class="scroll-area">
@@ -551,7 +577,7 @@
   {:else if list.length === 0}
     <EmptyState
       icon={Brain}
-      title={searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
+      title={selectedRoom ? 'No memories in this room yet.' : searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
       subtitle={searchQuery.trim()
         ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
         : `Save your first memory with ${kbdCombo('N')}, or use the button below.`}
@@ -609,7 +635,7 @@
       {/each}
     </div>
 
-    {#if !searchResults && pager.hasMore}
+    {#if !searchResults && !selectedRoom && pager.hasMore}
       <div class="load-more">
         <button onclick={() => pager.loadMore()} disabled={pager.loading}>
           {pager.loading ? 'Loading…' : 'Load more'}
