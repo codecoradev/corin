@@ -28,8 +28,8 @@
   // ── Memories hub grouping: Namespaces | Rooms | Tags ───────────────────
   // Agents lost its hub slot: provenance authors are rare, so the group sat
   // empty; namespaces are always populated and double as a list filter.
-  type HubGroup = 'namespaces' | 'rooms' | 'tags';
-  let hubGroup = $state<HubGroup>('namespaces');
+  type HubGroup = 'rooms' | 'tags';
+  let hubGroup = $state<HubGroup>('rooms');
   let selectedRoom = $state<string | null>(null);
   let selectedTag = $state<string | null>(null);
 
@@ -45,21 +45,6 @@
       .map(([name, count]) => ({ name, count }));
   });
 
-  // Hub Namespaces group — server list with real counts, always populated.
-  let hubNamespaces = $state<{ name: string; count: number }[] | null>(null);
-  let hubNsLoading = $state(false);
-
-  async function loadHubNamespaces() {
-    hubNsLoading = true;
-    try {
-      const rows = await uteke.namespacesWithCounts();
-      hubNamespaces = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
-    } catch {
-      hubNamespaces = [];
-    } finally {
-      hubNsLoading = false;
-    }
-  }
 
   let rooms = $state<{ id: string; title: string; count?: number }[]>([]);
   $effect(() => {
@@ -185,19 +170,6 @@
     return !q || name.toLowerCase().includes(q);
   }
 
-  let visibleHubNamespaces = $derived((hubNamespaces ?? []).filter((ns) => hubMatches(ns.name)));
-  let hubNsHeader = $derived(
-    hubQuery.trim() ? visibleHubNamespaces.length : (hubNamespaces?.length ?? 0),
-  );
-
-  /** Toggle a namespace as the server-side list scope. Drives the same
-      selectedNamespaces state as the toolbar filter, so the two stay in sync
-      (null = all namespaces, single-item array = one namespace). */
-  function toggleNsFilter(name: string) {
-    selectedNamespaces =
-      selectedNamespaces?.length === 1 && selectedNamespaces[0] === name ? null : [name];
-  }
-
   let visibleRooms = $derived(rooms.filter((r) => hubMatches(r.title || r.id)));
 
   let visibleTags = $derived.by(() => {
@@ -223,9 +195,7 @@
         serverTags = null;
         return;
       }
-      // Same single-namespace scope as search (searchNs) so the panel
-      // follows the namespace filter.
-      const rows = await system.listTags(searchNs ?? undefined);
+      const rows = await system.listTags();
       serverTags = rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
     } catch {
       serverTags = null; // offline / old backend → page-derived fallback
@@ -344,15 +314,10 @@
     loadList();
   });
 
-  // Tag counts follow the same single-namespace scope as search.
+  // Standalone hub: tag counts are global, unaffected by the toolbar
+  // namespace filter.
   $effect(() => {
-    searchNs;
     loadTags();
-  });
-
-  // Hub namespace list is global — load once per view mount.
-  $effect(() => {
-    loadHubNamespaces();
   });
 
   type ListItem = MemoryEntry & { score?: number };
@@ -367,7 +332,6 @@
 <div class="memory-list-view">
   <aside class="hub-panel">
     <div class="hub-seg" role="group" aria-label="Group memories by">
-      <button class:on={hubGroup === 'namespaces'} onclick={() => (hubGroup = 'namespaces')}>Namespaces</button>
       <button class:on={hubGroup === 'rooms'} onclick={() => (hubGroup = 'rooms')}>Rooms</button>
       <button class:on={hubGroup === 'tags'} onclick={() => (hubGroup = 'tags')}>Tags</button>
     </div>
@@ -386,23 +350,7 @@
       {/if}
     </div>
 
-    {#if hubGroup === 'namespaces'}
-      <div class="hub-group-label">Namespaces <span class="hub-n">{hubNsHeader}</span></div>
-      {#each visibleHubNamespaces as ns (ns.name)}
-        <button
-          class="hub-item"
-          class:on={selectedNamespaces?.length === 1 && selectedNamespaces[0] === ns.name}
-          onclick={() => toggleNsFilter(ns.name)}
-          title="Filter memories by namespace {ns.name}"
-        >
-          <span class="hub-ic">◇</span>
-          <span class="hub-name">{ns.name}</span>
-          <span class="hub-cnt">{ns.count}</span>
-        </button>
-      {:else}
-        <div class="hub-empty">{hubNsLoading ? 'Loading…' : 'No namespaces yet.'}</div>
-      {/each}
-    {:else if hubGroup === 'rooms'}
+    {#if hubGroup === 'rooms'}
       <div class="hub-group-label">Rooms <span class="hub-n">{visibleRooms.length}</span></div>
       {#each visibleRooms as room (room.id)}
         <button
@@ -795,6 +743,9 @@
     gap: 10px;
     margin-bottom: 16px;
     flex-wrap: wrap;
+    /* Matches the cards' right edge: .scroll-area's 12px inset + the 10px
+       scrollbar gutter drawn inside it. */
+    padding-right: 22px;
   }
 
   .search-bar {
