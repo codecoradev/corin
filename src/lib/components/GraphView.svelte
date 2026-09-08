@@ -107,7 +107,9 @@
     hasMoreNodes = visibleCount < fullPool.length;
     totalNodesShown = nodes.length;
     totalEdgesShown = edges.length;
-    settle(Math.min(260, 120 + nodes.length));
+    // Iterations scale inversely with node count: O(n²) steps keep the
+    // one-shot settle inside a reasonable sync budget on big graphs.
+    settle(Math.max(80, Math.min(260, Math.round(90_000 / Math.max(60, nodes.length)))));
   }
   const EXPAND_LIMIT = 5;
   // Matches uteke memory/node IDs (UUID v7) used as fallback labels
@@ -762,8 +764,9 @@
 
   .graph-legend {
     display: flex;
-    gap: 16px;
-    padding: 6px 0 0;
+    align-items: center;
+    gap: 18px;
+    padding: 8px 16px 6px;
     font-size: 0.68rem;
     color: var(--text-muted);
   }
