@@ -63,6 +63,9 @@ and a large overlay/maintenance fix batch.
   flips instead of freezing boot-time colors (#325).
 - **Recycle bin** — deleting from the detail panel prunes the row locally and
   guards double-deletes (#325).
+- **Updater signatures** — `createUpdaterArtifacts` re-enabled in the bundle
+  config, so `tauri build` signs the updater artifacts again and the release
+  pipeline can assemble `latest.json`.
 - **UI polish** — sidebar footer alignment, uniform rail tiles, memories
   toolbar rhythm, scrollbar breathing room, heatmap legend/date labels, full
   memory ID with copy in the detail panel, author line hidden when absent
