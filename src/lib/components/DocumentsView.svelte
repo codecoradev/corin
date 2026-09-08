@@ -821,6 +821,20 @@
             {/if}
           </div>
 
+          {#if showNewDoc}
+            <div class="tb-parent">
+              <span class="tb-parent-label">Parent</span>
+              <div class="tb-parent-select">
+                <SearchableSelect
+                  options={parentOptions}
+                  bind:value={newDocParent}
+                  emptyLabel="No parent — root level"
+                  placeholder="Search documents…"
+                />
+              </div>
+            </div>
+          {/if}
+
           <!-- View mode toggle -->
           <div class="mode-toggle">
             <button
@@ -872,20 +886,6 @@
             <input type="text" class="prop-input title-input" placeholder="Document title..." bind:value={editorTitle} autofocus />
             <input type="text" class="prop-input slug-input" placeholder="slug-name" bind:value={editorSlug} />
             <input type="text" class="prop-input tags-input" placeholder="tag1, tag2" bind:value={editorTags} />
-          </div>
-        {/if}
-
-        {#if showNewDoc}
-          <div class="parent-row">
-            <span class="parent-label">Parent</span>
-            <div class="parent-select">
-              <SearchableSelect
-                options={parentOptions}
-                bind:value={newDocParent}
-                emptyLabel="No parent — root level"
-                placeholder="Search documents…"
-              />
-            </div>
           </div>
         {/if}
 
@@ -1380,23 +1380,24 @@
     flex-shrink: 0;
     animation: slideDown 0.12s ease;
   }
-  .parent-row {
+  /* New-doc parent picker lives in the top-bar (left of the mode toggle):
+     one compact row, no wasted gutter below it. */
+  .tb-parent {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    animation: slideDown 0.12s ease;
+    gap: 8px;
+    flex: 0 1 auto;
+    min-width: 240px;
+    max-width: 420px;
   }
-  .parent-label {
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+  .tb-parent-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--text-muted);
     flex-shrink: 0;
   }
-  .parent-select { flex: 1; max-width: 420px; }
+  .tb-parent-select { flex: 1; }
   .prop-input {
     padding: 4px 8px;
     background: var(--bg-tertiary);
