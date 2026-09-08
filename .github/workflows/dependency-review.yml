@@ -23,7 +23,3 @@ jobs:
         # (Settings → Code security & analysis → Dependency graph).
         # Step-level soft-fail keeps the check green; remove once enabled.
         continue-on-error: true
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
