@@ -129,7 +129,7 @@ impl MemoryBackend for UtekeAdapter {
         let client = self.client.clone();
         async move {
             client
-                .remember(&content, &parsed_tags, namespace.as_deref())
+                .remember(&content, &parsed_tags, namespace.as_deref(), None)
                 .await
         }
     }

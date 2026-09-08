@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { docs, system, uteke } from '../ts/ipc';
+  import { docs, system, uteke, utekeServer } from '../ts/ipc';
   import { has as compatHas, minVersion } from '../ts/compat';
   import { ConfirmDialog, toastStore } from '../ui';
   import { ArrowRightLeft, Trash2 } from 'lucide-svelte';
@@ -24,6 +24,11 @@
 
   let renameTarget = $state<string | null>(null);
   let renameTo = $state('');
+  // Explicit namespace creation: uteke has no create endpoint — a namespace
+  // comes into being together with its first memory, so we seed a small
+  // placeholder the user can replace or delete.
+  let showNewNs = $state(false);
+  let newNsName = $state('');
   let deleteTarget = $state<string | null>(null);
   let deleteStrategy = $state<'refuse' | 'merge' | 'deprecate'>('refuse');
   let deleteMergeTarget = $state('');
@@ -67,6 +72,27 @@
     selectedNs = ns;
     detailPager = createPager({ namespace: ns, pageSize: 20, useUteke: true });
     await detailPager.loadInitial();
+  }
+
+  async function performCreateNs() {
+    const name = newNsName.trim();
+    if (!name) return;
+    busy = true;
+    try {
+      await utekeServer.remember(
+        `Namespace "${name}" created via CorIn — replace or delete this placeholder memory.`,
+        { tags: ['namespace-placeholder'], namespace: name, metadata: { author: 'human' } },
+      );
+      toastStore.success(`Namespace ${name} created`);
+      showNewNs = false;
+      newNsName = '';
+      await loadNamespaces();
+      await selectNs(name);
+    } catch (e) {
+      toastStore.error(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      busy = false;
+    }
   }
 
   async function performRename() {
@@ -116,6 +142,9 @@
   <div class="ns-header">
     <h2>Namespaces</h2>
     <span class="count">{namespaces.length} namespace{namespaces.length === 1 ? '' : 's'}</span>
+    {#if nsSupported}
+      <button class="new-ns-btn" onclick={() => { showNewNs = true; newNsName = ''; }}>+ New namespace</button>
+    {/if}
     {#if nsSupported === false}
       <span class="upgrade-hint" title="Namespace management needs uteke ≥ {minVersion('namespaceManage')}">
         manage needs uteke ≥ {minVersion('namespaceManage')}
@@ -290,6 +319,16 @@
   .ns-act:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
   .ns-act:disabled { opacity: 0.4; cursor: not-allowed; }
   .ns-act.danger:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+  .new-ns-btn {
+    padding: 4px 12px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .new-ns-btn:hover { border-color: var(--accent); color: var(--accent); }
   .upgrade-hint {
     font-size: 0.72rem; color: var(--text-muted);
     border: 1px solid var(--border); border-radius: var(--radius-pill);
@@ -305,6 +344,21 @@
   }
   .strategy { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 0.8rem; color: var(--text-primary); }
 </style>
+
+{#if showNewNs}
+  <ConfirmDialog
+    open
+    title="New namespace"
+    message="uteke creates a namespace together with its first memory — a small placeholder is seeded and can be replaced or deleted."
+    confirmLabel={newNsName.trim() ? 'Create' : ''}
+    onconfirm={performCreateNs}
+    oncancel={() => (showNewNs = false)}
+  >
+    <div class="dlg">
+      <input class="dlg-input" type="text" bind:value={newNsName} placeholder="namespace-name" />
+    </div>
+  </ConfirmDialog>
+{/if}
 
 {#if renameTarget}
   <ConfirmDialog

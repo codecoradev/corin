@@ -11,6 +11,7 @@
   import { version as APP_VERSION } from '../../../package.json';
   import AgentsSection from './settings/AgentsSection.svelte';
   import LifecycleView from './LifecycleView.svelte';
+  import TypeBackfill from './settings/TypeBackfill.svelte';
   import NamespaceManager from './settings/NamespaceManager.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X, Settings } from 'lucide-svelte';
@@ -187,6 +188,7 @@
         <div class="lifecycle-embed">
           <LifecycleView namespace={defaultNamespace || null} onmemoryclick={(id) => onopenmemory?.(id)} deletedMemoryId={deletedMemoryId} />
         </div>
+        <TypeBackfill />
       {:else if activeTab === 'about'}
         <section class="content-section">
           <h3>About</h3>

@@ -673,6 +673,7 @@ impl UtekeClient {
         content: &str,
         tags: &[String],
         namespace: Option<&str>,
+        metadata: Option<&serde_json::Value>,
     ) -> Result<String, String> {
         let mut body = serde_json::json!({
             "content": content,
@@ -680,6 +681,11 @@ impl UtekeClient {
         });
         if let Some(ns) = namespace {
             body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(md) = metadata {
+            // Provenance slot (e.g. {"author":"human"}) — accepted by the
+            // server on create and round-tripped verbatim.
+            body["metadata"] = md.clone();
         }
 
         #[derive(Deserialize)]
@@ -1490,6 +1496,7 @@ impl UtekeClient {
         pinned: Option<bool>,
         memory_type: Option<&str>,
         namespace: Option<&str>,
+        content_type: Option<&str>,
     ) -> Result<serde_json::Value, String> {
         let mut body = serde_json::json!({ "id": id });
         if let Some(c) = content {
@@ -1513,6 +1520,9 @@ impl UtekeClient {
         if let Some(ns) = namespace {
             // Plain namespace move (#1181) — single UPDATE, no re-embed.
             body["namespace"] = serde_json::Value::String(ns.to_string());
+        }
+        if let Some(ct) = content_type {
+            body["content_type"] = serde_json::Value::String(ct.to_string());
         }
         let resp = self
             .authed(self.client.put(format!("{}/memory", self.base_url)))

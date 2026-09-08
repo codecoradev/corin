@@ -5,7 +5,8 @@
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import NamespaceFilter from './NamespaceFilter.svelte';
-  import { FileText, Brain, X, Pin } from 'lucide-svelte';
+  import { FileText, Brain, X, Pin, User, Bot } from 'lucide-svelte';
+  import { authorClass } from '../utils/author';
   import { Spinner, EmptyState, Button } from '../ui';
   import { relativeTime } from '../utils/format';
   import { kbdCombo } from '../utils/platform';
@@ -31,26 +32,6 @@
   let hubGroup = $state<HubGroup>('namespaces');
   let selectedRoom = $state<string | null>(null);
   let selectedTag = $state<string | null>(null);
-
-  const AUTHOR_COLORS = ['#7CB2FF', '#C4A7FF', '#4FD8D2', '#E89B3C', '#34D399', '#F87171', '#A78BFA', '#FBBF24'];
-
-  /** Stable per-agent color: hash name -> palette index. Deterministic across sessions. */
-  function authorColor(name: string): string {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    return AUTHOR_COLORS[h % AUTHOR_COLORS.length];
-  }
-
-  function authorInitial(name: string): string {
-    return (name.trim()[0] || '?').toUpperCase();
-  }
-
-  /** Provenance is stored in metadata.author (verified v0.16.0 round-trip). */
-  function memoryAuthor(m: MemoryEntry & { score?: number }): string | null {
-    const meta = (m as { metadata?: Record<string, unknown> }).metadata;
-    const a = meta?.author;
-    return typeof a === 'string' && a.trim() ? a.trim() : null;
-  }
 
   // Hub Namespaces state — derivations live with the hub filter below.
 
@@ -88,10 +69,16 @@
   });
 
   /** Client-side tag filter over loaded page items (namespace scope is
-      server-side via the pager + selectedNamespaces). */
+      server-side via the pager + selectedNamespaces). Pinned memories float
+      to the top of the browsed list; search keeps its relevance order. */
   let filteredList = $derived.by(() => {
     let items = list;
     if (selectedTag) items = items.filter((m) => m.tags.includes(selectedTag!));
+    if (!searchResults) {
+      items = [...items].sort(
+        (a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false),
+      );
+    }
     return items;
   });
 
@@ -569,9 +556,10 @@
             {#if m.pinned}
               <span class="card-pin" title="Pinned"><Pin size={11} strokeWidth={2.5} /></span>
             {/if}
-            {#if memoryAuthor(m)}
-              <span class="card-avatar" style="background: {authorColor(memoryAuthor(m)!)}">{authorInitial(memoryAuthor(m)!)}</span>
-              <span class="card-author">{memoryAuthor(m)}</span>
+            {#if authorClass(m) === 'human'}
+              <span class="author-badge human" title="Written by a human"><User size={11} strokeWidth={2.25} /> Human</span>
+            {:else}
+              <span class="author-badge" title="Written by an agent"><Bot size={11} strokeWidth={2.25} /> Agent</span>
             {/if}
             {#if m.created_at}<span class="card-time">{relativeTime(m.created_at)}</span>{/if}
           </div>
@@ -742,19 +730,21 @@
     gap: 7px;
     margin-bottom: 7px;
   }
-  .card-avatar {
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
+  .author-badge {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 0.6rem;
-    font-weight: 700;
-    color: var(--bg-primary);
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-hover);
+    color: var(--text-muted);
+    font-size: 0.68rem;
     flex-shrink: 0;
   }
-  .card-author { font-size: 0.74rem; font-weight: 600; color: var(--text-primary); }
+  .author-badge.human {
+    background: var(--color-blue-bg);
+    color: var(--accent);
+  }
   .card-pin { color: var(--accent); display: inline-flex; align-items: center; flex-shrink: 0; }
   .card-time { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
 

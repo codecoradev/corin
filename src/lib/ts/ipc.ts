@@ -16,12 +16,15 @@ export const memory = {
     namespace?: string;
     content_type?: string;
     importance?: number;
+    /** Provenance slot — e.g. { author: 'human' } for UI-created memories. */
+    metadata?: Record<string, unknown>;
   }) => call<string>('remember', {
     content,
     tags: opts?.tags ?? [],
     namespace: opts?.namespace ?? null,
     content_type: opts?.content_type ?? null,
     importance: opts?.importance ?? null,
+    metadata: opts?.metadata ?? null,
   }),
   recall: (query: string, opts?: { namespace?: string; limit?: number }) =>
     call<SearchResult[]>('recall', { query, namespace: opts?.namespace ?? null, limit: opts?.limit ?? null }),
@@ -171,11 +174,12 @@ export const utekeServer = {
       limit: opts?.limit ?? null,
     }),
 
-  remember: (content: string, opts?: { tags?: string[]; namespace?: string }) =>
+  remember: (content: string, opts?: { tags?: string[]; namespace?: string; metadata?: Record<string, unknown> }) =>
     call<{ id?: string; duplicate: boolean; existing_id?: string; existing_content?: string; score?: number; hint?: string }>('uteke_remember', {
       content,
       tags: opts?.tags ?? null,
       namespace: opts?.namespace ?? null,
+      metadata: opts?.metadata ?? null,
     }),
 
   forget: (id: string) => call<void>('uteke_forget', { id }),
@@ -297,13 +301,14 @@ export const docs = {
       id: opts.id ?? null,
     }),
 
-  create: (slug: string, title: string, content: string, opts?: { tags?: string[]; parent?: string }) =>
+  create: (slug: string, title: string, content: string, opts?: { tags?: string[]; parent?: string; metadata?: Record<string, unknown> }) =>
     call<DocEntry>('doc_create', {
       slug,
       title,
       content,
       tags: opts?.tags ?? null,
       parent: opts?.parent ?? null,
+      metadata: opts?.metadata ?? null,
     }),
 
   /** Update an existing document (by id or slug). */
@@ -313,6 +318,7 @@ export const docs = {
     title?: string;
     content?: string;
     tags?: string[];
+    metadata?: Record<string, unknown>;
   }) =>
     call<DocEntry>('doc_update', {
       id: opts.id ?? null,
@@ -320,6 +326,7 @@ export const docs = {
       title: opts.title ?? null,
       content: opts.content ?? null,
       tags: opts.tags ?? null,
+      metadata: opts.metadata ?? null,
     }),
 
   search: (query: string, opts?: { limit?: number; mode?: string }) =>
@@ -449,6 +456,7 @@ export async function memoryUpdate(params: MemoryUpdateParams): Promise<Record<s
     pinned: params.pinned ?? null,
     memoryType: params.memory_type ?? null,
     namespace: params.namespace ?? null,
+    contentType: params.content_type ?? null,
   });
 }
 

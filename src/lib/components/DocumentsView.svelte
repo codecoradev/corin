@@ -40,25 +40,24 @@
   // Colors reference the app's CSS custom properties (src/app.css) so the
   // editor stays in lockstep with the rest of the UI. Resolved once at module
   // load; CodeMirror accepts these as opaque CSS strings.
-  const root = typeof document !== 'undefined' ? document.documentElement : null;
-  const v = (name: string, fallback: string): string =>
-    root ? getComputedStyle(root).getPropertyValue(name).trim() || fallback : fallback;
-
-  const INK = v('--color-text', '#cdd6f4');
-  const SURFACE = v('--color-crust', '#1e1e2e');
-  const MANTLE = v('--color-mantle', '#181825');
-  const OVERLAY = v('--color-overlay', '#6c7086');
-  const ROSE = v('--color-red', '#f38ba8');
-  const BLUE = v('--color-blue', '#89b4fa');
-  const GREEN = v('--color-green', '#a6e3a1');
-  const YELLOW = v('--color-yellow', '#f9e2af');
-  const PEACH = v('--color-peach', '#fab387');
-  const MAUVE = v('--color-mauve', '#cba6f7');
-  const TEAL = v('--color-teal', '#94e2d5');
-  const SUBTEXT = v('--color-subtext', '#a6adc8');
-  const SURFACE0 = v('--color-surface0', '#313244');
-  const SURFACE1 = v('--color-surface1', '#45475a');
-  const CARET = v('--color-rosewater', '#f5e0dc');
+  // Colors as var() references, not boot-time snapshots — the CodeMirror
+  // theme follows live dark/light flips (the old getComputedStyle copy
+  // froze whatever theme the app booted in).
+  const INK = 'var(--color-text, #cdd6f4)';
+  const SURFACE = 'var(--color-crust, #1e1e2e)';
+  const MANTLE = 'var(--color-mantle, #181825)';
+  const OVERLAY = 'var(--color-overlay, #6c7086)';
+  const ROSE = 'var(--color-red, #f38ba8)';
+  const BLUE = 'var(--color-blue, #89b4fa)';
+  const GREEN = 'var(--color-green, #a6e3a1)';
+  const YELLOW = 'var(--color-yellow, #f9e2af)';
+  const PEACH = 'var(--color-peach, #fab387)';
+  const MAUVE = 'var(--color-mauve, #cba6f7)';
+  const TEAL = 'var(--color-teal, #94e2d5)';
+  const SUBTEXT = 'var(--color-subtext, #a6adc8)';
+  const SURFACE0 = 'var(--color-surface0, #313244)';
+  const SURFACE1 = 'var(--color-surface1, #45475a)';
+  const CARET = 'var(--color-rosewater, #f5e0dc)';
 
   const catppuccinDarkTheme = EditorView.theme({
     '&': { color: INK, backgroundColor: SURFACE, height: '100%' },
@@ -469,6 +468,11 @@
         });
         // create returns only {id, slug} — re-fetch for full state
         const full = await docs.get({ slug: editorSlug });
+        // Provenance: human wrote this via the UI (doc/create ignores
+        // metadata, so the stamp rides on a follow-up update).
+        try {
+          await docs.update({ id: full.id, metadata: { author: 'human' } });
+        } catch { /* stamping is best-effort */ }
         selectedDoc = full;
         showNewDoc = false;
         // Reveal the new doc inside its parent branch.

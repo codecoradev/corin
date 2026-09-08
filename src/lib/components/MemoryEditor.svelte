@@ -71,6 +71,8 @@
         const result = await utekeServer.remember(content, {
           tags,
           namespace: ns || undefined,
+          // UI-created memories are human-authored provenance.
+          metadata: memory ? undefined : { author: 'human' },
         });
         if (result.duplicate && !memory) {
           // Only block new memories, not edits
@@ -105,6 +107,8 @@
             content_type: contentType,
             importance,
             namespace: ns || undefined,
+            // Re-created record keeps the original provenance.
+            metadata: { author: (memory.metadata?.author as string) ?? 'human' },
           });
           if (newId) {
             await memoryApi.forget(memory.id);
@@ -116,6 +120,7 @@
           content_type: contentType,
           importance,
           namespace: ns || undefined,
+          metadata: { author: 'human' },
         });
       }
 

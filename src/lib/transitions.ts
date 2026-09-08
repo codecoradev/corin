@@ -42,9 +42,10 @@ export const springOut: EasingFunc = (t: number) => {
 
 // ── View & content transitions ──────────────────────────────────
 
-/** Quick fade for view switches (150ms) */
-export const fadeQuick = guarded((node: Element): TransitionConfig =>
-  fade(node, { duration: 150 }));
+/** Quick fade for view switches (150ms, params-aware) */
+export const fadeQuick = guarded(
+  (node: Element, params?: { duration?: number }): TransitionConfig =>
+    fade(node, { duration: params?.duration ?? 150 }));
 
 /** Fade + subtle upward slide for list items / content (200ms) */
 export const fadeUp = guarded((node: Element, delay: number = 0): TransitionConfig =>

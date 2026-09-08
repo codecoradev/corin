@@ -1,23 +1,12 @@
 <script lang="ts">
   import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
-  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link, Pin } from 'lucide-svelte';
+  import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link, Pin, User, Bot } from 'lucide-svelte';
+  import { authorClass } from '../utils/author';
   import { has as compatHas, minVersion } from '../ts/compat';
   import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
 
-  // Author identity — provenance slot is metadata.author (verified v0.16.0).
-  const AUTHOR_COLORS = ['#7CB2FF', '#C4A7FF', '#4FD8D2', '#E89B3C', '#34D399', '#F87171', '#A78BFA', '#FBBF24'];
-  function authorColor(name: string): string {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    return AUTHOR_COLORS[h % AUTHOR_COLORS.length];
-  }
-  let author = $derived.by(() => {
-    const meta = (memory as { metadata?: Record<string, unknown> } | null)?.metadata;
-    const a = meta?.author;
-    return typeof a === 'string' && a.trim() ? a.trim() : null;
-  });
   let copiedId = $state(false);
   async function copyId() {
     try {
@@ -145,7 +134,7 @@
           // explicit edge. (Semantic "neighbors" are computed, not edges.)
           const explicit = new Set<string>();
           try {
-            const g = await graphApi.getData({ namespace: null });
+            const g = await graphApi.getData({});
             for (const e of g.edges) {
               if (e.source === memoryId) explicit.add(e.target);
               if (e.target === memoryId) explicit.add(e.source);
@@ -335,17 +324,16 @@
   {:else}
     <div class="detail-body">
       <div class="content-section">
-        {#if author || memory.created_at}
-          <div class="author-head">
-            {#if author}
-              <span class="author-avatar" style="background: {authorColor(author)}">{author.trim()[0].toUpperCase()}</span>
-              <span class="author-name">{author}</span>
-            {/if}
-            {#if memory.created_at}
-              <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
-            {/if}
-          </div>
-        {/if}
+        <div class="author-head">
+          {#if authorClass(memory) === 'human'}
+            <span class="author-badge human" title="Written by a human"><User size={11} strokeWidth={2.25} /> Human</span>
+          {:else}
+            <span class="author-badge" title="Written by an agent"><Bot size={11} strokeWidth={2.25} /> Agent</span>
+          {/if}
+          {#if memory.created_at}
+            <span class="author-time" title={new Date(memory.created_at).toLocaleString()}>{relativeTime(memory.created_at)}</span>
+          {/if}
+        </div>
         <pre class="content-text">{memory.content}</pre>
 
         <div class="meta-grid">
@@ -652,19 +640,20 @@
     gap: 9px;
     margin-bottom: 14px;
   }
-  .author-avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-md);
+  .author-badge {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--bg-primary);
-    flex-shrink: 0;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-hover);
+    color: var(--text-muted);
+    font-size: 0.72rem;
   }
-  .author-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+  .author-badge.human {
+    background: var(--color-blue-bg);
+    color: var(--accent);
+  }
   .author-time { margin-left: auto; font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); }
 
   .id-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }

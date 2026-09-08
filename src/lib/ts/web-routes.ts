@@ -283,7 +283,7 @@ async function rememberWithDupCheck(p: Payload): Promise<{ id?: string; duplicat
       return { duplicate: true, existing_id: dup.memory.id, existing_content: dup.memory.content, score: dup.score, hint: 'This memory appears to be a duplicate of an existing one.' };
     }
   } catch { /* recall failure must not block insertion */ }
-  const { id } = await req<{ id: string }>('POST', '/remember', { body: { content, tags, namespace: p.namespace ?? undefined } });
+  const { id } = await req<{ id: string }>('POST', '/remember', { body: { content, tags, namespace: p.namespace ?? undefined, metadata: p.metadata ?? undefined } });
   return { id, duplicate: false };
 }
 
@@ -489,7 +489,7 @@ export const webHandlers: Record<string, Handler> = {
   set_settings: async (p) => { lsSet(LS_SETTINGS, p.settings); },
 
   // Memories
-  remember: async (p) => (await req<{ id: string }>('POST', '/remember', { body: { content: p.content, tags: p.tags, namespace: p.namespace ?? undefined } })).id,
+  remember: async (p) => (await req<{ id: string }>('POST', '/remember', { body: { content: p.content, tags: p.tags, namespace: p.namespace ?? undefined, metadata: p.metadata ?? undefined } })).id,
   recall: async (p): Promise<SearchResult[]> =>
     (await recallRows(String(p.query), p.namespace as string | null, typeof p.limit === 'number' ? p.limit : 10))
       .map((r) => ({ id: r.memory.id, content: r.memory.content, score: r.score, tags: r.memory.tags ?? [] })),
@@ -753,7 +753,7 @@ export const webHandlers: Record<string, Handler> = {
     // Heuristik uuid-vs-slug dari uteke_client.rs
     const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     const key: Payload = p.id && isUuid(String(p.id)) ? { id: p.id } : { slug: p.slug ?? p.id };
-    return req<DocEntry>('POST', '/doc/update', { body: { ...key, title: p.title ?? undefined, content: p.content ?? undefined, tags: p.tags ?? undefined } });
+    return req<DocEntry>('POST', '/doc/update', { body: { ...key, title: p.title ?? undefined, content: p.content ?? undefined, tags: p.tags ?? undefined, metadata: p.metadata ?? undefined } });
   },
   doc_search: async (p): Promise<DocSearchResult[]> =>
     req<DocSearchResult[]>('POST', '/doc/search', {
