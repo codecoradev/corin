@@ -4,7 +4,6 @@
   import { createPager } from '../stores/pagination.svelte';
   import { invalidateAll } from '../stores/cache.svelte';
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
-  import NamespaceFilter from './NamespaceFilter.svelte';
   import { FileText, Brain, X, Pin, User, Bot } from 'lucide-svelte';
   import { authorClass } from '../utils/author';
   import { Spinner, EmptyState, Button } from '../ui';
@@ -25,13 +24,50 @@
 
   let { namespace, onmemoryclick, onnewmemory, ondocumentclick, ongraph }: Props = $props();
 
-  // ── Memories hub grouping: Namespaces | Rooms | Tags ───────────────────
-  // Agents lost its hub slot: provenance authors are rare, so the group sat
-  // empty; namespaces are always populated and double as a list filter.
+  // ── Memories hub: Rooms | Tags facets + destination navigation ─────────
   type HubGroup = 'namespaces' | 'rooms' | 'tags';
   let hubGroup = $state<HubGroup>('namespaces');
-  let selectedRoom = $state<string | null>(null);
-  let selectedTag = $state<string | null>(null);
+
+  /**
+   * Single source of scope truth — where the user has navigated to. Sidebar
+   * clicks set it; the content area (list, chips, load-more) derives from
+   * it; the toolbar NamespaceFilter refines only within 'all'. One
+   * destination at a time, so the controls can never fight each other.
+   */
+  type Destination =
+    | { type: 'all' }
+    | { type: 'namespace'; name: string }
+    | { type: 'room'; id: string; title: string; namespace?: string }
+    | { type: 'tag'; name: string };
+  let destination = $state<Destination>({ type: 'all' });
+
+  function isActive(
+    d: { type: Destination['type']; id?: string; name?: string },
+  ): boolean {
+    if (destination.type !== d.type) return false;
+    switch (destination.type) {
+      case 'namespace':
+        return d.name === destination.name;
+      case 'room':
+        return d.id === destination.id;
+      case 'tag':
+        return d.name === destination.name;
+      default:
+        return true;
+    }
+  }
+  function goNamespace(name: string) {
+    destination = { type: 'namespace', name };
+  }
+  function goRoom(room: { id: string; title: string; namespace?: string }) {
+    destination = { type: 'room', id: room.id, title: room.title, namespace: room.namespace };
+  }
+  function goTag(name: string) {
+    destination = { type: 'tag', name };
+  }
+  function goAll() {
+    destination = { type: 'all' };
+  }
 
   // Hub Namespaces state — derivations live with the hub filter below.
 
@@ -55,10 +91,21 @@
   async function loadHubNamespaces() {
     hubNsLoading = true;
     try {
-      const rows = await uteke.namespacesWithCounts();
-      hubNamespaces = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+      // Breakdown (uteke >= 0.16.1) carries the ACTIVE count — the same
+      // number clicking the namespace will show. Fall back to totals.
+      const rows = await uteke.namespacesBreakdown();
+      hubNamespaces = rows
+        .map((r) => ({ name: r.name, count: r.active ?? r.count ?? 0 }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     } catch {
-      hubNamespaces = [];
+      try {
+        const rows = await uteke.namespacesWithCounts();
+        hubNamespaces = rows
+          .map((r) => ({ name: r.name, count: r.count }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      } catch {
+        hubNamespaces = [];
+      }
     } finally {
       hubNsLoading = false;
     }
@@ -94,25 +141,10 @@
     }
   }
 
-  function toggleRoom(room: { id: string; namespace?: string }) {
-    if (selectedRoom === room.id) {
-      selectedRoom = null;
-      roomItems = null;
-      selectedNamespaces = null;
-    } else {
-      selectedRoom = room.id;
-      roomItems = null;
-      if (room.namespace) selectedNamespaces = [room.namespace];
-      loadRoom(room.id);
-    }
-  }
-
-  /** Client-side tag filter over loaded page items (namespace scope is
-      server-side via the pager + selectedNamespaces). Pinned memories float
-      to the top of the browsed list; search keeps its relevance order. */
+  /** Pinned memories float to the top of the browsed list; search keeps its
+      relevance order. */
   let filteredList = $derived.by(() => {
     let items = list;
-    if (selectedTag) items = items.filter((m) => m.tags.includes(selectedTag!));
     if (!searchResults) {
       items = [...items].sort(
         (a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false),
@@ -125,11 +157,6 @@
   function scorePct(score: number): number {
     return Math.min(100, Math.max(0, Math.round(score * 100)));
   }
-
-  // Multi-namespace filter. `null` = all (show every namespace),
-  // `[]` = none, array = explicit. Takes precedence over the single
-  // `namespace` prop when not null.
-  let selectedNamespaces = $state<string[] | null>(null);
 
   // Search result state (separate from paged list).
   let searchResults = $state<(MemoryEntry & { score?: number })[] | null>(null);
@@ -144,11 +171,7 @@
   // Resolved single-namespace scope for search: the one picked namespace
   // when exactly one is selected, else fall back to the prop. Computed via
   // derived to avoid touching `.length` on a nullable state directly.
-  let searchNs = $derived(
-    selectedNamespaces !== null && selectedNamespaces.length === 1
-      ? selectedNamespaces[0]
-      : namespace,
-  );
+  let searchNs = $derived(namespace);
 
   // Paged list (no search query).
   let utekeReady = $state(false);
@@ -158,18 +181,17 @@
     utekeReady = await uteke.available().catch(() => false);
   }
 
-  async function loadList() {
+  async function loadList(d: Destination, globalNs: string | null) {
     await checkReady();
-    // `null` (all) → backend fans out every namespace. `[]`/array → explicit.
-    // `tag` scopes server-side (uteke_list) so the counts in the Tags panel
-    // and the filtered list below agree.
-    pager = createPager({
-      namespaces: selectedNamespaces,
-      namespace,
-      tag: selectedTag,
-      pageSize: 20,
-      useUteke: utekeReady,
-    });
+    if (d.type === 'namespace') {
+      pager = createPager({ namespace: d.name, pageSize: 20, useUteke: utekeReady });
+    } else if (d.type === 'tag') {
+      // Tag destination: server-side scope so counts and the list agree.
+      pager = createPager({ tag: d.name, pageSize: 20, useUteke: utekeReady });
+    } else {
+      // 'all' → backend fans out every namespace.
+      pager = createPager({ namespace: globalNs, pageSize: 20, useUteke: utekeReady });
+    }
     await pager.loadInitial();
   }
 
@@ -199,11 +221,9 @@
     hubQuery.trim() ? visibleHubNamespaces.length : (hubNamespaces?.length ?? 0),
   );
 
-  /** Select one namespace as the list scope — the same selectedNamespaces
-      state the toolbar filter renders, so the two always agree. */
+  /** Hub namespace click: navigate to that namespace's destination. */
   function selectNsFilter(name: string) {
-    selectedNamespaces =
-      selectedNamespaces?.length === 1 && selectedNamespaces[0] === name ? null : [name];
+    goNamespace(name);
   }
 
   let visibleRooms = $derived(rooms.filter((r) => hubMatches(r.title || r.id)));
@@ -339,15 +359,31 @@
   }
   onDestroy(() => { if (debounceTimer) clearTimeout(debounceTimer); });
 
-  // Reload list when namespace or tag scope changes; clear any active search.
+  // Reload when the destination or the 'all'-mode namespace refinement
+  // changes; clear any active search. Room destinations load their own
+  // listing instead of the pager.
   $effect(() => {
-    namespace;
-    selectedNamespaces;
-    selectedTag;
+    const d = destination;
+    const globalNs = namespace;
     searchResults = null;
     unifiedResults = null;
     searchQuery = '';
-    loadList();
+    if (d.type === 'room') {
+      roomLoading = true;
+      uteke
+        .roomMemories(d.id, { limit: 200 })
+        .then((items) => {
+          roomItems = items ?? [];
+        })
+        .catch(() => {
+          roomItems = [];
+        })
+        .finally(() => {
+          roomLoading = false;
+        });
+      return;
+    }
+    void loadList(d, globalNs);
   });
 
   // Hub namespace list is global — load once per view mount.
@@ -364,7 +400,7 @@
   type ListItem = MemoryEntry & { score?: number };
   const list = $derived.by((): ListItem[] => {
     if (searchResults) return searchResults as ListItem[];
-    if (selectedRoom) return roomItems ?? [];
+    if (destination.type === 'room') return roomItems ?? [];
     return pager.items as ListItem[];
   });
   const isLoading = $derived(searching || pager.loading || roomLoading);
@@ -394,12 +430,21 @@
 
     {#if hubGroup === 'namespaces'}
       <div class="hub-group-label">Namespaces <span class="hub-n">{hubNsHeader}</span></div>
+      <button
+        class="hub-item"
+        class:on={destination.type === 'all'}
+        onclick={goAll}
+        title="Show memories from every namespace"
+      >
+        <span class="hub-ic">✦</span>
+        <span class="hub-name">All namespaces</span>
+      </button>
       {#each visibleHubNamespaces as ns (ns.name)}
         <button
           class="hub-item"
-          class:on={selectedNamespaces?.length === 1 && selectedNamespaces[0] === ns.name}
-          onclick={() => selectNsFilter(ns.name)}
-          title="Filter memories by namespace {ns.name}"
+          class:on={isActive({ type: 'namespace', name: ns.name })}
+          onclick={() => (isActive({ type: 'namespace', name: ns.name }) ? goAll() : goNamespace(ns.name))}
+          title="Show memories from namespace {ns.name}"
         >
           <span class="hub-ic">◇</span>
           <span class="hub-name">{ns.name}</span>
@@ -413,8 +458,8 @@
       {#each visibleRooms as room (room.id)}
         <button
           class="hub-item"
-          class:on={selectedRoom === room.id}
-          onclick={() => toggleRoom(room)}
+          class:on={isActive({ type: 'room', id: room.id })}
+          onclick={() => (isActive({ type: 'room', id: room.id }) ? goAll() : goRoom(room))}
           title={`Show memories from namespace ${room.namespace ?? '—'}`}
         >
           <span class="hub-ic">◫</span>
@@ -429,9 +474,9 @@
       {#each visibleTags as t (t.name)}
         <button
           class="hub-item"
-          class:on={selectedTag === t.name}
-          onclick={() => (selectedTag = selectedTag === t.name ? null : t.name)}
-          title="Filter memories by #{t.name}"
+          class:on={isActive({ type: 'tag', name: t.name })}
+          onclick={() => (isActive({ type: 'tag', name: t.name }) ? goAll() : goTag(t.name))}
+          title="Show memories tagged #{t.name}"
         >
           <span class="hub-ic">#</span>
           <span class="hub-name">{t.name}</span>
@@ -500,15 +545,8 @@
     </div>
     <button class="new-btn" onclick={onnewmemory}>+ New</button>
     <button class="graph-link" title="Open graph exploration" onclick={() => ongraph()}>⌗ Graph</button>
-    <NamespaceFilter
-      selected={selectedNamespaces}
-      onchange={(ns) => {
-        selectedRoom = null;
-        roomItems = null;
-        selectedNamespaces = ns;
-      }}
-    />
   </div>
+
 
   <div class="scroll-area">
     {#if unifiedResults}
@@ -577,7 +615,11 @@
   {:else if list.length === 0}
     <EmptyState
       icon={Brain}
-      title={selectedRoom ? 'No memories in this room yet.' : searchQuery.trim() ? 'No memories matched.' : 'No memories yet.'}
+      title={destination.type === 'room'
+        ? 'No memories in this room yet.'
+        : searchQuery.trim()
+          ? 'No memories matched.'
+          : 'No memories yet.'}
       subtitle={searchQuery.trim()
         ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
         : `Save your first memory with ${kbdCombo('N')}, or use the button below.`}
@@ -635,7 +677,7 @@
       {/each}
     </div>
 
-    {#if !searchResults && !selectedRoom && pager.hasMore}
+    {#if !searchResults && destination.type !== 'room' && pager.hasMore}
       <div class="load-more">
         <button onclick={() => pager.loadMore()} disabled={pager.loading}>
           {pager.loading ? 'Loading…' : 'Load more'}
