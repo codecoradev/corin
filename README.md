@@ -4,6 +4,52 @@
 
 Local-first desktop app for managing memories, knowledge graphs, rooms, and documents. Connects to [Uteke](https://github.com/codecoradev/uteke) via HTTP for semantic search, auto-linking, and graph visualization.
 
+## Install
+
+Download the latest build for your platform from [Releases](https://github.com/codecoradev/corin/releases/latest):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `CorIn_<version>_aarch64.dmg` |
+| macOS (Intel) | `CorIn_<version>_x64.dmg` |
+| Windows | `CorIn_<version>_x64-setup.exe` |
+| Linux (Debian/Ubuntu) | `CorIn_<version>_amd64.deb` |
+| Linux (Fedora/RHEL) | `CorIn_<version>-1.x86_64.rpm` |
+
+### macOS: opening the first time (Gatekeeper)
+
+Corin for macOS is signed but **not yet notarized** with an Apple Developer ID, so macOS
+Gatekeeper may block the first launch with *"CorIn can't be opened because it is from an
+unidentified developer"* — this is expected for apps without notarization and easy to resolve.
+
+**Option 1 — Terminal (fastest, recommended).** After installing the app to `/Applications`,
+run this once:
+
+```bash
+xattr -rd com.apple.quarantine /Applications/CorIn.app
+```
+
+This removes the quarantine flag that Gatekeeper added on download. After that, Corin opens
+normally — double-click and go. You only need to do this once per install (and again after an
+update if the app was re-downloaded through the browser).
+
+**Option 2 — System Settings (no Terminal).**
+
+1. In **Finder**, locate `CorIn.app` in `/Applications` (don't open it yet)
+2. **Control-click** the app → choose **Open** from the menu
+3. Click **Open** in the dialog that appears
+4. From now on, Corin opens like any other app
+
+If macOS (Sequoia or newer) shows no Open button and says the app "cannot be verified":
+**System Settings → Privacy & Security** → scroll to the **Security** section → find the
+message about CorIn → click **Open Anyway**, then authenticate with your password or Touch ID.
+
+> **Why this happens:** Gatekeeper quarantines every app downloaded through a browser.
+> Notarized apps are verified silently by Apple; Corin's builds ship with an ad-hoc
+> signature while official notarization is still on the roadmap, so the first open needs
+> one of the steps above. The app itself runs 100% locally — no network service, no
+> telemetry. Auto-updates (once installed) do not re-trigger Gatekeeper.
+
 ## Stack
 
 | Layer | Tech |
