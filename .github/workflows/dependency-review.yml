@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         # The repo's dependency graph is currently disabled in settings —
         # the action fails with "not supported" until it's enabled
         # (Settings → Code security & analysis → Dependency graph).
