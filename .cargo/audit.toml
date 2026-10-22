@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0367", # zip transitive via tauri-plugin-updater; fix needs zip>=9 (upstream major); tracked #347; review 2027-04-22
+    "RUSTSEC-2026-0368", # zip transitive via tauri-plugin-updater; fix needs zip>=9 (upstream major); tracked #347; review 2027-04-22
+    "RUSTSEC-2026-0369", # zip transitive via tauri-plugin-updater; fix needs zip>=9 (upstream major); tracked #347; review 2027-04-22
+]
