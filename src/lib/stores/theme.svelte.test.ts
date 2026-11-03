@@ -44,13 +44,13 @@ describe('theme store (palette-only switch)', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
     theme.toggle();
     expect(theme.current).toBe('dark');
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('corin');
   });
 
   it('init applies without changing value', async () => {
     const { theme } = await import('./theme.svelte');
     theme.init();
     expect(theme.current).toBe('dark');
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('corin');
   });
 });

@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════════
+   @codecora/tokens — slice 1 of codecora-ui#13.
+   Adds the `--cc-*` namespace (base scale + `corin` dark theme) next to
+   Corin's own `--color-*` tokens below. Nothing here overrides Corin's
+   values; @codecora/ui (slice 2) will read `--cc-*`. The `corin` theme
+   is selected by <html data-theme="corin">, which the theme store sets
+   for dark. Light is Corin's own palette (no codecora-ui counterpart
+   yet), so `--cc-*` surface/text tokens are unset under light.
+   ═══════════════════════════════════════════════════════════════════ */
+@import "@codecora/tokens/base.css";
+@import "@codecora/tokens/themes/corin.css";
+@import "@codecora/tokens/tailwind.css";
+
+/* ═══════════════════════════════════════════════════════════════════
    Tailwind v4 Theme — Catppuccin Mocha mapping
    All CSS variables are now available as Tailwind utilities:
    bg-base, bg-mantle, bg-crust, text-text, text-subtext, etc.

@@ -11,6 +11,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@codecora/icons": "https://github.com/codecoradev/codecora-ui/releases/download/v0.1.0/codecora-icons-0.1.0.tgz",
+    "@codecora/memory": "https://github.com/codecoradev/codecora-ui/releases/download/v0.5.0/codecora-memory-0.2.0.tgz",
+    "@codecora/tokens": "https://github.com/codecoradev/codecora-ui/releases/download/v0.5.1/codecora-tokens-0.5.1.tgz",
+    "@codecora/ui": "https://github.com/codecoradev/codecora-ui/releases/download/v0.4.0/codecora-ui-0.4.0.tgz",
     "@codemirror/autocomplete": "^6.20.1",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-markdown": "^6.5.2",

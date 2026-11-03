@@ -2,6 +2,8 @@
  * Theme store — palette-only dark/light switch (issue #291, DESIGN.md).
  * Dark is the default identity; light is the warm-paper palette.
  * Applies `data-theme` on <html> so token overrides cascade to everything.
+ * Dark maps to `data-theme="corin"` (the @codecora/tokens theme name); light
+ * stays `data-theme="light"` (Corin's own palette in app.css).
  *
  * `$state` is a compiler rune — needs no import (Svelte 5, `.svelte.ts`).
  * Wrapped in a class instance so runes work at module scope and tests can
@@ -10,6 +12,7 @@
 
 export type Theme = 'dark' | 'light';
 const LS_KEY = 'corin.theme';
+const ATTR: Record<Theme, string> = { dark: 'corin', light: 'light' };
 
 function initial(): Theme {
   if (typeof localStorage !== 'undefined') {
@@ -24,7 +27,7 @@ class ThemeStore {
 
   private apply(t: Theme) {
     if (typeof document !== 'undefined') {
-      document.documentElement.dataset.theme = t;
+      document.documentElement.dataset.theme = ATTR[t];
     }
   }
 
