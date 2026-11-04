@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button, ConfirmDialog, Spinner, toast } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { connection, type HealthInfo } from '../ts/ipc';
   import { getConnectionsStore } from '../stores/connections.svelte';
@@ -13,7 +15,6 @@
     X,
     Plus,
   } from 'lucide-svelte';
-  import { ConfirmDialog, Spinner, toastStore, Button } from '../ui';
 
   const store = getConnectionsStore();
 
@@ -57,13 +58,13 @@
       healthResults = { ...healthResults, [id]: result };
       await loadConnections();
       if (result.success) {
-        toastStore.success(`Healthy — ${result.latency_ms}ms`);
+        toast.success(`Healthy — ${result.latency_ms}ms`);
       } else {
-        toastStore.error(`Connection test failed${result.error ? `: ${result.error}` : ''}`);
+        toast.error(`Connection test failed${result.error ? `: ${result.error}` : ''}`);
       }
     } catch (e) {
       healthResults = { ...healthResults, [id]: { success: false, latency_ms: 0, version: null, error: String(e) } };
-      toastStore.error(`Connection test failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Connection test failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       testing = null;
     }
@@ -74,9 +75,9 @@
     try {
       const result = await store.reconnect(id);
       healthResults = { ...healthResults, [id]: result };
-      toastStore.success('Reconnected');
+      toast.success('Reconnected');
     } catch (e) {
-      toastStore.error(`Reconnect failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Reconnect failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       reconnecting = null;
     }
@@ -85,9 +86,9 @@
   async function setPrimary(id: string) {
     try {
       await store.setPrimary(id);
-      toastStore.success('Primary connection set');
+      toast.success('Primary connection set');
     } catch (e) {
-      toastStore.error(`Failed to set primary: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Failed to set primary: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -95,9 +96,9 @@
     disconnecting = true;
     try {
       await store.disconnect();
-      toastStore.info('Memory backend disconnected');
+      toast.show({ title: 'Memory backend disconnected' });
     } catch (e) {
-      toastStore.error(`Disconnect failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Disconnect failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       disconnecting = false;
     }
@@ -117,9 +118,9 @@
     pendingDelete = null;
     try {
       await store.remove(id);
-      toastStore.success(`Connection \u201c${name}\u201d deleted`);
+      toast.success(`Connection \u201c${name}\u201d deleted`);
     } catch (e) {
-      toastStore.error(`Failed to delete connection: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Failed to delete connection: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -140,7 +141,7 @@
       addToken = '';
       showAdd = false;
       await loadConnections();
-      toastStore.success('Connection added');
+      toast.success('Connection added');
     } catch (e) {
       addError = String(e);
     }
@@ -184,7 +185,7 @@
       });
       cancelEdit();
       await loadConnections();
-      toastStore.success('Connection updated');
+      toast.success('Connection updated');
       // If we just edited the primary connection, live-rebuild the client
       // so URL/token changes take effect immediately (no app restart).
       const updated = connections.find((c) => c.id === id);
@@ -270,7 +271,7 @@
   {/if}
 
   {#if loading}
-    <p class="loading"><Spinner size={16} /> Loading connections…</p>
+    <p class="loading"><Spinner /> Loading connections…</p>
   {:else if connections.length === 0}
     <p class="empty">No connections configured.</p>
   {:else}
@@ -318,14 +319,12 @@
 
           <div class="card-actions">
             <Button
-              size="sm"
               variant="secondary"
               onclick={() => startEdit(conn.id, conn.name, conn.url)}
               disabled={!!editId}
               title="Edit connection"
             ><Pencil size={13} strokeWidth={2} /></Button>
             <Button
-              size="sm"
               variant="secondary"
               onclick={() => testConn(conn.id)}
               disabled={testing === conn.id}
@@ -333,7 +332,6 @@
               {testing === conn.id ? 'Testing…' : 'Test'}
             </Button>
             <Button
-              size="sm"
               variant="secondary"
               onclick={() => reconnectConn(conn.id)}
               disabled={reconnecting === conn.id}
@@ -343,7 +341,6 @@
             </Button>
             {#if conn.is_primary && conn.status === 'connected'}
               <Button
-                size="sm"
                 variant="secondary"
                 onclick={disconnectConn}
                 disabled={disconnecting}
@@ -353,11 +350,11 @@
               </Button>
             {/if}
             {#if !conn.is_primary && conn.status === 'connected'}
-              <Button size="sm" variant="secondary" onclick={() => setPrimary(conn.id)}>
+              <Button variant="secondary" onclick={() => setPrimary(conn.id)}>
                 Set Primary
               </Button>
             {/if}
-            <Button size="sm" variant="danger" onclick={() => requestDelete(conn.id, conn.name)}>
+            <Button variant="danger" onclick={() => requestDelete(conn.id, conn.name)}>
               Delete
             </Button>
           </div>
@@ -381,7 +378,7 @@
                 <input type="password" bind:value={editToken} placeholder={conn.has_token ? '•••••••• (set new to replace)' : 'Bearer token (optional)'} />
               </label>
               <div class="form-actions">
-                <Button size="sm" variant="secondary" onclick={cancelEdit} disabled={saving}>Cancel</Button>
+                <Button variant="secondary" onclick={cancelEdit} disabled={saving}>Cancel</Button>
                 <Button variant="primary" onclick={saveEdit} disabled={saving}>
                   {saving ? 'Saving…' : 'Save'}
                 </Button>
@@ -396,13 +393,13 @@
 
 {#if pendingDelete}
   <ConfirmDialog
-    open={!!pendingDelete}
+    bind:open={() => !!pendingDelete, (next) => { if (!next) cancelDelete(); }}
     title="Delete connection?"
-    message="\u201c{pendingDelete.name}\u201d — the auth token will be wiped and the connection row removed. This cannot be undone."
+    description="\u201c{pendingDelete.name}\u201d — the auth token will be wiped and the connection row removed. This cannot be undone."
     confirmLabel="Delete"
-    danger={true}
+    tone="danger"
+    theme={theme.name}
     onconfirm={confirmDelete}
-    oncancel={cancelDelete}
   />
 {/if}
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Toaster, toast } from '@codecora/ui';
   import './app.css';
   import { onMount } from 'svelte';
   import { system } from './lib/ts/ipc';
@@ -18,8 +19,6 @@
   import DocumentsView from './lib/components/DocumentsView.svelte';
   import LifecycleView from './lib/components/LifecycleView.svelte';
   import ToolsView from './lib/components/ToolsView.svelte';
-  import { Notification } from './lib/ui';
-  import { toastStore } from './lib/ui';
   import { fadeQuick, overlayFade, overlayFlyUp } from './lib/transitions';
   import DetailPanel from './lib/components/DetailPanel.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
@@ -62,7 +61,7 @@
     } catch (e) {
       console.error('Failed to init data dir:', e);
       if (isWebMode) {
-        toastStore.error(String(e instanceof Error ? e.message : e));
+        toast.error(String(e instanceof Error ? e.message : e));
       }
     }
   }
@@ -130,7 +129,7 @@
     showEditor = false;
     editorMemory = null;
     refreshKey++;
-    toastStore.success(wasEditing ? 'Memory updated' : 'Memory created');
+    toast.success(wasEditing ? 'Memory updated' : 'Memory created');
   }
 
   // Memory deleted from the detail panel — refresh the list underneath and
@@ -142,7 +141,7 @@
     refreshKey++;
     detailId = null;
     lastDeletedMemoryId = id;
-    toastStore.success('Memory deleted');
+    toast.success('Memory deleted');
   }
 
   function closeSettings() {
@@ -328,7 +327,7 @@
 {/if}
 
 <!-- Global toast notifications -->
-<Notification toasts={toastStore.list} ondismiss={toastStore.dismiss} />
+<Toaster />
 
 <style>
   .app-layout {

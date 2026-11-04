@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { EmptyState } from '@codecora/ui';
+  import type { IconComponent } from '@codecora/ui';
   import { buildActivity, intensityLevel } from '../utils/activity';
   import type { MemoryEntry } from '../ts/types';
-  import { EmptyState } from '../ui';
   import { CalendarDays } from 'lucide-svelte';
 
   interface Props {
@@ -43,9 +44,9 @@
 <div class="activity-timeline">
   {#if summary.total === 0}
     <EmptyState
-      icon={CalendarDays}
+      icon={CalendarDays as unknown as IconComponent}
       title="No activity yet."
-      subtitle="Memories saved by your agents will chart here — a glance tells you whether things are flowing or stalled."
+      description="Memories saved by your agents will chart here — a glance tells you whether things are flowing or stalled."
     />
   {:else}
     <div class="stats-row">

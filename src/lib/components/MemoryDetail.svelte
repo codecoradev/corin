@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { ConfirmDialog, Spinner, toast } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { memory as memoryApi, uteke, utekeServer, graph as graphApi, memoryDocRefs, memoryFeedback, memoryTimeline, memoryUpdate } from '../ts/ipc';
   import type { MemoryEntry, TimelineEvent } from '../ts/types';
   import { X, Link2, FileText, ThumbsUp, ThumbsDown, Clock, Copy, Check, Sparkles, Link, Pin, User, Bot } from 'lucide-svelte';
   import { authorClass } from '../utils/author';
   import { has as compatHas, minVersion } from '../ts/compat';
-  import { ConfirmDialog, Spinner, toastStore } from '../ui';
   import { relativeTime } from '../utils/format';
 
   let copiedId = $state(false);
@@ -64,10 +65,10 @@
     try {
       await memoryUpdate({ id: memoryId, namespace: target });
       memory = { ...m, namespace: target };
-      toastStore.success(`Moved to ${target}`);
+      toast.success(`Moved to ${target}`);
       onmoved?.();
     } catch (e) {
-      toastStore.error(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       nsMoving = false;
     }
@@ -81,9 +82,9 @@
     try {
       await memoryUpdate({ id: memoryId, pinned: next });
       memory = { ...m, pinned: next };
-      toastStore.success(next ? 'Memory pinned' : 'Memory unpinned');
+      toast.success(next ? 'Memory pinned' : 'Memory unpinned');
     } catch (e) {
-      toastStore.error(`Pin failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Pin failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -205,7 +206,7 @@
         onback();
       }
     } catch (e) {
-      toastStore.error(`Failed to delete memory: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Failed to delete memory: ${e instanceof Error ? e.message : String(e)}`);
       showDeleteConfirm = false;
     } finally {
       deleting = false;
@@ -269,12 +270,12 @@
       feedbackGiven = type;
       feedbackDelta = res.delta;
       if (type === 'helpful') {
-        toastStore.success('Marked as helpful');
+        toast.success('Marked as helpful');
       } else {
-        toastStore.info('Marked as unhelpful — importance reduced');
+        toast.show({ title: 'Marked as unhelpful — importance reduced' });
       }
     } catch (e) {
-      toastStore.error(`Feedback failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Feedback failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       submittingFeedback = false;
     }
@@ -286,11 +287,11 @@
       await graphApi.addEdge(memoryId, targetId, { edgeType: 'related', weight: 0.8 });
       linkedThisSession.add(targetId);
       suggestions = suggestions.filter((sg) => sg.id !== targetId);
-      toastStore.success('Edge created');
+      toast.success('Edge created');
       // Refresh neighbors so the new connection shows up
       neighbors = await uteke.neighbors(memoryId, 20).catch(() => neighbors);
     } catch (e) {
-      toastStore.error(`Link failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Link failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       linkingId = null;
     }
@@ -318,7 +319,7 @@
   </div>
 
   {#if loading}
-    <div class="loading"><Spinner size={18} /> Loading...</div>
+    <div class="loading"><Spinner /> Loading...</div>
   {:else if !memory}
     <div class="empty">Memory not found.</div>
   {:else}
@@ -464,7 +465,7 @@
         </div>
 
         {#if timelineLoading}
-          <div class="timeline-loading"><Spinner size={14} /> Loading events...</div>
+          <div class="timeline-loading"><Spinner /> Loading events...</div>
         {:else if timeline.length === 0}
           <div class="no-timeline">
             <p>No timeline events.</p>
@@ -614,18 +615,15 @@
     </div>
   {/if}
 
-  {#if showDeleteConfirm}
-    <ConfirmDialog
-      open={showDeleteConfirm}
-      title="Delete memory?"
-      message="This action cannot be undone."
-      confirmLabel={deleting ? 'Deleting…' : 'Delete'}
-      confirmDisabled={deleting}
-      danger={true}
-      onconfirm={handleDelete}
-      oncancel={() => (showDeleteConfirm = false)}
-    />
-  {/if}
+  <ConfirmDialog
+    bind:open={showDeleteConfirm}
+    title="Delete memory?"
+    description="This action cannot be undone."
+    confirmLabel="Delete"
+    tone="danger"
+    theme={theme.name}
+    onconfirm={handleDelete}
+  />
 </div>
 
 <style>

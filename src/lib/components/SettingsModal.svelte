@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Spinner } from '@codecora/ui';
+  import { focusTrap } from '../ui/focusTrap';
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
@@ -15,7 +17,6 @@
   import NamespaceManager from './settings/NamespaceManager.svelte';
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import { Check, X, Settings } from 'lucide-svelte';
-  import { Spinner, focusTrap } from '../ui';
 
   interface Props {
     onclose: () => void;
@@ -144,7 +145,7 @@
 
     <div class="settings-content">
       {#if loading}
-        <div class="loading"><Spinner size={18} /> Loading...</div>
+        <div class="loading"><Spinner /> Loading...</div>
       {:else if activeTab === 'general'}
         <section class="content-section">
           <h3>Preferences</h3>
