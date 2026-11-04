@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { ConfirmDialog, Spinner, toast } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { uteke, room } from '../ts/ipc';
   import type { MemoryEntry } from '../ts/types';
   import { relativeTime } from '../utils/format';
   import { renderMarkdown } from '../utils/markdown';
   import RoomCreateForm from './rooms/RoomCreateForm.svelte';
   import { Trash2, TriangleAlert, X, Plus } from 'lucide-svelte';
-  import { ConfirmDialog, Spinner, toastStore } from '../ui';
 
   interface UtekeRoom {
     id: string;
@@ -125,7 +126,7 @@
       selectedRoom = null;
       roomMemories = [];
       await loadRooms();
-      toastStore.success('Room deleted');
+      toast.success('Room deleted');
     } catch (e) {
       reportError('Delete room', e);
       showDeleteConfirm = false;
@@ -158,7 +159,7 @@
   </div>
 
   {#if loading}
-    <div class="msg"><Spinner size={18} /> Loading...</div>
+    <div class="msg"><Spinner /> Loading...</div>
   {:else if rooms.length === 0}
     <div class="msg">
       {#if utekeReady}
@@ -278,13 +279,13 @@
   {/if}
 
   <ConfirmDialog
-    open={showDeleteConfirm}
+    bind:open={showDeleteConfirm}
     title="Delete room?"
-    message="The room and its memory references will be removed. This cannot be undone."
+    description="The room and its memory references will be removed. This cannot be undone."
     confirmLabel="Delete"
-    danger={true}
+    tone="danger"
+    theme={theme.name}
     onconfirm={deleteRoom}
-    oncancel={() => (showDeleteConfirm = false)}
   />
 </div>
 

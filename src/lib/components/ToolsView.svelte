@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Spinner, toastStore } from '../ui';
+  import { Spinner, toast } from '@codecora/ui';
   import { X } from 'lucide-svelte';
   import {
     memoryUpdate, roomRemember, utekeImport, utekeExport, utekeContext,
@@ -20,7 +20,7 @@
   let memResult = $state<Record<string, unknown> | null>(null);
 
   async function handleMemoryUpdate() {
-    if (!memId.trim()) { toastStore.error('Memory ID is required'); return; }
+    if (!memId.trim()) { toast.error('Memory ID is required'); return; }
     updatingMem = true;
     memResult = null;
     try {
@@ -35,9 +35,9 @@
         memory_type: memType.trim() || undefined,
       });
       memResult = result;
-      toastStore.success('Memory updated');
+      toast.success('Memory updated');
     } catch (e) {
-      toastStore.error(`Update failed: ${e}`);
+      toast.error(`Update failed: ${e}`);
     } finally {
       updatingMem = false;
     }
@@ -54,7 +54,7 @@
   let rrResult = $state<Record<string, unknown> | null>(null);
 
   async function handleRoomRemember() {
-    if (!rrRoomId.trim() || !rrContent.trim()) { toastStore.error('Room ID and content are required'); return; }
+    if (!rrRoomId.trim() || !rrContent.trim()) { toast.error('Room ID and content are required'); return; }
     remembering = true;
     rrResult = null;
     try {
@@ -68,11 +68,11 @@
         author: rrAuthor.trim() || undefined,
       });
       rrResult = result;
-      toastStore.success('Memory stored in room');
+      toast.success('Memory stored in room');
       rrContent = '';
       rrTags = '';
     } catch (e) {
-      toastStore.error(`Remember failed: ${e}`);
+      toast.error(`Remember failed: ${e}`);
     } finally {
       remembering = false;
     }
@@ -93,24 +93,24 @@
     try {
       const result = await utekeExport(exportNs.trim() || undefined);
       exportData = result;
-      toastStore.success(`Exported ${result.split('\n').filter(Boolean).length} entries`);
+      toast.success(`Exported ${result.split('\n').filter(Boolean).length} entries`);
     } catch (e) {
-      toastStore.error(`Export failed: ${e}`);
+      toast.error(`Export failed: ${e}`);
     } finally {
       exporting = false;
     }
   }
 
   async function handleImport() {
-    if (!importData.trim()) { toastStore.error('Paste JSONL data to import'); return; }
+    if (!importData.trim()) { toast.error('Paste JSONL data to import'); return; }
     importing = true;
     importResult = null;
     try {
       const result = await utekeImport(importData.trim(), importNs.trim() || undefined);
       importResult = result;
-      toastStore.success(`Imported ${result.imported} entries (${result.skipped} skipped)`);
+      toast.success(`Imported ${result.imported} entries (${result.skipped} skipped)`);
     } catch (e) {
-      toastStore.error(`Import failed: ${e}`);
+      toast.error(`Import failed: ${e}`);
     } finally {
       importing = false;
     }
@@ -127,9 +127,9 @@
     try {
       const result = await utekeContext(ctxNs.trim() || undefined);
       ctxResult = result;
-      if (!result) toastStore.info('Context is empty');
+      if (!result) toast.show({ title: 'Context is empty' });
     } catch (e) {
-      toastStore.error(`Context failed: ${e}`);
+      toast.error(`Context failed: ${e}`);
     } finally {
       buildingCtx = false;
     }
@@ -143,47 +143,47 @@
   let loadingLinks = $state(false);
 
   async function handleListRoomDocs() {
-    if (!rdRoomId.trim()) { toastStore.error('Room ID is required'); return; }
+    if (!rdRoomId.trim()) { toast.error('Room ID is required'); return; }
     loadingLinks = true;
     try {
       rdLinkedDocs = await roomDocList(rdRoomId.trim());
     } catch (e) {
-      toastStore.error(`List failed: ${e}`);
+      toast.error(`List failed: ${e}`);
     } finally {
       loadingLinks = false;
     }
   }
 
   async function handleListDocRooms() {
-    if (!rdDocSlug.trim()) { toastStore.error('Document slug is required'); return; }
+    if (!rdDocSlug.trim()) { toast.error('Document slug is required'); return; }
     loadingLinks = true;
     try {
       rdLinkedRooms = await docRoomList(rdDocSlug.trim());
     } catch (e) {
-      toastStore.error(`List failed: ${e}`);
+      toast.error(`List failed: ${e}`);
     } finally {
       loadingLinks = false;
     }
   }
 
   async function handleAddLink() {
-    if (!rdRoomId.trim() || !rdDocSlug.trim()) { toastStore.error('Room ID and doc slug are required'); return; }
+    if (!rdRoomId.trim() || !rdDocSlug.trim()) { toast.error('Room ID and doc slug are required'); return; }
     try {
       await roomDocAdd(rdRoomId.trim(), rdDocSlug.trim());
-      toastStore.success(`Linked "${rdDocSlug}" to room "${rdRoomId}"`);
+      toast.success(`Linked "${rdDocSlug}" to room "${rdRoomId}"`);
       await handleListRoomDocs();
     } catch (e) {
-      toastStore.error(`Link failed: ${e}`);
+      toast.error(`Link failed: ${e}`);
     }
   }
 
   async function handleRemoveLink(slug: string) {
     try {
       await roomDocRemove(rdRoomId.trim(), slug);
-      toastStore.success(`Unlinked "${slug}"`);
+      toast.success(`Unlinked "${slug}"`);
       await handleListRoomDocs();
     } catch (e) {
-      toastStore.error(`Unlink failed: ${e}`);
+      toast.error(`Unlink failed: ${e}`);
     }
   }
 
@@ -248,7 +248,7 @@
       </div>
       <div class="actions">
         <button class="btn-primary" onclick={handleMemoryUpdate} disabled={updatingMem}>
-          {#if updatingMem}<span class="spinner-inline"><Spinner size={14} /></span>{/if}
+          {#if updatingMem}<span class="spinner-inline"><Spinner /></span>{/if}
           Update
         </button>
       </div>
@@ -290,7 +290,7 @@
       </div>
       <div class="actions">
         <button class="btn-primary" onclick={handleRoomRemember} disabled={remembering}>
-          {#if remembering}<span class="spinner-inline"><Spinner size={14} /></span>{/if}
+          {#if remembering}<span class="spinner-inline"><Spinner /></span>{/if}
           Remember
         </button>
       </div>
@@ -307,7 +307,7 @@
       <div class="inline-form">
         <input bind:value={exportNs} placeholder="namespace (optional)" />
         <button class="btn-primary" onclick={handleExport} disabled={exporting}>
-          {#if exporting}<span class="spinner-inline"><Spinner size={14} /></span>{/if}
+          {#if exporting}<span class="spinner-inline"><Spinner /></span>{/if}
           Export
         </button>
       </div>
@@ -325,7 +325,7 @@
       <textarea bind:value={importData} rows="6" placeholder="One JSON object per line, e.g. content, tags, namespace fields"></textarea>
       <div class="actions">
         <button class="btn-primary" onclick={handleImport} disabled={importing}>
-          {#if importing}<span class="spinner-inline"><Spinner size={14} /></span>{/if}
+          {#if importing}<span class="spinner-inline"><Spinner /></span>{/if}
           Import
         </button>
       </div>
@@ -345,7 +345,7 @@
       <div class="inline-form">
         <input bind:value={ctxNs} placeholder="namespace (optional)" />
         <button class="btn-primary" onclick={handleContext} disabled={buildingCtx}>
-          {#if buildingCtx}<span class="spinner-inline"><Spinner size={14} /></span>{/if}
+          {#if buildingCtx}<span class="spinner-inline"><Spinner /></span>{/if}
           Build
         </button>
       </div>
@@ -379,7 +379,7 @@
         </button>
       </div>
       {#if loadingLinks}
-        <div class="center-spinner"><Spinner size={20} /></div>
+        <div class="center-spinner"><Spinner /></div>
       {/if}
       {#if rdLinkedDocs.length > 0}
         <div class="link-list">
@@ -452,7 +452,7 @@
 
   .btn-icon { background: none; border: none; color: var(--red); cursor: pointer; padding: 0 0.25rem; font-size: 0.875rem; }
 
-  .spinner-inline { display: inline-flex; align-items: center; }
+  .spinner-inline { display: inline-flex; align-items: center; --cc-icon-size: 14px; }
   .center-spinner { display: flex; justify-content: center; padding: 1rem; }
 
   .result {

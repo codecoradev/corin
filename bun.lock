@@ -6,9 +6,9 @@
       "name": "corin",
       "dependencies": {
         "@codecora/icons": "https://github.com/codecoradev/codecora-ui/releases/download/v0.1.0/codecora-icons-0.1.0.tgz",
-        "@codecora/memory": "https://github.com/codecoradev/codecora-ui/releases/download/v0.5.0/codecora-memory-0.2.0.tgz",
-        "@codecora/tokens": "https://github.com/codecoradev/codecora-ui/releases/download/v0.5.1/codecora-tokens-0.5.1.tgz",
-        "@codecora/ui": "https://github.com/codecoradev/codecora-ui/releases/download/v0.4.0/codecora-ui-0.4.0.tgz",
+        "@codecora/memory": "https://github.com/codecoradev/codecora-ui/releases/download/v0.6.0/codecora-memory-0.3.0.tgz",
+        "@codecora/tokens": "https://github.com/codecoradev/codecora-ui/releases/download/v0.6.0/codecora-tokens-0.6.0.tgz",
+        "@codecora/ui": "https://github.com/codecoradev/codecora-ui/releases/download/v0.6.0/codecora-ui-0.5.0.tgz",
         "@codemirror/autocomplete": "^6.20.1",
         "@codemirror/commands": "^6.11.0",
         "@codemirror/lang-markdown": "^6.5.2",
@@ -78,11 +78,11 @@
 
     "@codecora/icons": ["@codecora/icons@https://github.com/codecoradev/codecora-ui/releases/download/v0.1.0/codecora-icons-0.1.0.tgz", { "peerDependencies": { "@lucide/svelte": "^1.0.0", "phosphor-svelte": "^3.0.0", "svelte": "^5.33.0" }, "optionalPeers": ["@lucide/svelte", "phosphor-svelte"] }, "sha512-46X5YlpogT3LXyvypRPrR1Z4FF7O4yjWO7P7Vdy67U4ao7kI55CG6fhJZdlMVlVYRCAf1+M2Ko7+evjr5FzJ1w=="],
 
-    "@codecora/memory": ["@codecora/memory@https://github.com/codecoradev/codecora-ui/releases/download/v0.5.0/codecora-memory-0.2.0.tgz", { "peerDependencies": { "@codecora/ui": "^0.4.0", "svelte": "^5.33.0" } }, "sha512-u0jsBckxfYh1e41tSt8ZAuGJZaxQx/4hzDX2Vv3XmnovBjdbteUpRHUcmodmc5WxGD4iVvQNYjlS34E1V9fzcQ=="],
+    "@codecora/memory": ["@codecora/memory@https://github.com/codecoradev/codecora-ui/releases/download/v0.6.0/codecora-memory-0.3.0.tgz", { "peerDependencies": { "@codecora/ui": "^0.5.0", "svelte": "^5.33.0" } }, "sha512-diSziIiE8KtCFPKxq9gJJxHHxSitIlA5O/1Hn1vL7dvjigMQZQJK+JJFV4+Jm8RKtvyHPYAKW4Ma3q+n6YcWaw=="],
 
-    "@codecora/tokens": ["@codecora/tokens@https://github.com/codecoradev/codecora-ui/releases/download/v0.5.1/codecora-tokens-0.5.1.tgz", {}, "sha512-4VaCDZ4LHMXHfEUavtas6cIST0lMFSKr+DRpy3s9WZyef+eM8TyG7Wu5i7IHXPeZ9XVY5vl5HwUmgLBGpDXLaw=="],
+    "@codecora/tokens": ["@codecora/tokens@https://github.com/codecoradev/codecora-ui/releases/download/v0.6.0/codecora-tokens-0.6.0.tgz", {}, "sha512-eC583xPRU6fxT8utTjhqCPnL7Mg+mifd7hoxQpBiJ8hScfLZsm5jo4mUZ+JQUVy7Y20TtjUUuFNRqmZF9iRf0Q=="],
 
-    "@codecora/ui": ["@codecora/ui@https://github.com/codecoradev/codecora-ui/releases/download/v0.4.0/codecora-ui-0.4.0.tgz", { "dependencies": { "bits-ui": "2.20.2" }, "peerDependencies": { "svelte": "^5.33.0" } }, "sha512-+PP91acQH6AYiEN2G1R0zExKoha5jWdN6DAT0pgPooCf0a6HV39BO24zSCZgOPJvLYyCmCWm5Kh7w9kCtCIbOw=="],
+    "@codecora/ui": ["@codecora/ui@https://github.com/codecoradev/codecora-ui/releases/download/v0.6.0/codecora-ui-0.5.0.tgz", { "dependencies": { "bits-ui": "2.20.2" }, "peerDependencies": { "svelte": "^5.33.0" } }, "sha512-uQj8Yjd7JX/vEa7Dtx3PzoR2b4JFM3xXCknznwhjBM/TZDXUOa8+pWttSeYfd2b17IlIoRMKbK2ZZySUsu/zmA=="],
 
     "@codemirror/autocomplete": ["@codemirror/autocomplete@6.20.3", "", { "dependencies": { "@codemirror/language": "^6.0.0", "@codemirror/state": "^6.0.0", "@codemirror/view": "^6.17.0", "@lezer/common": "^1.0.0" } }, "sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g=="],
 

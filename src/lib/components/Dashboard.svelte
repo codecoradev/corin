@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Spinner } from '@codecora/ui';
   import { system, memory as memoryApi, utekeServer } from '../ts/ipc';
   import { getStats, getNamespaces } from '../stores/cache.svelte';
   import ActivityTimeline from './ActivityTimeline.svelte';
@@ -7,7 +8,6 @@
     StatsResponse,
     MemoryEntry,
   } from '../ts/types';
-  import { Spinner } from '../ui';
   import { kbdCombo } from '../utils/platform';
 
   interface Props {
@@ -103,7 +103,7 @@
 
   <div class="scroll-area">
     {#if loading}
-    <div class="loading"><Spinner size={18} /> Loading...</div>
+    <div class="loading"><Spinner /> Loading...</div>
   {:else}
     <!-- Overview: store stats + activity heatmap, one glanceable card -->
     <section class="stats-section">

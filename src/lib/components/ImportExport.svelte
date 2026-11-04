@@ -1,6 +1,6 @@
 <script lang="ts">
   import { system, utekeExport, utekeImport } from '../ts/ipc';
-  import SearchableSelect from '../ui/SearchableSelect.svelte';
+  import { Combobox } from '@codecora/ui';
   import { open, save } from '@tauri-apps/plugin-dialog';
   import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
   import { isWebMode } from '../ts/transport';
@@ -16,10 +16,14 @@
   // Mode
   let mode = $state<'export' | 'import'>('export');
 
-  // Export state — '' = all namespaces (SearchableSelect's empty value).
+  // Export state — '' = all namespaces (the Combobox's empty item).
   let exportFormat = $state<'json' | 'jsonl' | 'markdown' | 'csv'>('json');
   let exportNamespace = $state('');
   let exporting = $state(false);
+  const namespaceItems = (emptyLabel: string) => [
+    { value: '', label: emptyLabel },
+    ...namespaces.map((n) => ({ value: n, label: n })),
+  ];
 
   // Import state
   let importStep = $state<'pick' | 'preview' | 'done'>('pick');
@@ -256,10 +260,10 @@
 
     <div class="section">
       <h3>Namespace</h3>
-      <SearchableSelect
-        options={namespaces}
+      <Combobox
+        items={namespaceItems('All namespaces')}
         bind:value={exportNamespace}
-        emptyLabel="All namespaces"
+        label="Export namespace"
         placeholder="Search namespaces…"
       />
     </div>
@@ -301,10 +305,10 @@
         {/if}
         <div class="section">
           <h3>Target namespace (optional)</h3>
-          <SearchableSelect
-            options={namespaces}
+          <Combobox
+            items={namespaceItems("Keep each entry's own namespace")}
             bind:value={jsonlTargetNs}
-            emptyLabel="Keep each entry's own namespace"
+            label="Target namespace"
             placeholder="Search namespaces…"
           />
         </div>

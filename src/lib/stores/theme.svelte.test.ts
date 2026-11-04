@@ -26,7 +26,14 @@ describe('theme store (palette-only switch)', () => {
     const { theme } = await import('./theme.svelte');
     theme.set('light');
     expect(theme.current).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('corin-light');
+  });
+
+  it('exposes the token theme name', async () => {
+    const { theme } = await import('./theme.svelte');
+    expect(theme.name).toBe('corin');
+    theme.set('light');
+    expect(theme.name).toBe('corin-light');
   });
 
   it('persists to localStorage when available', async () => {
@@ -41,7 +48,7 @@ describe('theme store (palette-only switch)', () => {
     const { theme } = await import('./theme.svelte');
     theme.toggle();
     expect(theme.current).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('corin-light');
     theme.toggle();
     expect(theme.current).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('corin');

@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { Combobox, ConfirmDialog } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { docs } from '../ts/ipc';
   import { kbdCombo } from '../utils/platform';
-  import SearchableSelect from '../ui/SearchableSelect.svelte';
   import type { DocEntry, DocSearchResult, VersionStatus } from '../ts/types';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
@@ -27,7 +28,6 @@
     Plus,
     X,
   } from 'lucide-svelte';
-  import { ConfirmDialog } from '../ui';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { isWebMode } from '../ts/transport';
   import { expandSlide } from '../transitions';
@@ -138,7 +138,7 @@
   let newDocParent = $state('');
 
   let parentOptions = $derived.by(() => {
-    const opts: { value: string; label: string }[] = [];
+    const opts: { value: string; label: string }[] = [{ value: '', label: 'No parent — root level' }];
     const walk = (entries: DocEntry[], depth: number) => {
       for (const d of entries) {
         opts.push({
@@ -825,10 +825,10 @@
             <div class="tb-parent">
               <span class="tb-parent-label">Parent</span>
               <div class="tb-parent-select">
-                <SearchableSelect
-                  options={parentOptions}
+                <Combobox
+                  items={parentOptions}
                   bind:value={newDocParent}
-                  emptyLabel="No parent — root level"
+                  label="Parent document"
                   placeholder="Search documents…"
                 />
               </div>
@@ -960,17 +960,15 @@
 </div>
 
 <!-- Delete Confirmation Dialog -->
-{#if showDeleteConfirm}
-  <ConfirmDialog
-    open={showDeleteConfirm}
-    title="Delete document?"
-    message="Are you sure you want to delete \u201c{deleteTarget?.title}\u201d? This action cannot be undone."
-    confirmLabel="Delete"
-    danger={true}
-    onconfirm={executeDelete}
-    oncancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
-  />
-{/if}
+<ConfirmDialog
+  bind:open={showDeleteConfirm}
+  title="Delete document?"
+  description="Are you sure you want to delete \u201c{deleteTarget?.title}\u201d? This action cannot be undone."
+  confirmLabel="Delete"
+  tone="danger"
+  theme={theme.name}
+  onconfirm={executeDelete}
+/>
 
 {#snippet treeNode(doc: DocEntry)}
   {@const kids = childrenCache.get(doc.id) ?? []}

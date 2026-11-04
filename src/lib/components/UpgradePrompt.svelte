@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Button, Dialog } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { TriangleAlert } from 'lucide-svelte';
   import { gatedFeatures, minVersion, serverVersion, type Feature } from '../ts/compat';
-  import { Modal } from '../ui';
 
   const FEATURE_LABEL: Record<Feature, string> = {
     graphEdgeWrite: 'graph linking',
@@ -40,7 +41,12 @@
   }
 </script>
 
-<Modal open={open} title="Server update needed" onclose={acknowledge} width="480px">
+<Dialog
+  bind:open
+  title="Server update needed"
+  theme={theme.name}
+  onOpenChange={(next) => { if (!next) acknowledge(); }}
+>
   <div class="upgrade-dialog">
     <div class="upgrade-icon"><TriangleAlert size={22} strokeWidth={1.75} /></div>
     <p class="lead">
@@ -56,9 +62,11 @@
       Update uteke on the machine running the server (<code>uteke upgrade</code>), then
       reopen CorIn. Everything else keeps working in the meantime.
     </p>
-    <button class="ack-btn" onclick={acknowledge}>Continue anyway</button>
   </div>
-</Modal>
+  {#snippet footer()}
+    <Button onclick={acknowledge}>Continue anyway</Button>
+  {/snippet}
+</Dialog>
 
 <style>
   .upgrade-dialog {
@@ -121,20 +129,6 @@
     background: var(--bg-hover);
     padding: 1px 6px;
     border-radius: var(--radius-sm);
-    color: var(--accent);
-  }
-  .ack-btn {
-    width: 100%;
-    padding: 9px;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    font-size: 0.85rem;
-    cursor: pointer;
-  }
-  .ack-btn:hover {
-    border-color: var(--accent);
     color: var(--accent);
   }
 </style>

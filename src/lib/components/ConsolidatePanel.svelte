@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { Button, Dialog, Spinner, toast } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { consolidateMemories } from '../ts/ipc';
-  import { Spinner, toastStore, Button, ConfirmDialog } from '../ui';
   import {
     Copy,
     RefreshCw,
@@ -71,10 +72,10 @@
         namespace: namespace ?? undefined,
       })) as ConsolidationResultUI;
       mergeResult = raw;
-      toastStore.success(`Removed ${raw.merged} duplicate pair${raw.merged === 1 ? '' : 's'}`);
+      toast.success(`Removed ${raw.merged} duplicate pair${raw.merged === 1 ? '' : 's'}`);
       pairs = null;
     } catch (e) {
-      toastStore.error(`Dedup removal failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Dedup removal failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       merging = false;
     }
@@ -126,7 +127,7 @@
         pair{mergeResult.removed_ids.length === 1 ? '' : 's'} removed,
         <strong>{mergeResult.kept_ids.length}</strong> kept
       </span>
-      <Button size="sm" variant="secondary" class="banner-action" onclick={resetScan}>
+      <Button variant="secondary" class="banner-action" onclick={resetScan}>
         <RefreshCw size={13} />
         <span>New Scan</span>
       </Button>
@@ -189,7 +190,7 @@
 
   {#if scanning}
     <div class="loading-state">
-      <Spinner size={28} />
+      <Spinner />
       <p>Scanning for duplicates at threshold {threshold.toFixed(2)}…</p>
     </div>
   {:else if pairs}
@@ -239,18 +240,19 @@
   {/if}
 
   <!-- ─── Confirm Removal Modal ───────────────────────────────────── -->
-  <ConfirmDialog
-    open={showConfirmMerge}
+  <Dialog
+    bind:open={showConfirmMerge}
     title="Remove {pairs?.length ?? 0} duplicate pair{(pairs?.length ?? 0) === 1 ? '' : 's'}?"
-    message="In every duplicate pair found at threshold {threshold.toFixed(2)} the newer memory is kept as-is and the older one is removed — all-or-nothing. Removed memories are deprecated and can be restored from the Lifecycle view."
-    confirmLabel={merging ? 'Removing…' : `Remove ${pairs?.length ?? 0}`}
-    confirmDisabled={merging}
-    danger
-    onconfirm={mergeAll}
-    oncancel={() => (showConfirmMerge = false)}
+    description="In every duplicate pair found at threshold {threshold.toFixed(2)} the newer memory is kept as-is and the older one is removed — all-or-nothing. Removed memories are deprecated and can be restored from the Lifecycle view."
+    tone="danger"
+    theme={theme.name}
   >
     <p class="confirm-warn">To keep some pairs, cancel, raise the threshold, and re-scan.</p>
-  </ConfirmDialog>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (showConfirmMerge = false)}>Cancel</Button>
+      <Button variant="danger" disabled={merging} onclick={mergeAll}>{merging ? 'Removing…' : `Remove ${pairs?.length ?? 0}`}</Button>
+    {/snippet}
+  </Dialog>
 </div>
 
 <style>

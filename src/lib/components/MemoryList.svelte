@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button, EmptyState, Spinner } from '@codecora/ui';
+  import type { IconComponent } from '@codecora/ui';
   import { onDestroy } from 'svelte';
   import { memory as memoryApi, uteke, utekeServer, system } from '../ts/ipc';
   import { createPager } from '../stores/pagination.svelte';
@@ -6,7 +8,6 @@
   import type { MemoryEntry, UnifiedSearchResult } from '../ts/types';
   import { FileText, Brain, X, Pin, User, Bot } from 'lucide-svelte';
   import { authorClass } from '../utils/author';
-  import { Spinner, EmptyState, Button } from '../ui';
   import { relativeTime } from '../utils/format';
   import { kbdCombo } from '../utils/platform';
 
@@ -615,22 +616,24 @@
         </div>
       {/if}
     {:else if isLoading && list.length === 0}
-    <div class="loading"><Spinner size={18} /> Loading...</div>
+    <div class="loading"><Spinner /> Loading...</div>
   {:else if list.length === 0}
     <EmptyState
-      icon={Brain}
+      icon={Brain as unknown as IconComponent}
       title={destination.type === 'room'
         ? 'No memories in this room yet.'
         : searchQuery.trim()
           ? 'No memories matched.'
           : 'No memories yet.'}
-      subtitle={searchQuery.trim()
+      description={searchQuery.trim()
         ? 'Nothing in the current view matches that query — try different keywords or clear the search.'
         : `Save your first memory with ${kbdCombo('N')}, or use the button below.`}
     >
-      <Button variant="primary" size="sm" onclick={onnewmemory}>
-        {searchQuery.trim() ? 'New Memory' : 'Create your first memory'}
-      </Button>
+      {#snippet action()}
+        <Button variant="primary" onclick={onnewmemory}>
+          {searchQuery.trim() ? 'New Memory' : 'Create your first memory'}
+        </Button>
+      {/snippet}
     </EmptyState>
   {:else}
     {#if searchResults}

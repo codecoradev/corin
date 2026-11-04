@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Spinner, toast } from '@codecora/ui';
   /**
    * Type backfill (#293 follow-up) — finds memories whose content_type is
    * empty (they render with no TYPE in the detail panel) and stamps them
@@ -6,7 +7,6 @@
    * so content_type is the only gap users actually see.
    */
   import { memoryUpdate, system, uteke } from '../../ts/ipc';
-  import { Button, Spinner, toastStore } from '../../ui';
 
   let scanning = $state(false);
   let applying = $state(false);
@@ -53,7 +53,7 @@
           fail++;
         }
       }
-      toastStore.success(
+      toast.success(
         `Backfilled ${ok} memor${ok === 1 ? 'y' : 'ies'} to 'text'${fail ? ` — ${fail} failed` : ''}`,
       );
       await scan(); // re-scan to confirm the queue is empty
@@ -74,20 +74,20 @@
 
     {#if scanError}
       <p class="bf-status err">⚠ {scanError}</p>
-      <Button variant="secondary" size="sm" onclick={scan}>Retry</Button>
+      <Button variant="secondary" onclick={scan}>Retry</Button>
     {:else if scanning}
-      <p class="bf-status"><Spinner size={14} /> Scanning memories…</p>
+      <p class="bf-status"><Spinner /> Scanning memories…</p>
     {:else if !scanned}
       <p class="bf-status">Scan the first 1000 memories across all namespaces to find untyped ones.</p>
-      <Button variant="secondary" size="sm" onclick={scan}>Scan now</Button>
+      <Button variant="secondary" onclick={scan}>Scan now</Button>
     {:else if untyped.length === 0}
       <p class="bf-status ok">✓ All scanned memories have a type.</p>
-      <Button variant="secondary" size="sm" onclick={scan}>Re-scan</Button>
+      <Button variant="secondary" onclick={scan}>Re-scan</Button>
     {:else}
       <p class="bf-status">
         <b>{untyped.length}</b> memor{untyped.length === 1 ? 'y' : 'ies'} without a type found.
       </p>
-      <Button variant="primary" size="sm" onclick={apply} disabled={applying}>
+      <Button variant="primary" onclick={apply} disabled={applying}>
         {applying ? 'Backfilling…' : `Backfill ${untyped.length} to 'text'`}
       </Button>
     {/if}

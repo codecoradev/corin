@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { Button, Dialog, toast } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import { docs, system, uteke, utekeServer } from '../ts/ipc';
   import { has as compatHas, minVersion } from '../ts/compat';
-  import { ConfirmDialog, toastStore } from '../ui';
   import { ArrowRightLeft, Trash2 } from 'lucide-svelte';
   import { createPager } from '../stores/pagination.svelte';
   import type { MemoryEntry } from '../ts/types';
@@ -83,13 +84,13 @@
         `Namespace "${name}" created via CorIn — replace or delete this placeholder memory.`,
         { tags: ['namespace-placeholder'], namespace: name, metadata: { author: 'human' } },
       );
-      toastStore.success(`Namespace ${name} created`);
+      toast.success(`Namespace ${name} created`);
       showNewNs = false;
       newNsName = '';
       await loadNamespaces();
       await selectNs(name);
     } catch (e) {
-      toastStore.error(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       busy = false;
     }
@@ -100,14 +101,14 @@
     busy = true;
     try {
       await docs.namespaceRename(renameTarget, renameTo.trim());
-      toastStore.success(`Renamed to ${renameTo.trim()}`);
+      toast.success(`Renamed to ${renameTo.trim()}`);
       const newName = renameTo.trim();
       if (selectedNs === renameTarget) await selectNs(newName);
       renameTarget = null;
       renameTo = '';
       await loadNamespaces();
     } catch (e) {
-      toastStore.error(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       busy = false;
     }
@@ -123,7 +124,7 @@
         deleteStrategy,
         deleteStrategy === 'merge' ? deleteMergeTarget.trim() : undefined,
       );
-      toastStore.success(`${deleteTarget}: ${res.affected} memories processed`);
+      toast.success(`${deleteTarget}: ${res.affected} memories processed`);
       if (selectedNs === deleteTarget) {
         selectedNs = null;
         detailPager = createPager({ pageSize: 20, useUteke: true });
@@ -131,7 +132,7 @@
       deleteTarget = null;
       await loadNamespaces();
     } catch (e) {
-      toastStore.error(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       busy = false;
     }
@@ -346,46 +347,51 @@
 </style>
 
 {#if showNewNs}
-  <ConfirmDialog
+  <Dialog
     open
+    onOpenChange={(next) => { if (!next) showNewNs = false; }}
     title="New namespace"
-    message="uteke creates a namespace together with its first memory — a small placeholder is seeded and can be replaced or deleted."
-    confirmLabel={newNsName.trim() ? 'Create' : ''}
-    onconfirm={performCreateNs}
-    oncancel={() => (showNewNs = false)}
+    description="uteke creates a namespace together with its first memory — a small placeholder is seeded and can be replaced or deleted."
+    theme={theme.name}
   >
     <div class="dlg">
       <input class="dlg-input" type="text" bind:value={newNsName} placeholder="namespace-name" />
     </div>
-  </ConfirmDialog>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (showNewNs = false)}>Cancel</Button>
+      <Button variant="primary" disabled={!newNsName.trim()} onclick={performCreateNs}>Create</Button>
+    {/snippet}
+  </Dialog>
 {/if}
 
 {#if renameTarget}
-  <ConfirmDialog
+  <Dialog
     open
+    onOpenChange={(next) => { if (!next) renameTarget = null; }}
     title="Rename or merge namespace?"
-    message="Existing memories move with it in a single atomic update."
-    confirmLabel={renameTo.trim() ? 'Apply' : ''}
-    onconfirm={performRename}
-    oncancel={() => (renameTarget = null)}
+    description="Existing memories move with it in a single atomic update."
+    theme={theme.name}
   >
     <div class="dlg">
       <p><code>{renameTarget}</code> →</p>
       <input class="dlg-input" type="text" bind:value={renameTo} placeholder="new-name (existing name = merge)" />
       <p class="hint">If the target exists, all memories are merged into it — no data loss.</p>
     </div>
-  </ConfirmDialog>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (renameTarget = null)}>Cancel</Button>
+      <Button variant="primary" disabled={!renameTo.trim()} onclick={performRename}>Apply</Button>
+    {/snippet}
+  </Dialog>
 {/if}
 
 {#if deleteTarget}
-  <ConfirmDialog
+  <Dialog
     open
+    onOpenChange={(next) => { if (!next) deleteTarget = null; }}
     title="Delete namespace — choose strategy"
-    message="A namespace is never hard-deleted — memories go somewhere safe."
-    confirmLabel="Execute"
-    danger
-    onconfirm={performDelete}
-    oncancel={() => (deleteTarget = null)}
+    description="A namespace is never hard-deleted — memories go somewhere safe."
+    tone="danger"
+    theme={theme.name}
   >
     <div class="dlg">
       <p>Namespace <code>{deleteTarget}</code> — memories must go somewhere:</p>
@@ -405,5 +411,9 @@
         <span><b>Deprecate</b> — soft-delete all (restorable from Recycle Bin until TTL)</span>
       </label>
     </div>
-  </ConfirmDialog>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (deleteTarget = null)}>Cancel</Button>
+      <Button variant="danger" onclick={performDelete}>Execute</Button>
+    {/snippet}
+  </Dialog>
 {/if}

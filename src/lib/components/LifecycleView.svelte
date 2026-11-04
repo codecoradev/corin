@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button, Dialog, Spinner, toast } from '@codecora/ui';
+  import { theme } from '../stores/theme.svelte';
   import {
     lifecycleStatus,
     lifecycleCycle,
@@ -12,8 +14,6 @@
     OrphanMemory,
     DeprecatedMemoryInfo,
   } from '../ts/types';
-  import { Spinner, Button, ConfirmDialog } from '../ui';
-  import { toastStore } from '../ui';
   import ConsolidatePanel from './ConsolidatePanel.svelte';
   import {
     HeartPulse,
@@ -98,12 +98,12 @@
     try {
       const result = await lifecycleCycle(namespace ?? undefined);
       lastCycleResult = result;
-      toastStore.success(
+      toast.success(
         `Lifecycle cycle complete: ${result.deprecated} deprecated, ${result.pruned} pruned`
       );
       await loadData();
     } catch (e) {
-      toastStore.error(`Cycle failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Cycle failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       cycling = false;
     }
@@ -113,10 +113,10 @@
     promotingIds = new Set([...promotingIds, id]);
     try {
       await lifecyclePromote(id);
-      toastStore.success('Memory restored to active');
+      toast.success('Memory restored to active');
       await loadData();
     } catch (e) {
-      toastStore.error(`Restore failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Restore failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       const next = new Set(promotingIds);
       next.delete(id);
@@ -166,7 +166,7 @@
 
   {#if loading}
     <div class="loading-state">
-      <Spinner size={32} />
+      <Spinner />
       <p>Loading lifecycle status…</p>
     </div>
   {:else if error}
@@ -278,7 +278,6 @@
                 </div>
               </div>
               <Button
-                size="sm"
                 variant="primary"
                 onclick={() => promoteMemory(item.id)}
                 disabled={promotingIds.has(item.id)}
@@ -307,13 +306,11 @@
   {/if}
 
   <!-- ─── Confirm Cycle Modal ──────────────────────────────────────── -->
-  <ConfirmDialog
-    open={showConfirmCycle}
+  <Dialog
+    bind:open={showConfirmCycle}
     title="Run Lifecycle Cycle?"
-    message="This will deprecate memories that haven't been accessed in a while, and permanently prune memories that have been deprecated past their TTL."
-    confirmLabel="Run Cycle"
-    onconfirm={runCycle}
-    oncancel={() => (showConfirmCycle = false)}
+    description="This will deprecate memories that haven't been accessed in a while, and permanently prune memories that have been deprecated past their TTL."
+    theme={theme.name}
   >
     {#if status && status.deprecated > 0}
       <p class="confirm-warn">
@@ -321,7 +318,11 @@
         Some may be pruned if their TTL has expired.
       </p>
     {/if}
-  </ConfirmDialog>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={() => (showConfirmCycle = false)}>Cancel</Button>
+      <Button variant="primary" onclick={runCycle}>Run Cycle</Button>
+    {/snippet}
+  </Dialog>
 </div>
 
 <style>
